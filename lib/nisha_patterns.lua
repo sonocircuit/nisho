@@ -1,6 +1,7 @@
 --- timed pattern event recorder/player
 -- @module lib.pattern
--- adapted by @sonocircuit
+--
+-- adapted by @sonocircuit for nisha
 
 local pattern = {}
 pattern.__index = pattern
@@ -18,6 +19,8 @@ function pattern.new()
   i.count = 0
   i.step = 0
   i.time_factor = 1
+
+  i.sync_rate = 1
 
   i.metro = metro.init(function() i:next_event() end,1,1)
 
@@ -38,6 +41,8 @@ function pattern:clear()
   self.count = 0
   self.step = 0
   self.time_factor = 1
+
+  self.sync_rate = 1
 end
 
 --- adjust the time factor of this pattern.
@@ -89,6 +94,8 @@ function pattern:rec_event(e)
           self:start()
         end
       )
+      local length = params:get("pattern_length")
+      self.sync_rate = options.length_value[length] * 4
     end
   else
     local t = self.prev_time
