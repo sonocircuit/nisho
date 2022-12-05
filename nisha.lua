@@ -5,7 +5,7 @@
 -- keyboard and
 -- pattern recorder
 --
--- 0.0.7 @sonocircuit
+-- 0.0.9 @sonocircuit
 -- llllllll.co/t/nisha
 --
 --
@@ -32,6 +32,7 @@ g = grid.connect()
 -------- variables --------
 
 -- locals
+
 local int_focus = 1
 local key_focus = 1
 local alt = false
@@ -58,6 +59,7 @@ local env2_amp = 8
 
 -- globals
 pattern_clock = 1
+load_pset = true
 
 -------- tables --------
 
@@ -257,6 +259,16 @@ function clock.tempo_change_handler(tempo)
   --print("tempo handler set: "..pattern_clock)
 end
 
+function reset_pattern(i)
+  while true do
+    clock.sync(pattern[i].sync_rate)
+    if pattern[i].play == 1 and pattern[i].sync_rate > 1 then
+      pattern[i]:start()
+      --print("reset pattern "..i)
+    end
+  end
+end
+
 -- exec function
 function event_exec(e)
   if e.t == eINT then
@@ -267,7 +279,6 @@ function event_exec(e)
     end
   elseif e.t == eKEY then
     track[e.i].note_num = e.note
-    --print(lookup(e.note % 12))
     if not mute_key then
       play_voice(e.i, track[e.i].note_num)
       notes.played = track[e.i].note_num
@@ -386,13 +397,13 @@ function init()
   -- track params
   params:add_separator("tracks", "tracks")
   for i = 1, 2 do
-    params:add_group("track_"..i, "track "..i, 9)
+    params:add_group("track_"..i, "track "..i, 10)
 
     -- output
     params:add_option("track_out"..i, "output", options.output, 1)
     params:set_action("track_out"..i, function() set_track_output() build_menu() end)
     -- mute
-    params:add_option("track_mute"..i, "mute", {"no", "yes"}, 1)
+    params:add_option("track_mute"..i, "mute", {"off", "on"}, 1)
     params:set_action("track_mute"..i, function(val) track[i].mute = val == 2 and true or false end)
 
     -- midi params
@@ -460,12 +471,69 @@ function init()
   params:add_control("env2_decay", "decay", controlspec.new(0.01, 1, "lin", 0.01, 0.4, "s"))
   params:set_action("env2_decay", function(value) env2_d = value end)
 
-  params:default()
-
   -- set defaults
   notes.last = notes.home
   for i = 1, 2 do
     track[i].note_num = scale_notes[notes.home]
+  end
+
+  -- pset callbacks
+  params.action_write = function(filename, name, number)
+    -- make directory
+    os.execute("mkdir -p "..norns.state.data.."patterns/"..number.."/")
+    -- make table
+    local sesh_data = {}
+    for i = 1, 8 do
+      -- patterns
+      sesh_data[i] = {}
+      sesh_data[i].pattern_count = pattern[i].count
+      sesh_data[i].pattern_time = pattern[i].time
+      sesh_data[i].pattern_event = pattern[i].event
+      sesh_data[i].pattern_time_factor = pattern[i].time_factor
+      sesh_data[i].pattern_sync_rate = pattern[i].sync_rate
+    end
+    -- save table
+    tab.save(sesh_data, norns.state.data.."patterns/"..number.."/"..name.."_pattern.data")
+    print("finished writing pset:'"..name.."'")
+  end
+
+  params.action_read = function(filename, silent, number)
+    local loaded_file = io.open(filename, "r")
+    if loaded_file then
+      io.input(loaded_file)
+      local pset_id = string.sub(io.read(), 4, -1)
+      io.close(loaded_file)
+      -- load sesh data
+      sesh_data = tab.load(norns.state.data.."patterns/"..number.."/"..pset_id.."_pattern.data")
+      for i = 1, 8 do
+        -- load patterns
+        pattern[i].count = sesh_data[i].pattern_count
+        pattern[i].time = {table.unpack(sesh_data[i].pattern_time)}
+        pattern[i].event = {table.unpack(sesh_data[i].pattern_event)}
+        pattern[i].time_factor = sesh_data[i].pattern_time_factor
+        pattern[i].sync_rate = sesh_data[i].pattern_sync_rate
+        local e = {t = ePATTERN, i = i, action = "stop"} event(e)
+        local e = {t = ePATTERN, i = i, action = "overdub_off"} event(e)
+        if pattern[i].rec == 1 then
+          local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
+        end
+      end
+      dirtyscreen = true
+      dirtygrid = true
+      print("finished reading pset:'"..pset_id.."'")
+    end
+  end
+
+  params.action_delete = function(filename, name, number)
+    norns.system_cmd("rm -r "..norns.state.data.."patterns/"..number.."/")
+    print("finished deleting pset:'"..name.."'")
+  end
+
+  -- bang params
+  if load_pset then
+    params:default()
+  else
+    params:bang()
   end
 
   -- metros
@@ -480,6 +548,11 @@ function init()
   ledcounter = metro.init(ledpulse, 0.1, -1)
   ledcounter:start()
 
+  pattern_reset = {}
+
+  for i = 1, 8 do
+    pattern_reset[i] = clock.run(reset_pattern, i)
+  end
   -- hardware callbacks
   grid.add = drawgrid_connect
 
@@ -692,58 +765,27 @@ function g.key(x, y, z)
       notes.oct_int = util.clamp(notes.oct_int - 1, -3, 3)
     elseif y == 5 and x > 7 and x < 10 then -- no interval
       local e = {t = eLAST, i = int_focus, note_idx = notes.last} event(e)
-    elseif y == 7 then
-      if x > 3 and x < 14 then -- keyboard black keys
-        if x == 4 then
-          local e = {t = eKEY, i = key_focus, note = 61 + notes.oct_key * 12} event(e)
-        elseif x == 6 then
-          local e = {t = eKEY, i = key_focus, note = 63 + notes.oct_key * 12} event(e)
-        elseif x == 9 then
-          local e = {t = eKEY, i = key_focus, note = 66 + notes.oct_key * 12} event(e)
-        elseif x == 11 then
-          local e = {t = eKEY, i = key_focus, note = 68 + notes.oct_key * 12} event(e)
-        elseif x == 13 then
-          local e = {t = eKEY, i = key_focus, note = 70 + notes.oct_key * 12} event(e)
-        end
-        if key_link and tab.key(scale_notes, track[key_focus].note_num) ~= nil then
+    elseif y == 7 and x == 1 then -- octave up
+      notes.oct_key = util.clamp(notes.oct_key + 1, -3, 3)
+    elseif y == 7 and x == 16 then
+      key_link = not key_link
+    elseif (y == 7 or y == 8) and x > 2 and x < 15 then
+      local new_note = (60 + x - 3) + (notes.oct_key + (2 - (y - 6))) * 12
+      if tab.key(scale_notes, new_note) ~= nil then
+        local e = {t = eKEY, i = key_focus, note = new_note} event(e)
+        if key_link then
           local octave = #scale_intervals[params:get("scale")] - 1
-          notes.last = tab.key(scale_notes, track[key_focus].note_num) + octave * notes.oct_int
+          notes.last = tab.key(scale_notes, new_note) + octave * notes.oct_int
         end
-      elseif x == 1 then -- octave up
-        notes.oct_key = util.clamp(notes.oct_key + 1, -3, 3)
-      elseif x == 16 then
-        key_link = not key_link
       end
-    elseif y == 8 then
-      if x > 2 and x < 15 then -- keyboard white keys
-        if x == 3 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 60 + notes.oct_key * 12} event(e)
-        elseif x == 5 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 62 + notes.oct_key * 12} event(e)
-        elseif x == 7 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 64 + notes.oct_key * 12} event(e)
-        elseif x == 8 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 65 + notes.oct_key * 12} event(e)
-        elseif x == 10 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 67 + notes.oct_key * 12} event(e)
-        elseif x == 12 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 69 + notes.oct_key * 12} event(e)
-        elseif x == 14 then
-          local e = {t = eKEY, i = key_focus, x = x, y = y, note = 71 + notes.oct_key * 12} event(e)
-        end
-        if key_link and tab.key(scale_notes, track[key_focus].note_num) ~= nil then
-          local octave = #scale_intervals[params:get("scale")] - 1
-          notes.last = tab.key(scale_notes, track[key_focus].note_num) + octave * notes.oct_int
-        end
-      elseif x == 1 then -- octave down
-        notes.oct_key = util.clamp(notes.oct_key - 1, -3, 3)
-      elseif x == 16 then
+    elseif y == 8 and x == 1 then
+      notes.oct_key = util.clamp(notes.oct_key - 1, -3, 3)
+    elseif y == 8 and x == 16 then
         mute_key = not mute_key
-      end
     end
   -- when key is released do
   elseif z == 0 then
-    --
+    -- nothing for now
   end
   dirtygrid = true
 end
@@ -807,18 +849,20 @@ function gridredraw()
   g:led(1, 8, 8 - notes.oct_key * 2)
   -- keyboard
   local root = params:get("root_note") % 12 + 24
-  g:led(3, 8, root == 24 and 15 or (lookup(24) and 10 or 2))  -- C
-  g:led(4, 7, root == 25 and 15 or (lookup(25) and 10 or 2)) -- C#
-  g:led(5, 8, root == 26 and 15 or (lookup(26) and 10 or 2)) -- D
-  g:led(6, 7, root == 27 and 15 or (lookup(27) and 10 or 2)) -- D#
-  g:led(7, 8, root == 28 and 15 or (lookup(28) and 10 or 2)) -- E
-  g:led(8, 8, root == 29 and 15 or (lookup(29) and 10 or 2)) -- F
-  g:led(9, 7, root == 30 and 15 or (lookup(30) and 10 or 2)) -- F#
-  g:led(10, 8, root == 31 and 15 or (lookup(31) and 10 or 2)) -- G
-  g:led(11, 7, root == 32 and 15 or (lookup(32) and 10 or 2)) -- G#
-  g:led(12, 8, root == 33 and 15 or (lookup(33) and 10 or 2)) -- A
-  g:led(13, 7, root == 34 and 15 or (lookup(34) and 10 or 2)) -- A#
-  g:led(14, 8, root == 35 and 15 or (lookup(35) and 10 or 2)) -- B
+  for i = 7, 8 do
+    g:led(3, i, root == 24 and 15 or (lookup(24) and 10 or 0))  -- C
+    g:led(4, i, root == 25 and 15 or (lookup(25) and 10 or 0)) -- C#
+    g:led(5, i, root == 26 and 15 or (lookup(26) and 10 or 0)) -- D
+    g:led(6, i, root == 27 and 15 or (lookup(27) and 10 or 0)) -- D#
+    g:led(7, i, root == 28 and 15 or (lookup(28) and 10 or 0)) -- E
+    g:led(8, i, root == 29 and 15 or (lookup(29) and 10 or 0)) -- F
+    g:led(9, i, root == 30 and 15 or (lookup(30) and 10 or 0)) -- F#
+    g:led(10, i, root == 31 and 15 or (lookup(31) and 10 or 0)) -- G
+    g:led(11, i, root == 32 and 15 or (lookup(32) and 10 or 0)) -- G#
+    g:led(12, i, root == 33 and 15 or (lookup(33) and 10 or 0)) -- A
+    g:led(13, i, root == 34 and 15 or (lookup(34) and 10 or 0)) -- A#
+    g:led(14, i, root == 35 and 15 or (lookup(35) and 10 or 0)) -- B
+  end
   -- key link
   g:led(16, 7, key_link and 10 or 4)
   -- mute keys
@@ -851,12 +895,14 @@ function build_menu()
       params:show("midi_device"..i)
       params:show("midi_channel"..i)
       params:show("midi_velocity"..i)
+      params:show("midi_length"..i)
       params:show("midi_panic"..i)
 
     else
       params:hide("midi_device"..i)
       params:hide("midi_channel"..i)
       params:hide("midi_velocity"..i)
+      params:hide("midi_length"..i)
       params:hide("midi_panic"..i)
     end
     if track[i].output == 3 then
