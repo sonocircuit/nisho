@@ -1,7 +1,7 @@
 --- timed pattern event recorder/player
 -- @module lib.pattern
 --
--- adapted by @sonocircuit for nisho
+-- pattern sync added by @sonocircuit
 
 local pattern = {}
 pattern.__index = pattern
@@ -19,14 +19,14 @@ function pattern.new(id)
   i.count = 0
   i.step = 0
   i.time_factor = 1
-  i.clock_run = false
+  i.clock_tick = 0
   i.synced = false
   i.sync_rate = 1
-  i.sync_time = 1
-  i.beat_clock = nil
+  i.sync_clock = nil
   i.count_in = true
   i.count_in_num = 1
   i.bpm = nil
+  i.loop = true
   i.flash = false
   i.id = id or "pattern"
   i.metro = metro.init(function() i:next_event() end, 1, 1)
@@ -47,10 +47,10 @@ function pattern:clear()
   self.step = 0
   self.time_factor = 1
   self.count_in = true
-  self.clock_run = false
+  self.clock_tick = 0
   self.sync_rate = 1
-  self.sync_time = 1
-  self.beat_clock = nil
+  self.sync_clock = nil
+  self.loop = true
   self.bpm = nil
   print(self.id.." cleared")
 end
@@ -62,7 +62,7 @@ end
 
 --- start recording
 function pattern:rec_start()
-  print(self.id.." rec start")
+  --print(self.id.." rec start")
   self.rec = 1
 end
 
@@ -74,22 +74,7 @@ function pattern:rec_stop()
       local t = self.prev_time
       self.prev_time = util.time()
       self.time[self.count] = self.prev_time - t
-      --[[
-      -- if predefined length then trim to the specified length
-      if self.sync_rate > 1 then
-        if self.count > 1 then
-          local sum = 0
-          for i = 1, #self.time - 1 do
-            sum = sum + self.time[i]
-            self.time[self.count] = self.sync_time - sum
-          end
-        else
-          self.time[self.count] = self.sync_time
-        end
-      end
-      --/
-      ]]
-      print(self.id.." rec stop")
+      --print(self.id.." rec stop")
     else
       print(self.id.." is empty")
     end
@@ -121,11 +106,10 @@ function pattern:rec_event(e)
       )
       local idx = params:get("pattern_length")
       self.sync_rate = options.length_value[idx] * 4
-      self.sync_time = options.length_value[idx] * 4 * clock.get_beat_sec()
       self.bpm = clock.get_tempo()
       self.count_in = false
     else
-      self.synced = false
+      self.synced = false -- if set to manual then disable pattern_sync
     end
     --/
   else
@@ -158,29 +142,30 @@ function pattern:stop()
     self.metro:stop()
     self.step = 0
     self.count_in = true
-    print(self.id.." stop")
-    if self.beat_clock ~= nil then
-      clock.cancel(self.beat_clock)
-      print(self.id.." beatclock cancelled")
-    end
-    --self.beat_clock = nil
-    self.clock_run = false
+    dirtygrid = true
+    --print(self.id.." stop")
   end
 end
 
---- beatsync coroutine
-function beatsync(target)
-  print(target.id.." clock run")
-  local count = 0
-  target.count_in = true
+--- pattern_sync coroutine
+function pattern_sync(target)
   while true do
     clock.sync(1)
-    count = (count + 1) % target.sync_rate
-    if count == 0 then
-      target:first()
+    target.clock_tick = (target.clock_tick + 1) % target.sync_rate
+    if target.clock_tick == 0 and target.synced and target.play == 1 then
+      if target.loop then
+        target:first()
+      else
+        target:stop()
+      end
       --print(target.id.." sync at "..clock.get_beats())
     end
   end
+end
+
+-- start clocks (via main script init)
+function pattern:init_clock()
+  self.sync_clock = clock.run(pattern_sync, self)
 end
 
 --- start pattern
@@ -192,24 +177,22 @@ function pattern:start()
           function()
             clock.sync(self.count_in_num)
             self:first()
-            self.beat_clock = clock.run(beatsync, self)
-            self.clock_run = true
-            print(self.id.." start")
+            self.clock_tick = 0
+            --print(self.id.." start")
           end
         )
         self.play = 1
         dirtygrid = true
-      else -- if not count_in (i.e. directly form pattern recording when pattern.synced == true)
+      else -- if not count_in
         self:first()
-        self.beat_clock = clock.run(beatsync, self)
-        self.clock_run = true
+        self.clock_tick = 0
         self.count_in = true
         dirtygrid = true
-        print(self.id.." start")
+        --print(self.id.." start")
       end
     else
       self:first()
-      print(self.id.." start")
+      --print(self.id.." start")
     end
   end
 end
@@ -220,7 +203,7 @@ function pattern:first()
   self.process(self.event[1])
   self.play = 1
   self.step = 1
-  self.metro.time = self.time[1] * self.time_factor -- set the time to elapse until the next event is called
+  self.metro.time = self.time[1] * self.time_factor
   self.metro:start()
   self.flash = true
   dirtygrid = true
@@ -232,7 +215,11 @@ end
 function pattern:next_event()
   self.prev_time = util.time()
   if self.step == self.count then
-    self:first()
+    if self.loop and not self.synced then
+      self:first()
+    else
+      self:stop()
+    end
   else
     self.step = self.step + 1
     --print(self.id.." step "..self.step)
