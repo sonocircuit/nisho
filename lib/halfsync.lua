@@ -43,16 +43,16 @@ function halfsync.init()
   softcut.post_filter_rq(1, 2.0)
 
   params:add_control("delay_level", "delay level", controlspec.new(0, 1, 'lin' , 0, 0, ""))
-  params:set_action("delay_level", function(x) softcut.level(1, x) d_refresh() end)
+  params:set_action("delay_level", function(x) softcut.level(1, x) end)
 
   params:add_option("delay_length", "delay rate", div_view, 7)
-  params:set_action("delay_length", function() set_del_rate() d_refresh() end)
+  params:set_action("delay_length", function() set_del_rate() end)
 
   params:add_control("delay_length_ft", "adjust rate ", controlspec.new(-10, 10, 'lin', 0.1, 0, "%"))
-  params:set_action("delay_length_ft", function() set_del_rate() d_refresh() end)
+  params:set_action("delay_length_ft", function() set_del_rate() end)
 
   params:add_control("delay_feedback", "delay feedback", controlspec.new(0, 1.0, 'lin', 0 , 0.30 ,""))
-  params:set_action("delay_feedback", function(x) set_feedback(x) d_refresh() end)
+  params:set_action("delay_feedback", function(x) set_feedback(x) end)
 
   params:add_separator("warble_sep", "warble")
 
