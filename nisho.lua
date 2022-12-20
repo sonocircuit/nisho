@@ -5,7 +5,7 @@
 -- keyboard and
 -- pattern recorder
 --
--- 0.1.4 @sonocircuit
+-- 1.0.0 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --
@@ -29,10 +29,11 @@ mu = require 'musicutil'
 
 g = grid.connect()
 
+
 -------- variables --------
 
 -- locals
-local load_pset = true
+local load_pset = false
 local pageNum = 1
 local int_focus = 1
 local key_focus = 1
@@ -62,6 +63,7 @@ local env2_amp = 8
 
 -- globals
 pattern_len = 1
+
 
 -------- tables --------
 
@@ -113,6 +115,7 @@ for i = 1, 2 do -- 2 voices
   m[i] = midi.connect()
 end
 
+
 -------- scales --------
 
 local scale_notes = {}
@@ -137,9 +140,9 @@ function set_root()
   end
 end
 
-function set_keys() -- check if note is in the selected scale
+function set_keys() -- set which keys to display
   for i = 1, 12 do
-    if lookup(i + 23) then
+    if notelookup(i + 23) then
       notes.key[i] = true
     else
       notes.key[i] = false
@@ -147,7 +150,7 @@ function set_keys() -- check if note is in the selected scale
   end
 end
 
-function lookup(note) -- check if note is in the selected scale
+function notelookup(note) -- check if note is in the selected scale
    for i = 1, 12 do
      for j = 0, 1 do -- iterate over two octaves
         if scale_notes[i] == note + j * 12 then
@@ -163,6 +166,7 @@ function set_scale()
   set_root()
   set_keys()
 end
+
 
 -------- voice settings --------
 
@@ -180,6 +184,7 @@ function set_voice_output()
     crow.ii.jf.mode(0)
   end
 end
+
 
 -------- midi --------
 
@@ -231,6 +236,7 @@ function all_notes_off() -- both voices
   end
 end
 
+
 -------- pattern recording --------
 
 local eINT = 1
@@ -263,7 +269,6 @@ function event_q_clock()
       for k, e in pairs(quant_event) do
         if e.t ~= ePATTERN then event_record(e) end
         event_exec(e)
-        --tab.print(e)
       end
       quant_event = {}
     end
@@ -271,20 +276,17 @@ function event_q_clock()
 end
 
 function set_pattern_len()
-  local idx = params:get("pattern_length")
-  pattern_len = options.length_value[idx] * clock.get_beat_sec() * 4
+  pattern_len = options.length_value[params:get("pattern_length")] * clock.get_beat_sec() * 4
   --print("params set: "..pattern_len)
 end
 
 function clock.tempo_change_handler(tempo)
-  local idx = params:get("pattern_length")
-  pattern_len = options.length_value[idx] * (60 / tempo) * 4 -- can't use clock.get_beat_sec() here, otherwise offset by 1 (bug?).
-  --print("tempo handler set: "..pattern_len)
+  -- can't use clock.get_beat_sec() here, otherwise offset by 1 (bug?)
+  pattern_len = options.length_value[params:get("pattern_length")] * (60 / tempo) * 4
+  -- if pattern of specified length has been recorded then adjust playback speed
   for i = 1, 8 do
     if pattern[i].bpm ~= nil then
-      local newfactor = pattern[i].bpm / tempo
-      pattern[i].time_factor = newfactor
-      pattern[i].sync_time = pattern[i].sync_time * pattern[i].time_factor
+      pattern[i].time_factor = pattern[i].bpm / tempo
     end
   end
 end
@@ -292,18 +294,12 @@ end
 -- exec function
 function event_exec(e)
   if e.t == eINT then
-    local idx = e.note
-    if transpose then
-      idx = util.clamp(e.note + transpose_value, 1, #scale_notes)
-    end
+    local idx = util.clamp(e.note + transpose_value, 1, #scale_notes)
     local note_num = scale_notes[idx]
     play_voice(e.i, note_num)
     notes.played = note_num
   elseif e.t == eKEY then
-    local idx = e.note
-    if transpose then
-      idx = util.clamp(e.note + transpose_value, 1, #scale_notes)
-    end
+    local idx = util.clamp(e.note + transpose_value, 1, #scale_notes)
     local note_num = scale_notes[idx]
     play_voice(e.i, note_num)
     notes.played = note_num
@@ -338,6 +334,7 @@ for i = 1, 8 do
   pattern[i] = pattern_time.new("pattern "..i)
   pattern[i].process = event_exec
 end
+
 
 -------- clock coroutines --------
 
@@ -507,7 +504,8 @@ function init()
       sesh_data[i].pattern_synced = pattern[i].synced
       sesh_data[i].pattern_sync_rate = pattern[i].sync_rate
       sesh_data[i].pattern_loop = pattern[i].loop
-      sesh_data[i].pattern_countin = pattern[i].countin
+      sesh_data[i].pattern_count_in = pattern[i].count_in
+      sesh_data[i].pattern_count_in_num = pattern[i].count_in_num
       sesh_data[i].pattern_bpm = pattern[i].bpm
     end
     -- save table
@@ -531,9 +529,9 @@ function init()
         pattern[i].time_factor = sesh_data[i].pattern_time_factor
         pattern[i].synced = sesh_data[i].pattern_synced
         pattern[i].sync_rate = sesh_data[i].pattern_sync_rate
-        pattern[i].sync_time = sesh_data[i].pattern_sync_rate -- to remove
         pattern[i].loop = sesh_data[i].pattern_loop
-        pattern[i].countin = sesh_data[i].pattern_countin
+        pattern[i].count_in = sesh_data[i].pattern_count_in
+        pattern[i].count_in_num = sesh_data[i].pattern_count_in_num
         pattern[i].bpm = sesh_data[i].pattern_bpm
         if pattern[i].bpm ~= nil then
           local newfactor = pattern[i].bpm / clock.get_tempo()
@@ -588,6 +586,7 @@ function init()
 
 end
 
+
 -------- playback --------
 
 function play_voice(i, note_num)
@@ -626,6 +625,7 @@ function play_voice(i, note_num)
   end
 end
 
+
 -------- norns interface --------
 
 function enc(n, d)
@@ -659,11 +659,10 @@ function key(n, z)
   end
   if n == 2 and z == 1 then
     transpose = not transpose
+  elseif n == 3 and z == 1 then
     if not transpose then
       transpose_value = 0
     end
-  elseif n == 3 and z == 1 then
-    --
   end
   dirtyscreen = true
   dirtygrid = true
@@ -699,17 +698,31 @@ function redraw()
       screen.move(110, 58)
       screen.text(params:string("root_note"))
     end
+    local semitone = scale_notes[tab.key(scale_notes, params:get("root_note")) + transpose_value] - params:get("root_note")
     if transpose then
-      local home_note = tab.key(scale_notes, params:get("root_note"))
-      local semitones = scale_notes[home_note + transpose_value] - params:get("root_note")
-      screen.level(6)
+      screen.level(4)
       screen.font_size(16)
       screen.move(64, 18)
-      screen.text_center("transpose "..semitones)
+      if semitone > 0 then
+        screen.text_center("transpose +"..semitone)
+      else
+        screen.text_center("transpose "..semitone)
+      end
+    end
+    if semitone ~= 0 and not transpose then
+      screen.level(8)
+      screen.font_size(16)
+      screen.move(64, 18)
+      if semitone > 0 then
+        screen.text_center("+"..semitone)
+      else
+        screen.text_center(semitone)
+      end
     end
   end
   screen.update()
 end
+
 
 -------- grid interface --------
 
@@ -886,7 +899,7 @@ function g.key(x, y, z)
       key_link = not key_link
     -- play keys
     elseif (y == 7 or y == 8) and x > 2 and x < 15 then
-      local new_note = (60 + x - 3) + (notes.oct_key + (2 - (y - 6))) * 12
+      local new_note = (60 + x - 3) + (notes.oct_key + 8 - y) * 12
       if tab.key(scale_notes, new_note) ~= nil and not set_pattern then
         if not mute_key then
           local e = {t = eKEY, i = key_focus, note = tab.key(scale_notes, new_note)} event(e)
@@ -925,7 +938,7 @@ function gridredraw()
       g:led(i + 4, 3, pattern[i].loop and 0 or 4)
       g:led(i + 4, 5, params:get("pattern_length") == i and 15 or 8)
       g:led(i + 4, 6, params:get("pattern_quant") == i and 15 or 4)
-      g:led(i + 4, 8, 2) -- TODO: pset load slots
+      --g:led(i + 4, 8, 2) -- TODO: pset load slots
     else
       if pattern[i].rec == 1 then
         g:led(i + 4, 1, 15)
