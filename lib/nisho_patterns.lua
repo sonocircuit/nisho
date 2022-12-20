@@ -1,7 +1,7 @@
 --- timed pattern event recorder/player
 -- @module lib.pattern
 --
--- w/ pattern sync to sytem clock
+-- added pattern sync to sytem clock
 -- 0.1.0 @sonocircuit
 
 local pattern = {}
