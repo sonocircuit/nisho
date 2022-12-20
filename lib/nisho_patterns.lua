@@ -1,7 +1,8 @@
 --- timed pattern event recorder/player
 -- @module lib.pattern
 --
--- pattern sync added by @sonocircuit
+-- w/ pattern sync to sytem clock
+-- 0.1.0 @sonocircuit
 
 local pattern = {}
 pattern.__index = pattern
@@ -104,8 +105,7 @@ function pattern:rec_event(e)
           self:start()
         end
       )
-      local idx = params:get("pattern_length")
-      self.sync_rate = options.length_value[idx] * 4
+      self.sync_rate = options.length_value[params:get("pattern_length")] * 4
       self.bpm = clock.get_tempo()
       self.count_in = false
     else
@@ -158,7 +158,6 @@ function pattern_sync(target)
       else
         target:stop()
       end
-      --print(target.id.." sync at "..clock.get_beats())
     end
   end
 end
@@ -205,9 +204,16 @@ function pattern:first()
   self.step = 1
   self.metro.time = self.time[1] * self.time_factor
   self.metro:start()
+  -- first step indicator
   self.flash = true
   dirtygrid = true
-  clock.run(function() clock.sleep(0.1) self.flash = false dirtygrid = true end)
+  clock.run(
+    function()
+      clock.sleep(0.1)
+      self.flash = false
+      dirtygrid = true
+    end
+  )
   --print(self.id.." step "..self.step)
 end
 
@@ -215,11 +221,21 @@ end
 function pattern:next_event()
   self.prev_time = util.time()
   if self.step == self.count then
-    if self.loop and not self.synced then
+    if not self.synced then
+      if self.loop then
+        self:first()
+      else
+        self:stop()
+      end
+    end
+    --[[
+    -- alternative:
+    if self.loop then
       self:first()
-    else
+    elseif not self.loop and not self.synced then
       self:stop()
     end
+    ]]
   else
     self.step = self.step + 1
     --print(self.id.." step "..self.step)
