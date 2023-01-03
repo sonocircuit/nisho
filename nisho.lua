@@ -5,7 +5,7 @@
 -- keyboard and
 -- pattern recorder
 --
--- 1.0.0 @sonocircuit
+-- 1.0.1 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --
@@ -18,14 +18,23 @@
 --
 --
 
-engine.name = "Thebangs"
+--engine.name = "Thebangs"
 -- ;install https://github.com/catfact/thebangs
 
-thebangs = include('lib/thebangs_engine')
-halfsync = include('lib/halfsync')
-pattern_time = include('lib/nisho_patterns')
+--local extensions = "/home/we/.local/share/SuperCollider/Extensions"
+--engine.name = util.file_exists(extensions .. "/FormantTriPTR/FormantTriPTR.sc") and "FormantPerc" or nil
 
-mu = require 'musicutil'
+engine.name = "Moonshine"
+
+halfsync = include "lib/halfsync"
+pattern_time = include "lib/nisho_patterns"
+
+--thebangs = include "lib/thebangs_engine"
+moons = include "lib/moonshine"
+--fperc = include "../lamination/lib/formantperc_engine"
+
+
+mu = require "musicutil"
 
 g = grid.connect()
 
@@ -67,14 +76,14 @@ pattern_len = 1
 
 -------- tables --------
 
-options = {}
+options = {} -- make this local?
 options.output = {"thebangs", "midi", "crow 1+2", "crow 3+4", "crow ii jf"}
 options.pattern_quant = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16", "1/32"}
 options.quant_value = {1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 1/32}
 options.pattern_length = {"manual", "1bar", "2bars", "4bars", "8bars", "16bars", "32bars", "64bars"}
 options.length_value = {0, 1, 2, 4, 8, 16, 32, 64}
 
-notes = {}
+local notes = {}
 notes.oct_int = 0
 notes.oct_key = 0
 notes.last = 1
@@ -88,14 +97,14 @@ for i = 1, 12 do
   notes.key[i] = nil
 end
 
-voice = {}
+local voice = {}
 for i = 1, 2 do -- 2 voices
   voice[i] = {}
   voice[i].output = 1
   voice[i].mute = false
 end
 
-set_midi = {}
+local set_midi = {}
 for i = 1, 2 do -- 2 voices
   set_midi[i] = {}
   set_midi[i].ch = 1
@@ -103,15 +112,15 @@ for i = 1, 2 do -- 2 voices
   set_midi[i].length = 0.2
 end
 
-set_crow = {}
+local set_crow = {}
 for i = 1, 2 do -- 2 voices
   set_crow[i] = {}
   set_crow[i].jf_ch = i
   set_crow[i].jf_amp = 5
 end
 
-m = {}
-for i = 1, 2 do -- 2 voices
+local m = {}
+for i = 0, 2 do -- one global and 2 voices
   m[i] = midi.connect()
 end
 
@@ -197,11 +206,11 @@ function build_midi_device_list()
   end
 end
 
-function midi.add()
+function midi_connect()
   build_midi_device_list()
 end
 
-function midi.remove()
+function midi_disconnect()
   clock.run(
     function()
       clock.sleep(0.2)
@@ -449,11 +458,15 @@ function init()
 
   end
 
-  params:add_separator("sound", "sound")
+  --params:add_separator("sound", "sound")
+
   -- engine params
-  params:add_group("thebangs", "thebangs", 9)
-  thebangs.synth_params()
+  --params:add_group("thebangs", "thebangs", 9)
+  --thebangs.synth_params()
   --thebangs.voice_params()
+  --params:add_group("formant_params", "formantsub", 10)
+  --fperc.params()
+  moons.add_params()
 
   -- delay params
   params:add_group("delay", "delay", 8)
@@ -583,18 +596,22 @@ function init()
 
   -- hardware callbacks
   grid.add = drawgrid_connect
+  midi.add = midi_connect
+  midi.remove = midi_disconnect
 
 end
 
 
 -------- playback --------
-
+local voice_num = 0
 function play_voice(i, note_num)
+  voice_num = voice_num % 4 + 1 + (i - 1) * 4
   -- engine output
   if not voice[i].mute then
     if voice[i].output == 1 then
       local freq = mu.note_num_to_freq(note_num)
-      engine.hz(freq)
+      --engine.hz(freq)
+      engine.trig(voice_num, freq)
     -- midi output
     elseif voice[i].output == 2 then
       m[i]:note_on(note_num, set_midi[i].velocity, set_midi[i].ch)
@@ -737,10 +754,10 @@ function g.key(x, y, z)
   if y == 4 and x > 7 and x < 10 and not set_pattern then -- mute interval
     mute_int = z == 1 and true or false
   end
-  if y == 5 and x == 16 then -- set patterns
-    set_pattern = z == 1 and true or false
-    dirtyscreen = true
-  end
+  --if y == 5 and x == 16 then -- set patterns
+    --set_pattern = z == 1 and true or false
+    --dirtyscreen = true
+  --end
   -- when key is pressed do
   if z == 1 then
     if y == 1 then
@@ -857,11 +874,11 @@ function g.key(x, y, z)
         if quantize then
           quantizer = clock.run(event_q_clock)
           downbeat = clock.run(barpulse)
-          quater = clock.run(beatpulse)
+          beat = clock.run(beatpulse)
         else
           clock.cancel(quantizer)
           clock.cancel(downbeat)
-          clock.cancel(quater)
+          clock.cancel(beat)
         end
       end
     elseif y == 5 then
@@ -883,6 +900,9 @@ function g.key(x, y, z)
           local octave = (#scale_intervals[params:get("scale")] - 1) * (x - 8 == 0 and -1 or 1)
           local e = {t = eTRANSPOSE, interval = octave} event(e)
         end
+      elseif x == 16 then
+        set_pattern = not set_pattern
+        dirtyscreen = true
       end
     elseif y == 6 then
       -- set pattern quantization
@@ -1084,10 +1104,15 @@ end
 
 function cleanup()
   grid.add = function() end
+  midi.add = function() end
+  midi.remove = function() end
   crow.ii.jf.mode(0)
+  clock.cancel(quantizer)
+  clock.cancel(downbeat)
+  clock.cancel(beat)
   for i = 1, 8 do
     pattern[i]:stop()
-    pattern[i].sync_clock = nil
+    clock.cancel(pattern[i].sync_clock)
     pattern[i] = nil
   end
 end
