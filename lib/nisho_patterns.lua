@@ -21,7 +21,7 @@ function pattern.new(id)
   i.step = 0
   i.time_factor = 1
   i.clock_tick = 0
-  i.synced = false
+  i.synced = true
   i.sync_rate = 1
   i.sync_clock = nil
   i.count_in = true
@@ -50,7 +50,6 @@ function pattern:clear()
   self.count_in = true
   self.clock_tick = 0
   self.sync_rate = 1
-  self.sync_clock = nil
   self.loop = true
   self.bpm = nil
   print(self.id.." cleared")
@@ -137,9 +136,9 @@ end
 --- stop this pattern
 function pattern:stop()
   if self.play == 1 then
+    self.metro:stop()
     self.play = 0
     self.overdub = 0
-    self.metro:stop()
     self.step = 0
     self.count_in = true
     dirtygrid = true
@@ -184,6 +183,7 @@ function pattern:start()
         dirtygrid = true
       else -- if not count_in
         self:first()
+        self.play = 1
         self.clock_tick = 0
         self.count_in = true
         dirtygrid = true
@@ -191,6 +191,7 @@ function pattern:start()
       end
     else
       self:first()
+      self.play = 1
       --print(self.id.." start")
     end
   end
@@ -200,7 +201,6 @@ end
 function pattern:first()
   self.prev_time = util.time()
   self.process(self.event[1])
-  self.play = 1
   self.step = 1
   self.metro.time = self.time[1] * self.time_factor
   self.metro:start()
@@ -228,14 +228,6 @@ function pattern:next_event()
         self:stop()
       end
     end
-    --[[
-    -- alternative:
-    if self.loop then
-      self:first()
-    elseif not self.loop and not self.synced then
-      self:stop()
-    end
-    ]]
   else
     self.step = self.step + 1
     --print(self.id.." step "..self.step)
