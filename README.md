@@ -5,10 +5,11 @@ an interval player, keyboard and pattern sequencer for norns.
 **requires:**
 
 - norns
-- grid
-- moonshine engine
+- grid (one or zero)
 
 **supports:**
 - midi
 - crow
 - jf ii
+- wysn ii
+- nb
