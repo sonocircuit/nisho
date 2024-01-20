@@ -1,8 +1,8 @@
--- nisho v1.3.0 @sonocircuit
+-- nisho v1.5.5 @sonocircuit
 -- llllllll.co/t/nisho
 --
--- six voices and
--- many other things
+-- six voices and eight patterns
+-- for performance and composition
 --
 -- for docs go to:
 -- >> github.com/sonocircuit
@@ -13,101 +13,196 @@
 --
 
 ---------------------------------------------------------------------------
--- BUG: patterns not catching more than 1 note at step_one -- with chords, no notes at all
--- BUG: occasional stuck midi notes. need to reproduce scenarios to debug.
+-- TODO: fix crow env shapes -> not working
+-- TODO: engine -> change formant waveshape behaviour / fix mod envelope click
+-- KNOWN BUG: patterns not catching more than 1 note at step_one
+-- KNOWN BUG: hanging notes: notes off values are shifted while transposing and length set to "played"
 ---------------------------------------------------------------------------
 
-engine.name = "Moonunit" 
+engine.name = "Formantpulse" 
 
-mu = require ("musicutil")
+mu = require 'musicutil'
+lattice = require 'lattice'
 
-softsync = include ("lib/nishos_softsync")
-mirror = include ("lib/nishos_reflection")
-moonunit = include ("lib/nishos_moonunit")
-smpls = include ("lib/nishos_samples")
-grd_zero = include ("lib/grid_zero")
-grd_one = include ("lib/grid_one")
-nb = include ("nb/lib/nb")
+polyform = include 'lib/nishos_polyform'
+softsync = include 'lib/nishos_softsync'
+grd_zero = include 'lib/nishos_grid_zero'
+grd_one = include 'lib/nishos_grid_one'
+mirror = include 'lib/nishos_reflection'
+nb = include 'nb/lib/nb'
 
 g = grid.connect()
 
--------- variables --------
+-------- variables -------
 load_pset = false
+rotate_grid = false
+
 GRIDSIZE = 0
 NUM_VOICES = 6
 
+-- ui variables
 pageNum = 1
-pattern_view = false
-sample_view = false
-sampl_param = 1
-int_focus = 1
-key_focus = 1
-pattern_focus = 1
-voice_focus = 1
-viewinfo = 0
 shift = false
 
+-- modifier keys
 mod_a = false
 mod_b = false
 mod_c = false
 mod_d = false
 
-key_link = true
-transposing = false
+-- keyboard variables
+int_focus = 1
+key_focus = 1
+voice_focus = 1
+strum_focus = 1
+key_link = true -- link keyboard to interval keys
+transposing = false -- activate transpose_mode
 transpose_value = 0
+scalekeys_y = 4 -- scale keys
+chromakeys_x = 5 -- chromatic keys x
+chromakeys_y = 1 -- chromatic keys y
 
-flash_bar = false
-flash_beat = false
-ledfast = 8
-ledslow = 4
+drum_root_note = 0
+drum_vel_hi = 100
+drum_vel_mid = 64
+drum_vel_lo = 32
+drum_vel_last = 100
 
-key_quantize = false
-quant_rate = 16
-quant_event = {}
+-- keep track of the number of pressed keys
+heldkey_int = 0
+heldkey_key = 0 
+heldkey_kit = 0 
 
-v8_std_1 = 12
-v8_std_2 = 12
-env1_amp = 8
-env1_a = 0
-env1_r = 0.4
-env2_amp = 8
-env2_a = 0
-env2_r = 0.4
-wsyn_amp = 5
+-- kit variables
+kit_view = false
+kit_root_note = 60
+kit_midi_dev = 9
+kit_midi_ch = 1
+kit_velocity = 100
+kit_oct = 0
+kit_held = {}
 
-pool_count_1 = 0
-pool_count_2 = 0
-
-midi_in_dev = 8
-midi_in_ch = 1
-midi_in_dest = 0
-midi_out_dev = 7
-midi_out_ch = 1
-midi_thru = false
-
+-- sequencer variables
 seq_notes = {}
 collected_notes = {}
 seq_active = false
+sequencer_config = false
 collecting_notes = false
 appending_notes = false
 seq_step = 0
 seq_rate = 1/4
-see_hold = false
-retrig_mode = false
-key_repeat = false
-last_velocity = 100
-rep_rate = 1/4
-heldkey = 0
+seq_hold = false
 
+-- key repeat variables
+key_repeat_view = false
+latch_key_repeat = false
+key_repeat = false
+rep_rate = 1/4
+
+--trig variables
+trigs_config_view = false
+set_trigs_end = false
+trigs_focus = 1
+trig_step = 0
+trigs_reset = false
+
+-- crow
+v8_std_1 = 12
+v8_std_2 = 12
+env1_amp = 8
+env1_crv = 'log'
+env1_a = 0
+env1_r = 0.4
+env2_amp = 8
+env2_crv = 'log'
+env2_a = 0
+env2_r = 0.4
+env_shapes = {'lin','log','exp'} -- TODO: env shapes not working
+wsyn_amp = 5
+
+-- eng voices
+synth_voice_1 = 1
+synth_voice_2 = 0
+
+-- midi
+midi_in_dev = 8
+midi_in_ch = 1
+midi_in_dest = 0
+midi_in_quant = false
+midi_out_dev = 7
+midi_out_ch = 1
+midi_thru = false
+midi_thru_dur = 0.1
+
+midi_control = false -- hidden option, grid zero only, not documented. please read the code or ask.
+midi_view = false 
+
+-- chord variables
+chord_any = false
 chord_play = true
 chord_strum = false
-chord_harp = false
-strum_direction = 1
+chord_inversion = 1
+chord_oct_shift = 0
+last_chord_root = 0
+strum_count_options = false
+strum_mode_options = false
+strum_skew_options = false
+strum_count = 6
+strum_mode = 1
+strum_skew = 0
 strum_rate = 0.1
 strum_step = 0
-strum_num = 6
-strum_options = false
 
+-- scale variables
+root_oct = 3 -- number of octaves root_note differs from root_base. used to set transpose
+root_note = 60 -- root note set by scale param. corresponds to note.home
+root_base = 24 -- lowest note of the scale
+current_scale = 1
+scale_notes = {}
+
+-- note variables
+notes_held = {}
+notes_oct_int = {}
+notes_oct_key = {}
+for i = 1, NUM_VOICES do
+  notes_oct_int[i] = 0
+  notes_oct_key[i] = 0
+end
+notes_last = 1
+notes_home = 1
+notes_viz = 60
+
+-- note viz variables
+notenum_w = {24, 26, 28, 29, 31, 33, 35}
+notenum_b1 = {25, 27}
+notenum_b2 = {30, 32, 34}
+
+white_keys = {"C", "D", "E", "F", "G", "A", "B"}
+black_keys_1 = {"C#", "D#"}
+black_keys_2 = {"F#", "G#", "A#"}
+noteis_w = {}
+noteis_b1 = {}
+noteis_b1sym = {}
+noteis_b1 = {}
+noteis_b2sym = {}
+
+-- key viz variables
+pulse_bar = false
+pulse_beat = false
+pulse_key_fast = 8
+pulse_key_mid = 4
+pulse_key_slow = 4
+hide_metronome = false
+
+-- screen viz
+view_message = ""
+
+-- key quantization
+key_quantize = false
+quant_rate = 16
+quant_event = {}
+
+-- pattern variables
 pattern_rec_mode = "queued"
 pattern_overdub = false
 copying_pattern = false
@@ -120,68 +215,72 @@ pattern_length_config = false
 pattern_options_config = false
 pattern_reset = false
 pattern_clear = false
+pattern_view = false
+pattern_focus = 1
+keyquant_edit = false
 
-key_reset = false --?? not assigned to anything, right?
-
+-- event variables
 eSCALE = 1
 eKEYS = 2
 eDRUMS = 3
 eMIDI = 4
 eTRSP_SCALE = 5
-eSMPL = 6
-
-view_message = ""
-waveform_samples = {}
-
+eKIT = 6
 
 -------- tables --------
 options = {}
 options.key_quant = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16","1/32"}
 options.quant_value = {1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 1/32}
-options.pattern_mode = {"manual", "synced"}
 options.pattern_play = {"loop", "oneshot"}
-options.pattern_countin = {"none", "beat", "bar"}
+options.pattern_launch = {"manual", "beat", "bar"}
 options.pattern_quantize = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16", "3/64", "1/24", "1/32", "3/128", "1/48", "1/64"}
 options.pattern_quantize_value = {1, 3/4, 2/3, 1/2, 3/8, 1/3, 1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16}
 options.pattern_meter = {"2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "9/4", "11/4"}
 options.meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
-options.output = {"moonunit [one]", "moonunit [two]", "midi", "crow 1+2", "crow 3+4", "crow ii jf", "crow ii wsyn", "nb [one]", "nb [two]"}
+options.output = {"polyform [one]", "polyform [two]", "midi", "crow 1+2", "crow 3+4", "crow ii jf", "crow ii wsyn", "nb [one]", "nb [two]"}
 
 voice = {}
-for i = 1, NUM_VOICES + 1 do -- 6 voices
+for i = 1, NUM_VOICES + 1 do -- 6 voices + 1 midi out
   voice[i] = {}
-  voice[i].output = 1
   voice[i].mute = false
+  voice[i].keys_option = 1
   voice[i].length = 0.2
   voice[i].velocity = 100
+  voice[i].midi_ch = i
   voice[i].midi_ch = i
   voice[i].jf_ch = i
   voice[i].jf_amp = 5
 end
 
-notes = {}
-notes.oct_int = 0
-notes.oct_key = 0
-notes.last = 1
-notes.home = 1
-notes.viz = 60
-notes.chord = {}
-notes.held = {}
-notes.root = {}
-notes.key = {}
-for i = 1, 12 do
-  notes.root[i] = nil
-  notes.key[i] = nil
-end
-
 chord_arp = {}
+current_chord = {}
 chord = {}
 for i = 1, 12 do
   chord[i] = {}
+  chord[i].is = {}
+  chord[i].map = {}
+  chord[i].event = {}
+  chord[i].notes = {}
+  chord[i].strum = {}
+  for t = 1, 7 do
+    chord[i].is[t] = false
+    chord[i].notes[t] = {}
+    chord[i].strum[t] = {}
+    for n = 1, 4 do
+      chord[i].notes[t][n] = {}
+    end
+  end
+end
+
+trigs = {}
+for i = 1, 8 do
+  trigs[i] = {}
+  trigs[i].step_max = 16
+  trigs[i].pattern = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 end
 
 m = {}
-for i = 1, 8 do -- 6 voices + in/out
+for i = 1, 9 do -- 6 voices + in + out + kit
   m[i] = midi.connect()
 end
 
@@ -190,9 +289,9 @@ for x = 1, 16 do
   gkey[x] = {}
   for y = 1, 16 do
     gkey[x][y] = {}
-    gkey[x][y].note = 0
     gkey[x][y].active = false
-    gkey[x][y].chord = false
+    gkey[x][y].chord_viz = 0
+    gkey[x][y].note = 0
   end
 end
 
@@ -205,198 +304,289 @@ for i = 1, 8 do
   held[i].second = 0
 end
 
-held_sample = {}
-for i = 1, 5 do
-  held_sample[i] = 0
+voicetab = {}
+voicenotes = {}
+lastvoice = {}
+for i = 1, 2 do
+  voicetab[i] = {0, 0, 0, 0}
+  voicenotes[i] = {0, 0, 0, 0}
+  lastvoice[i] = {}
 end
 
 voice_params = {
-  {"main_amp1", "sine_amp1", "saw_amp1", "pulse_amp1", "noise_amp1", "supersaw1", "pulse_width1", "pwm_rate1", "pwm_depth1", "lpf_cutoff1", "lpf_resonance1", "env_lpf_depth1", "attack1", "release1"}, --moonunit [one]
-  {"main_amp2", "sine_amp2", "saw_amp2", "pulse_amp2", "noise_amp2", "supersaw2", "pulse_width2", "pwm_rate2", "pwm_depth2", "lpf_cutoff2", "lfp_resonance2", "env_lpf_depth2", "attack2", "release2"}, --moonunit [two]
-  {"note_length", "note_velocity", "midi_channel", "midi_device"}, --midi
-  {"env1_amplitude", "env1_attack", "env1_decay"}, --crow 1+2
-  {"env2_amplitude", "env2_attack", "env2_decay"}, --crow 3+4
-  {"jf_mode", "jf_amp", "jf_voice"}, --crow ii jf
-  {"wysn_mode", "wsyn_amp", "wsyn_curve", "wsyn_ramp", "wsyn_lpg_time", "wsyn_lpg_sym", "wsyn_fm_index", "wsyn_fm_env", "wsyn_fm_num", "wsyn_fm_den"} --crow ii wsyn
+  {"main_amp1", "pan1", "formant_amp1", "pulse_amp1", "noise_amp1", "noise_crackle1",
+  "formant_shape1", "formant_curve1", "formant_type1", "formant_width1", "pulse_tune1", "pulse_width1",
+  "pwm_rate1", "pwm_depth1", "lpf_cutoff1", "lpf_resonance1", "env_lpf_depth1", "hpf_cutoff1",
+  "attack1", "release1", "vib_freq1", "vib_depth1"}, --polyform [one]
+  {"main_amp2", "pan2", "formant_amp2", "pulse_amp2", "noise_amp2", "noise_crackle2",
+  "formant_shape2", "formant_curve2", "formant_type2", "formant_width2", "pulse_tune2", "pulse_width2",
+  "pwm_rate2", "pwm_depth2", "lpf_cutoff2", "lpf_resonance2", "env_lpf_depth2", "hpf_cutoff2",
+  "attack2", "release2", "vib_freq2", "vib_depth2"}, --polyform [two]
+  {"note_length", "note_velocity", "midi_device", "midi_channel"}, --midi
+  {"env1_amplitude", "env1_shape", "env1_attack", "env1_decay"}, --crow 1+2
+  {"env2_amplitude", "enve_shape", "env2_attack", "env2_decay"}, --crow 3+4
+  {"jf_amp", "jf_voice"}, --crow ii jf
+  {"wysn_mode", "wsyn_amp", "wsyn_curve", "wsyn_ramp", "wsyn_lpg_time", "wsyn_lpg_sym",
+  "wsyn_fm_index", "wsyn_fm_env", "wsyn_fm_num", "wsyn_fm_den"} --crow ii wsyn
 }
 
 voice_param_names = {
-  {"main level", "sine level", "saw level", "pulse level", "noise level", "supersaw", "pulse width", "pwm rate", "pwm depth", "cutoff", "resonance", "env depth", "attack", "release"}, --moonunit [one]
-  {"main level", "sine level", "saw level", "pulse level", "noise level", "supersaw", "pulse width", "pwm rate", "pwm depth", "cutoff", "resonance", "env depth", "attack", "release"}, --moonunit [two]
-  {"note length", "velocity", "channel", "device"}, --midi
-  {"amplitude", "attack", "decay"}, --crow 1+2
-  {"amplitude", "attack", "decay"}, --crow 3+4
-  {"mode", "level", "voice"}, --crow ii jf
-  {"mode", "level", "curve", "ramp", "lpg time", "lpg sym", "fm index", "fm env", "fm num", "fm den"} --crow ii wsyn
+  {"main   level", "pan", "formant   level", "pulse   level", "noise   level", "noise   crackle",
+  "formant   shape", "formant   curve", "formant   type", "formant   width",
+  "pulse   tune", "pulse   width", "pwm   rate", "pwm   depth", "lpf   cutoff", "lpf   resonance",
+  "env   depth", "hpf   cutoff", "attack", "release", "vibrato   rate", "vibrato   depth"}, --polyform [one]
+  {"main   level", "pan", "formant   level", "pulse   level", "noise   level", "noise   crackle",
+  "formant   shape", "formant   curve", "formant   type", "formant   width",
+  "pulse   tune", "pulse   width", "pwm   rate", "pwm   depth", "lpf   cutoff", "lpf   resonance",
+  "env   depth", "hpf   cutoff", "attack", "release", "vibrato   rate", "vibrato   depth"}, --polyform [two]
+  {"note   length", "velocity", "device", "channel"}, --midi
+  {"amplitude", "shape", "attack", "decay"}, --crow 1+2
+  {"amplitude", "shape", "attack", "decay"}, --crow 3+4
+  {"level", "voice"}, --crow ii jf
+  {"mode", "level", "curve", "ramp", "lpg   time", "lpg   sym", "fm   index", "fm   env", "fm   num", "fm   den"} --crow ii wsyn
 }
 
-param_focus = {}
+voice_param_focus = {}
 for i = 1, NUM_VOICES do
-  param_focus[i] = 1
+  voice_param_focus[i] = 1
 end
+
+pattern_param_focus = 1
+pattern_e2_params = {"patterns_meter_", "patterns_launch_", "patterns_playback_"}
+pattern_e3_params = {"patterns_beatnum_", "patterns_quantize_", ""}
+pattern_e2_names = {"meter", "launch", "playback"}
+pattern_e3_names = {"length", "quantize", ""}
 
 -------- scales --------
-root_oct = 3
-scale_notes = {}
-note_map = {}
-chord_map = {}
-for i = 1, 12 do
-  chord_map[i] = {}
-end
-chord_inversion = 0
-
--- note viz stuff
-notenum_w = {24, 26, 28, 29, 31, 33, 35}
-notenum_ba = {25, 27}
-notenum_bb = {30, 32, 34}
-
-noteis_w = {}
-noteis_ba = {}
-noteis_bb = {}
-
 function build_scale()
-  local root = params:get("root_note") % 12 + 24
-  root_oct = math.floor((params:get("root_note") - root) / 12)
-  scale_notes = mu.generate_scale_of_length(root, params:get("scale"), 50)
-  local num_to_add = 50 - #scale_notes
-  for i = 1, num_to_add do
-    table.insert(scale_notes, scale_notes[50 - num_to_add])
-  end
-  set_root()
-  set_keys()
+  root_base = root_note % 12 + 24
+  root_oct = math.floor((root_note - root_base) / 12)
+  scale_notes = mu.generate_scale_of_length(root_base, current_scale, 50)
+  notes_home = tab.key(scale_notes, root_note)
+  set_note_viz()
 end
 
-function build_scale_map()
-  note_map = mu.generate_scale_of_length(0, params:get("scale"), 100)
-  local num_to_add = 100 - #scale_notes
-  for i = 1, num_to_add do
-    table.insert(scale_notes, scale_notes[100 - num_to_add])
-  end
-end
-
-function build_chord_map()
-  for i = 1, 12 do
-    local note_num = 60 + (i - 1)
-    chord_map[i] = {}
-    chord_map[i] = mu.chord_types_for_note(note_num, params:get("root_note") % 12 + 24, scale_names[params:get("scale")])
-    --print("note"..mu.note_num_to_name(note_num))
-    --tab.print(chord_map[i])
-  end
-  set_chords()
-end
-
-function build_strum(notes)
-  if #notes > 0 then
-    chord_arp = {table.unpack(notes)}
-    for i = 1, strum_num - 3 do
-      table.insert(chord_arp, chord_arp[i] + 12)
-    end
-  end
-end
-
-function set_root()
-  notes.home = tab.key(scale_notes, params:get("root_note"))
-  for i = 1, 12 do
-    if i == params:get("root_note") % 12 + 1 then
-      notes.root[i] = true
-    else
-      notes.root[i] = false
-    end
-  end
-end
-
-function set_keys() -- set which keys to display
-  for i = 1, 12 do
-    if notelookup(i + 23) then
-      notes.key[i] = true
-    else
-      notes.key[i] = false
-    end
-  end
-  noteis_w = {}
-  noteis_ba = {}
-  noteis_bb = {}
+function set_note_viz()
+  noteis_w = {} -- white keys
+  noteis_b1 = {} -- C#, D#
+  noteis_b1sym = {}
+  noteis_b2 = {} -- F#, G#, A#
+  noteis_b2sym = {}
   for i, v in ipairs(notenum_w) do
     table.insert(noteis_w, notelookup(v))
   end
-  for i, v in ipairs(notenum_ba) do
-    table.insert(noteis_ba, notelookup(v))
+  for i, v in ipairs(notenum_b1) do
+    table.insert(noteis_b1, notelookup(v))
   end
-  for i, v in ipairs(notenum_bb) do
-    table.insert(noteis_bb, notelookup(v))
-  end
-end
-
-function set_chords()
-  local off = GRIDSIZE == 128 and 0 or 8
-  for i = 1, 12 do
-    local x = i + 2
-    for y = 5 + off, 7 + off do
-      gkey[x][y].chord = false
-    end
-    if #chord_map[i] > 1 then
-      for index, value in ipairs(chord_map[i]) do
-        if value == "Major" then
-          gkey[x][5 + off].chord = true
-        elseif value == "Minor" then
-          gkey[x][6 + off].chord = true
-        elseif value == "Sus4" then
-          gkey[x][7 + off].chord = true
-        end
-      end
-    end
+  for i, v in ipairs(notenum_b2) do
+    table.insert(noteis_b2, notelookup(v))
   end
 end
 
 function notelookup(note) -- check if note is in the selected scale
-   for i = 1, 12 do
-     for j = 0, 1 do -- iterate over two octaves
-        if scale_notes[i] == note + j * 12 then
-           return true
-        end
+  for i = 1, 12 do
+    for j = 0, 1 do -- iterate over two octaves
+       if scale_notes[i] == note + j * 12 then
+          return true
+       end
+     end
+  end
+  return false
+end
+
+function kill_held_notes(focus)
+  if #notes_held > 0 then
+    for _, note in ipairs(notes_held) do
+      mute_voice(voice[focus].output, note)
+      --print(voice.." "..note)
+    end
+    notes_held = {}
+  end
+end
+
+function build_chords()
+  for i = 1, 12 do
+    local root = 59 + i
+    local chord_type = {"Major", "Minor", "Sus4", "Diminished", "Major 7", "Minor 7", "Augmented"}
+    for t = 1, 7 do
+      for n = 1, 4 do
+        chord[i].notes[t][n] = mu.generate_chord(root, chord_type[t], n - 1)
       end
-   end
-   return false
+      chord[i].strum[t] = {table.unpack(chord[i].notes[t][1])}
+      for note = 1, 12 do
+        table.insert(chord[i].strum[t], chord[i].strum[t][note] + 12)
+      end
+    end
+  end
+end
+
+function kill_chord()
+  if #current_chord > 0 then
+    for index, value in ipairs(current_chord) do
+      local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = value, action = "note_off"} event(e)
+    end
+    current_chord = {}
+    notes_held = {}
+  end
+end
+
+function play_chord(i)
+  local i = i or last_chord_root
+  local chord_type = get_chord_type(i + 2)
+  if chord[i].is[chord_type] or chord_any then
+    kill_chord()
+    -- set chord and strum notes
+    current_chord = {}
+    for _, value in ipairs(chord[i].notes[chord_type][chord_inversion]) do
+      table.insert(current_chord, value + (12 * notes_oct_key[key_focus]))
+      table.insert(notes_held, value + (12 * notes_oct_key[key_focus]))
+    end
+    chord_arp = {}
+    for _, value in ipairs(chord[i].strum[chord_type]) do
+      table.insert(chord_arp, value + (12 * notes_oct_key[key_focus]))
+    end
+    -- play chord
+    if chord_play and #current_chord > 0 and not key_repeat then
+      local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
+      for index, value in ipairs(current_chord) do
+        chord[index].event = {t = eKEYS, p = p, i = key_focus, note = value, action = "note_on"} event(chord[index].event)
+      end
+    end
+    -- strum chord
+    if chord_strum then
+      if strum_clock ~= nil then
+        clock.cancel(strum_clock)
+      end
+      strum_clock = clock.run(autostrum)
+    end
+    -- collect or append notes to seq
+    if collecting_notes and not appending_notes then
+      for i, v in ipairs(current_chord) do
+        table.insert(collected_notes, v)
+      end
+    elseif appending_notes and not collecting_notes then
+      for i, v in ipairs(current_chord) do
+        table.insert(seq_notes, v)
+      end
+    end
+    -- play seq
+    if seq_active and not (collecting_notes or appending_notes) then
+      if #chord_arp > 0 then
+        seq_notes = {}
+        for note = chord_inversion, strum_count + chord_inversion do
+          table.insert(seq_notes, chord_arp[note])
+        end
+        if heldkey_key > 0 then
+          trig_step = 0
+        end
+        seq_step = 0
+      end
+    end
+  end
 end
 
 function get_chord_type(x)
   local off = GRIDSIZE == 128 and 8 or 0
   if gkey[x][13 - off].active and gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return "Augmented"
+    return 7 --"Augmented"
   elseif not gkey[x][13 - off].active and gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return "Minor 7"
+    return 6 --"Minor 7"
   elseif gkey[x][13 - off].active and not gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return "Major 7"
+    return 5 --"Major 7"
   elseif gkey[x][13 - off].active and gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return "Diminished"
+    return 4 --"Diminished"
   elseif not gkey[x][13 - off].active and gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return "Minor"
+    return 2 --"Minor"
   elseif gkey[x][13 - off].active and not gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return "Major"
+    return 1 --"Major"
   elseif not gkey[x][13 - off].active and not gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return "Sus4"
+    return 3 --"Sus4"
+  end
+end
+
+function build_chord_map()
+  for i = 1, 12 do
+    local note_num = 59 + i
+    chord[i].map = {}
+    chord[i].map = mu.chord_types_for_note(note_num, root_base, scale_names[current_scale])
+    --print("note"..mu.note_num_to_name(note_num))
+    --tab.print(chord[i].map)
+  end
+  set_chord_viz()
+end
+
+function set_chord_viz()
+  local off = GRIDSIZE == 128 and 0 or 8
+  for i = 1, 12 do
+    local x = i + 2
+    for y = 5 + off, 7 + off do
+      gkey[x][y].chord_viz = 0
+    end
+    for t = 1, 7 do
+      chord[i].is[t] = false
+    end
+    if #chord[i].map > 0 then
+      if tab.contains(chord[i].map, "Augmented") then
+        gkey[x][5 + off].chord_viz = 2
+        gkey[x][6 + off].chord_viz = 2
+        gkey[x][7 + off].chord_viz = 2
+        chord[i].is[7] = true
+      end
+      if tab.contains(chord[i].map, "Diminished") then
+        gkey[x][5 + off].chord_viz = 2
+        gkey[x][6 + off].chord_viz = 2
+        chord[i].is[4] = true
+      end
+      if tab.contains(chord[i].map, "Major") then
+        gkey[x][5 + off].chord_viz = 9
+        chord[i].is[1] = true
+      end
+      if tab.contains(chord[i].map, "Minor") then
+        gkey[x][6 + off].chord_viz = 9
+        chord[i].is[2] = true
+      end
+      if tab.contains(chord[i].map, "Sus4") then
+        gkey[x][7 + off].chord_viz = 9
+        chord[i].is[3] = true
+      end
+      if tab.contains(chord[i].map, "Major 7") then
+        if tab.contains(chord[i].map, "Sus4") then
+          gkey[x][7 + off].chord_viz = 6
+        else
+          gkey[x][7 + off].chord_viz = 3
+        end
+        chord[i].is[5] = true
+      end
+      if tab.contains(chord[i].map, "Minor 7") then
+        if tab.contains(chord[i].map, "Sus4") then
+          gkey[x][7 + off].chord_viz = 6
+        else
+          gkey[x][7 + off].chord_viz = 3
+        end
+        chord[i].is[6] = true
+      end
+    end
   end
 end
 
 function set_scale()
   build_scale()
-  build_scale_map()
   build_chord_map()
+  dirtyscreen = true
 end
 
--------- voice settings --------
-function set_voice_output()
-  local count = 0
+------- voice settings --------
+function manage_ii()
+  local num_ii = 0
   for i = 1, NUM_VOICES do
-    voice[i].output = params:get("voice_out"..i)
     if voice[i].output == 6 then
-      count = count + 1
+      num_ii = num_ii + 1
     end
     if voice[i].output == 7 then
       crow.ii.wsyn.voices(4)
     end
   end
-  if count > 0 then
+  if num_ii > 0 then
     crow.ii.jf.mode(1)
   else
     crow.ii.jf.mode(0)
@@ -413,42 +603,59 @@ function set_defaults()
 end
 
 function set_my_defaults()
+  -- set midi 2host ch1
+  params:set("glb_midi_in_device", 3)
+  params:set("glb_midi_in_channel", 1)
+  params:set("glb_midi_out_device", 3)
+  params:set("glb_midi_out_channel", 1)
+  -- set kit midi 2host ch 7
+  params:set("kit_out_device", 3)
+  params:set("kit_midi_channel", 7)
+  -- voice settings:
   params:set("voice_out1", 1)
   params:set("voice_out2", 2)
+  -- midi out 2host ch 8
   params:set("voice_out3", 3)
-  params:set("midi_channel3", 4)
+  params:set("midi_device3", 3)
+  params:set("midi_channel3", 8)
+  -- analog 4 t1
   params:set("voice_out4", 3)
+  params:set("midi_device4", 1)
   params:set("midi_channel4", 5)
+  -- analog 4 t2
   params:set("voice_out5", 3)
+  params:set("midi_device5", 1)
   params:set("midi_channel5", 6)
-  params:set("voice_out6", 9)
+  -- prophet 6
+  params:set("voice_out6", 3)
+  params:set("midi_device6", 1)
+  params:set("midi_channel6", 4)
 end
 
 
--------- pattern recording --------
 
--- exec function
+-------- pattern recording --------
 function event_exec(e)
   if e.t == eSCALE then
-    local octave = (root_oct - e.root) * (#scale_intervals[params:get("scale")] - 1)
+    local octave = (root_oct - e.root) * (#scale_intervals[current_scale] - 1)
     local idx = util.clamp(e.note + transpose_value + octave, 1, #scale_notes)
     local note_num = scale_notes[idx]
-    if e.action == "note_off" and params:get("note_length"..e.i) == 0 then
+    if e.action == "note_off" and voice[e.i].length == 0 then
       mute_voice(e.i, note_num)
       remove_active_notes(e.p, e.i, note_num)
     elseif e.action == "note_on" then
       play_voice(e.i, note_num)
       add_active_notes(e.p, e.i, note_num)
-      notes.viz = note_num
+      notes_viz = note_num
     end
   elseif e.t == eKEYS then
-    if e.action == "note_off" and params:get("note_length"..e.i) == 0 then
+    if e.action == "note_off" and voice[e.i].length == 0 then
       mute_voice(e.i, e.note)
       remove_active_notes(e.p, e.i, e.note)
     elseif e.action == "note_on" then
       play_voice(e.i, e.note)
       add_active_notes(e.p, e.i, e.note)
-      notes.viz = e.note
+      notes_viz = e.note
     end
   elseif e.t == eDRUMS then
     play_voice(e.i, e.note, e.vel)
@@ -457,7 +664,7 @@ function event_exec(e)
       mute_voice(e.i, e.note)
     end)
   elseif e.t == eTRSP_SCALE then
-    local home_note = tab.key(scale_notes, params:get("root_note"))
+    local home_note = tab.key(scale_notes, root_note)
     transpose_value = util.clamp(transpose_value + e.interval, -home_note + 1, #scale_notes - home_note)
     if e.interval == 0 then
       transpose_value = 0
@@ -465,36 +672,34 @@ function event_exec(e)
   elseif e.t == eMIDI then
     if e.dest == 0 then
       if e.action == "note_on" then
-        if params:get("glb_midi_in_quantization") == 2 then
+        if midi_in_quant then
           e.note = mu.snap_note_to_array(e.note, note_map)
         end
         m[midi_out_dev]:note_on(e.note, e.vel, e.ch)
         add_active_notes(e.p, 7, e.note)
       elseif e.action == "note_off" then
-        if params:get("glb_midi_in_quantization") == 2 then
+        if midi_in_quant then
           e.note = mu.snap_note_to_array(e.note, note_map)
         end
         m[midi_out_dev]:note_off(e.note, 0, e.ch)
         remove_active_notes(e.p, 7, e.note)
       end
     elseif e.dest > 0 then
-      if params:get("glb_midi_in_quantization") == 2 then
+      if midi_in_quant then
         e.note = mu.snap_note_to_array(e.note, note_map)
       end
       if e.action == "note_on" then
         play_voice(e.dest, e.note, e.vel)
         add_active_notes(e.p, e.dest, e.note)
-        notes.viz = e.note
+        notes_viz = e.note
       elseif e.action == "note_off" then
         mute_voice(e.dest, e.note, e.vel)
         remove_active_notes(e.p, e.dest, e.note)
       end
     end
-  elseif e.t == eSMPL then
-    if e.action == "play" then
-      smpls.play(e.bank, e.slot)
-      smpls.gridviz(e.bank, e.slot)
-    end
+  elseif e.t == eKIT then
+    play_kit(e.note)
+    kit_gridviz(e.note)
   end
   dirtyscreen = true
 end
@@ -506,10 +711,10 @@ for i = 1, 8 do
   pattern[i].start_callback = function() step_one_indicator(i) set_pattern_length(i) kill_active_notes(i) end
   pattern[i].end_of_loop_callback = function() set_pattern_bank(i) end
   pattern[i].end_of_rec_callback = function() clock.run(function() clock.sleep(0.2) save_pattern_bank(i, p[i].bank) end) end
-  pattern[i].end_callback = function() kill_active_notes(i) dirtygrid = true end
+  pattern[i].end_callback = function() kill_active_notes(i) dirtygrid = true  end
   pattern[i].step_callback = function() if (pattern_view or GRIDSIZE == 256) then dirtygrid = true end end
   pattern[i].active_notes = {}
-  for voice = 1, NUM_VOICES + 1 do
+  for voice = 1, NUM_VOICES do
     pattern[i].active_notes[voice] = {}
   end
 end
@@ -521,7 +726,7 @@ function event_record(e)
 end
 
 function event(e)
-  if key_quantize and not key_repeat then
+  if key_quantize and not (key_repeat or seq_active) then
     table.insert(quant_event, e)
   else
     event_record(e)
@@ -545,7 +750,6 @@ end
 p = {}
 for i = 1, 8 do
   p[i] = {}
-  p[i].key_flash = false
   p[i].bank = 1
   p[i].load = nil
   p[i].looping = false
@@ -590,12 +794,22 @@ function deep_copy(tbl)
   return ret
 end
 
+function num_rec_enabled()
+  local num_enabled = 0
+  for i = 1, 8 do
+    if pattern[i].rec_enabled > 0 then
+      num_enabled = num_enabled + 1
+    end
+  end
+  return num_enabled
+end
+
 function step_one_indicator(i)
-  p[i].key_flash = true
+  pattern[i].pulse_key = true
   dirtygrid = true
   clock.run(function()
-    clock.sleep(0.1)
-    p[i].key_flash = false
+    clock.sleep(1/15)
+    pattern[i].pulse_key = false
     dirtygrid = true
   end) 
 end
@@ -658,13 +872,17 @@ function clear_pattern_loops()
 end
 
 function add_active_notes(i, voice, note_num)
-  table.insert(pattern[i].active_notes[voice], note_num)
+  if i ~= nil then
+    table.insert(pattern[i].active_notes[voice], note_num)
   --tab.print(pattern[i].active_notes[voice])
+  end
 end
 
 function remove_active_notes(i, voice, note_num)
-  table.remove(pattern[i].active_notes[voice], tab.key(pattern[i].active_notes[voice], note_num))
+  if i ~= nil then
+    table.remove(pattern[i].active_notes[voice], tab.key(pattern[i].active_notes[voice], note_num))
   --tab.print(pattern[i].active_notes[voice])
+  end
 end
 
 function kill_active_notes(i)
@@ -685,23 +903,21 @@ function paste_seq_pattern(i)
     for n = 1, #seq_notes do
       local s = math.floor((n - 1) * (seq_rate * 64) + 1)
       local t = math.floor(s + (seq_rate * 64) - 1)
-      --print("s = "..s.." t = "..t)
       if seq_notes[n] > 0 then
         if not pattern[i].event[s] then
           pattern[i].event[s] = {}
         end
-        if params:get("keys_option"..key_focus) == 1 then
+        if voice[key_focus].keys_option == 1 then
           local e = {t = eSCALE, p = pattern_focus, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_on"}
           table.insert(pattern[i].event[s], e)
         else
           local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = seq_notes[n], action = "note_on"}
           table.insert(pattern[i].event[s], e)
         end
-
         if not pattern[i].event[t] then
           pattern[i].event[t] = {}
         end
-        if params:get("keys_option"..key_focus) == 1 then
+        if voice[key_focus].keys_option == 1 then
           local e = {t = eSCALE, p = pattern_focus, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_off"}
           table.insert(pattern[i].event[t], e)
         else
@@ -717,15 +933,15 @@ function paste_seq_pattern(i)
     pattern[i].manual_length = true
     save_pattern_bank(i, p[i].bank)
   else
-    show_message("seq pattern empty")
+    print("seq pattern empty")
   end
 end
 
 function set_pattern_params(i)
-  params:set("patterns_playback"..i, pattern[i].loop == 1 and 1 or 2)
-  params:set("patterns_quantize"..i, tab.key(options.pattern_quantize_value, pattern[i].quantize))
-  params:set("patterns_beatnum"..i, math.floor(pattern[i].beatnum / 4))
-  params:set("patterns_meter"..i, tab.key(options.meter_val, pattern[i].meter))
+  params:set("patterns_playback_"..i, pattern[i].loop == 1 and 1 or 2)
+  params:set("patterns_quantize_"..i, tab.key(options.pattern_quantize_value, pattern[i].quantize))
+  params:set("patterns_beatnum_"..i, math.floor(pattern[i].beatnum / 4))
+  params:set("patterns_meter_"..i, tab.key(options.meter_val, pattern[i].meter))
 end
 
 function copy_pattern(src, src_bank, dst, dst_bank)
@@ -831,22 +1047,25 @@ function midi.add()
 end
 
 function midi.remove()
-  clock.run(
-    function()
-      clock.sleep(0.2)
-      build_midi_device_list()
-    end
-  )
+  clock.run(function()
+    clock.sleep(0.2)
+    build_midi_device_list()
+  end)
+end
+
+function clock.tempo_change_handler(tempo)
+  midi_thru_dur = 60/tempo * 1/4
 end
 
 function clock.transport.start()
-  --?? what here / ideas ??
+  seq_step = 0
+  trig_step = 0
+  counter = 3
 end
 
 function clock.transport.stop()
   for i = 1, 8 do
-    pattern[i]:stop()
-    --pattern[i]:end_playback()
+    pattern[i]:end_playback()
   end
   seq_active = false
   seq_step = 0
@@ -868,9 +1087,9 @@ end
 
 function midi_events(data)
   local msg = midi.to_msg(data)
-  if msg.ch == midi_in_ch then
-    if msg.type == "note_on" or msg.type == "note_off" then
-      local e = {t = eMIDI, p = pattern_focus, action = msg.type, note = msg.note, vel = msg.vel, ch = midi_out_ch, dest = midi_in_dest} event(e)
+  if msg.type == "program_change" then -- use program change to load psets
+    if msg.ch == 1 then
+      params:read(msg.val + 1)
     end
   end
 end
@@ -880,51 +1099,56 @@ function set_midi_event_callback()
   m[midi_in_dev].event = midi_events
 end
 
-
 -------- clock coroutines --------
-
 function ledpulse_fast()
-  while true do
-    clock.sync(1/4)
-    ledfast = ledfast == 8 and 12 or 8
-    for i = 1, 8 do
-      if pattern[i].rec == 1 then
-        dirtygrid = true
-      end
-    end
-  end
-end
-
-function ledpulse_slow()
-  ledslow = util.wrap(ledslow + 1, 4, 12)
+  pulse_key_fast = pulse_key_fast == 8 and 12 or 8
   for i = 1, 8 do
-    if (p[i].load or copy_src) then
+    if pattern[i].rec == 1 then
       dirtygrid = true
     end
   end
 end
 
-function barpulse()
+function ledpulse_mid()
+  pulse_key_mid = util.wrap(pulse_key_mid + 1, 4, 12)
+  if (trigs_config_view or transposing) then
+    dirtygrid = true
+  end
+end
+
+function ledpulse_slow()
+  pulse_key_slow = util.wrap(pulse_key_slow + 1, 4, 12)
+  for i = 1, 8 do
+    if p[i].load then
+      dirtygrid = true
+    end
+  end
+  if (copy_src or latch_key_repeat or sequencer_config or pattern_clear) then
+    dirtygrid = true
+  end
+end
+
+function ledpulse_bar()
   while true do
     clock.sync(4)
-    flash_bar = true
+    pulse_bar = true
     dirtygrid = true
     clock.run(function()
-      clock.sleep(0.1)
-      flash_bar = false
+      clock.sleep(1/30)
+      pulse_bar = false
       dirtygrid = true
     end)
   end
 end
 
-function beatpulse()
+function ledpulse_beat()
   while true do
     clock.sync(1)
-    flash_beat = true
+    pulse_beat = true
     dirtygrid = true
     clock.run(function()
-      clock.sleep(0.1)
-      flash_beat = false
+      clock.sleep(1/30)
+      pulse_beat = false
       dirtygrid = true
     end)
   end
@@ -934,17 +1158,11 @@ function set_metronome(mode)
   if mode == 1 then
     clock.cancel(barviz)
     clock.cancel(beatviz)
+    hide_metronome = true
   else
-    barviz = clock.run(barpulse)
-    beatviz = clock.run(beatpulse)
-  end
-end
-
-function toggle_seq()
-  seq_active = not seq_active
-  seq_step = 0
-  if not seq_active then
-    seq_notes = {}
+    barviz = clock.run(ledpulse_bar)
+    beatviz = clock.run(ledpulse_beat)
+    hide_metronome = false
   end
 end
 
@@ -954,73 +1172,104 @@ function run_seq()
     if seq_step >= #seq_notes then
       seq_step = 0
     end
-    seq_step = seq_step + 1
     if #seq_notes > 0 and seq_active then
-      if seq_notes[seq_step] > 0 then
+      if trig_step >= trigs[trigs_focus].step_max then
+        trig_step = 0
+      end
+      trig_step = trig_step + 1
+      seq_step = seq_step + 1
+      if seq_notes[seq_step] > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
         local current_note = seq_notes[seq_step]
-        if params:get("keys_option"..key_focus) == 1 then
-          local e = {t = eSCALE, p = pattern_focus, i = key_focus, root = root_oct, note = current_note, action = "note_on"} event(e)
-        elseif params:get("keys_option"..key_focus) == 2 or params:get("keys_option"..key_focus) == 3 then
-          local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = current_note, action = "note_on"} event(e)
-        end
-        if params:get("keys_option"..key_focus) == 1 then
+        local p = pattern[pattern_focus].rec == 1 and pattern_focus or nil
+        if voice[key_focus].keys_option == 1 then
+          local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = current_note, action = "note_on"} event(e)
           clock.run(function()
-            clock.sync(seq_rate)
-            local e = {t = eSCALE, p = pattern_focus, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
+            clock.sync(seq_rate / 2)
+            local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
           end)
-        elseif params:get("keys_option"..key_focus) == 2 or params:get("keys_option"..key_focus) == 3 then
+        elseif voice[key_focus].keys_option == 2 or voice[key_focus].keys_option == 3 then
+          local e = {t = eKEYS, p = p, i = key_focus, note = current_note, action = "note_on"} event(e)
           clock.run(function()
-            clock.sync(seq_rate)
-            local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = current_note, action = "note_off"} event(e)
+            clock.sync(seq_rate / 2)
+            local e = {t = eKEYS, p = p, i = key_focus, note = current_note, action = "note_off"} event(e)
           end)    
         end
       end
+      if trigs_config_view then dirtygrid = true end
     end
   end
 end
 
-function run_retrig()
+function run_keyrepeat()
   while true do
     clock.sync(rep_rate)
-    -- note key repeat
-    if key_repeat and #notes.held > 0 then
-      for _, v in ipairs(notes.held) do
-        if params:get("keys_option"..key_focus) == 1 then
-          local e = {t = eSCALE, p = pattern_focus, i = key_focus, root = root_oct, note = v, action = "note_on"} event(e)
-        elseif params:get("keys_option"..key_focus) == 4 then
-          local e = {t = eDRUMS, i = key_focus, note = v, vel = last_velocity} event(e)
-        else
-          local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = v, action = "note_on"} event(e)
+    if key_repeat then
+      if trig_step >= trigs[trigs_focus].step_max then
+        trig_step = 0
+      end
+      trig_step = trig_step + 1
+      if #notes_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
+        for _, v in ipairs(notes_held) do
+          local p = pattern[pattern_focus].rec == 1 and pattern_focus or nil
+          if voice[key_focus].keys_option == 1 then
+            local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = v, action = "note_on"} event(e)
+            clock.run(function()
+              clock.sync(rep_rate / 2)
+              local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = v, action = "note_off"} event(e)
+            end)
+          elseif voice[key_focus].keys_option == 4 then
+            local e = {t = eDRUMS, i = key_focus, note = v, vel = drum_vel_last} event(e)
+          else
+            local e = {t = eKEYS, p = p, i = key_focus, note = v, action = "note_on"} event(e)
+            clock.run(function()
+              clock.sync(rep_rate / 2)
+              local e = {t = eKEYS, p = p, i = key_focus, note = v, action = "note_off"} event(e)
+            end)    
+          end
         end
       end
-    end
-    -- sample key repeat // TODO: revisit this
-    for bank = 1, 5 do
-      if key_repeat and held_sample[bank] > 0 then
-        local e = {t = eSMPL, action = "play", bank = bank, slot = held_sample[bank]} event(e)
+      if #kit_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
+        for _, v in ipairs(kit_held) do
+          local e = {t = eKIT, note = v} event(e)
+        end
       end
+      if trigs_config_view then dirtygrid = true end
     end
-
   end
 end
 
-function autoharp()
-  for i = 1, #chord_arp do
+function autostrum()
+  local rate = strum_rate
+  local endpoint = strum_count + chord_inversion - 1
+  for i = chord_inversion, endpoint do
     local step = i
-    if strum_direction == -1 then
-      step = #chord_arp - (i - 1)
+    local pos = i - chord_inversion + 1
+    if strum_mode == 2 then
+      if pos % 2 == 0 then
+        step = endpoint - pos + 1
+      end
+    elseif strum_mode == 3 then
+      step = math.random(chord_inversion, endpoint)
+    elseif strum_mode == 4 then
+      if pos % 2 ~= 0 then
+        step = endpoint - pos
+      end
+    elseif strum_mode == 5 then
+      step = endpoint - pos + 1
     end
-    local note = chord_arp[step]
-    local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = note, action = "note_on"} event(e)
+    if step > 15 then step = 15 end
+    local note = chord_arp[step] + (12 * chord_oct_shift)
+    local e = {t = eKEYS, p = pattern_focus, i = strum_focus, note = note, action = "note_on"} event(e)
     clock.run(function()
-      clock.sleep(strum_rate)
-      local e = {t = eKEYS, p = pattern_focus, i = key_focus, note = note, action = "note_off"} event(e)
+      clock.sleep(rate)
+      local e = {t = eKEYS, p = pattern_focus, i = strum_focus, note = note, action = "note_off"} event(e)
     end)
-    clock.sleep(strum_rate)
+    clock.sleep(rate)
+    rate = rate - (i * strum_skew * 0.001)
   end
 end
 
-function get_repeat_rate()
+function set_repeat_rate()
   local off = GRIDSIZE == 128 and 0 or 8
   -- get key state
   local key1 = gkey[16][5 + off].active
@@ -1028,6 +1277,9 @@ function get_repeat_rate()
   local key3 = gkey[16][7 + off].active
   local key4 = gkey[16][8 + off].active
   -- get key_repeat state
+  if not key_repeat then
+    trig_step = 0
+  end
   if (key1 or key2 or key3 or key4) then
     key_repeat = true
   else
@@ -1057,16 +1309,141 @@ function get_repeat_rate()
   end
 end
 
+function kit_gridviz(note_num)
+  local n = note_num - (kit_oct * 16) - 47
+  local x = (n > 8 and n - 5 or n + 3)
+  local y = (n > 8 and 1 or 2) + (GRIDSIZE == 128 and 2 or 9)
+  if x > 3 and x < 12 then
+    gkey[x][y].active = true
+    dirtygrid = true
+    clock.run(function()
+      clock.sleep(1/30)
+      gkey[x][y].active = false
+      dirtygrid = true
+    end)
+  end
+end
 
--------- init funtion --------
+-------- playback --------
+function play_voice(i, note_num, vel)
+  local velocity = vel or voice[i].velocity
+  if not voice[i].mute then
+    -- polyform group 1
+    if (voice[i].output == 1 or voice[i].output == 2) then
+      local synth = voice[i].output
+      local offset = synth == 1 and 0 or 4
+      for i, v in ipairs(voicetab[synth]) do
+        if v == 0 then
+          voicenotes[synth][i] = note_num
+          voicetab[synth][i] = 1
+          local freq = mu.note_num_to_freq(note_num)
+          engine.trig(i + offset, freq)
+          table.insert(lastvoice[synth], 1, i)
+          return
+        end
+      end
+      if not tab.contains(voicetab[synth], 0) then
+        local voice = lastvoice[synth][4]
+        voicenotes[synth][voice] = note_num
+        voicetab[synth][voice] = 1
+        local freq = mu.note_num_to_freq(note_num)
+        engine.trig(voice + offset, freq)
+        table.insert(lastvoice[synth], 1, voice)
+      end
+    elseif voice[i].output == 3 then
+      play_midi(i, note_num, velocity, voice[i].midi_ch)
+    -- crow output 1+2
+    elseif voice[i].output == 4 then
+      crow.output[1].volts = ((note_num - 60) / v8_std_1)
+      crow.output[2].action = "ar("..env1_a..", "..env1_r..", "..env1_amp..", "..env1_crv..")"
+      crow.output[2]()
+    -- crow output 3+4
+    elseif voice[i].output == 5 then
+      crow.output[3].volts = ((note_num - 60) / v8_std_2)
+      crow.output[4].action = "ar("..env2_a..", "..env2_r..", "..env2_amp..", "..env2_crv..")"
+      crow.output[4]()
+    -- crow ii jf
+    elseif voice[i].output == 6 then
+      if params:get("jf_mode"..i) == 1 then
+        crow.ii.jf.play_voice(voice[i].jf_ch, ((note_num - 60) / 12), voice[i].jf_amp)
+      else
+        crow.ii.jf.play_note(((note_num - 60) / 12), voice[i].jf_amp)
+      end
+    elseif voice[i].output == 7 then
+      crow.ii.wsyn.play_note(((note_num - 60) / 12), wsyn_amp)
+    elseif voice[i].output > 7 then
+      play_nb(voice[i].output - 7, note_num, util.linlin(1, 127, 0, 1, velocity))
+    end
+    if midi_thru then
+      local channel = midi_out_ch + i - 1
+      play_midi(midi_out_dev, note_num, velocity, channel, midi_thru_dur)
+    end
+  end
+end
+
+function play_midi(i, note_num, velocity, channel, duration)
+  local duration = duration or voice[i].length
+  m[i]:note_on(note_num, velocity, channel)
+  if duration > 0 then
+    clock.run(function()
+      clock.sleep(duration)
+      m[i]:note_off(note_num, 0, channel)
+    end)
+  end
+end
+
+function play_nb(i, note_num, velocity)
+  local player = params:lookup_param("nb_"..i):get_player()
+  player:note_on(note_num, velocity)
+  if voice[i].length > 0 then
+    clock.run(function()
+      clock.sleep(voice[i].length)
+      player:note_off(note_num)
+    end)
+  end
+end
+
+function play_kit(note_num)
+  m[kit_midi_dev]:note_on(note_num, kit_velocity, kit_midi_ch)
+  clock.run(function()
+    clock.sync(1/8)
+    m[kit_midi_dev]:note_off(note_num, 0, kit_midi_ch)
+  end)
+end
+
+function mute_voice(i, note_num)
+  if voice[i].output == 1 or voice[i].output == 2 then
+    free_voice(voice[i].output, note_num)
+  elseif voice[i].output == 3 then
+    m[i]:note_off(note_num, 0, voice[i].midi_ch)
+  elseif voice[i].output > 7 then
+    local player = params:lookup_param("nb_"..(voice[i].output - 7)):get_player()
+    player:note_off(note_num)
+  end
+end
+
+function free_voice(i, note_num)
+  if tab.contains(voicenotes[i], note_num) then
+    local offset = i == 1 and 0 or 4
+    local voice = tab.key(voicenotes[i], note_num)
+    engine.stop(voice + offset)
+    voicetab[i][voice] = 0
+    voicenotes[i][voice] = 0
+    if not tab.contains(voicetab[i], 1) then
+      lastvoice[i] = {}
+    end
+  end
+end
+
+
 function init()
-  -- get eng to softcut level
-  eng_level = params:get("cut_input_eng")
-  params:set("cut_input_eng", -inf)
-
   -- calc grid size
   get_grid_size()
-  
+
+  -- get eng to softcut level
+  --eng_level = params:get("cut_input_eng")
+  --params:set("cut_input_eng", -inf)
+
   -- nb
   nb:init()
 
@@ -1082,28 +1459,34 @@ function init()
     scale_intervals[i] = {table.unpack(mu.SCALES[i].intervals)}
   end
 
-  build_midi_device_list()
+  -- populate chord tables
+  build_chords()
 
+  -- build midi device list
+  build_midi_device_list()
+ 
   -- global params
   params:add_separator("global_settings", "global")
+
   params:add_option("scale", "scale", scale_names, 2)
-  params:set_action("scale", function() set_scale() dirtygrid = true end)
+  params:set_action("scale", function(val) current_scale = val set_scale() dirtygrid = true end)
 
   params:add_number("root_note", "root note", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
-  params:set_action("root_note", function() set_scale() dirtygrid = true end)
+  params:set_action("root_note", function(val) root_note = val set_scale() dirtygrid = true end)
 
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
   params:set_action("metronome_viz", function(mode) set_metronome(mode) end)
-
+        
   params:add_option("key_quant_value", "key quantization", options.key_quant, 7)
   params:set_action("key_quant_value", function(idx) quant_rate = options.quant_value[idx] * 4 end)
   params:hide("key_quant_value")
-
+  
   params:add_option("key_seq_rate", "seq rate", options.key_quant, 7)
   params:set_action("key_seq_rate", function(idx) seq_rate = options.quant_value[idx] * 4 end)
   params:hide("key_seq_rate")
 
-  params:add_group("global_midi_group", "midi settings", 11)
+
+  params:add_group("global_midi_group", "midi settings", 10)
 
   params:add_separator("glb_midi_in_params", "midi in")
 
@@ -1114,6 +1497,7 @@ function init()
   params:set_action("glb_midi_in_channel", function(val) notes_off(midi_in_dev) midi_in_ch = val end)
 
   params:add_option("glb_midi_in_quantization", "map to scale", {"no", "yes"}, 1)
+  params:set_action("glb_midi_in_quantization", function(mode) midi_in_quant = mode == 2 and true or false end)
 
   params:add_option("glb_midi_in_destination", "send midi to..", {"midi out", "voice 1", "voice 2", "voice 3", "voice 4", "voice 5", "voice 6"})
   params:set_action("glb_midi_in_destination", function(dest) midi_in_dest = dest - 1 end)
@@ -1129,56 +1513,107 @@ function init()
   params:add_option("glb_midi_thru", "mirror voices", {"no", "yes"}, 1)
   params:set_action("glb_midi_thru", function(val) midi_thru = val == 2 and true or false end)
 
-  params:add_control("note_length7", "note length", controlspec.new(0, 2, "lin", 0.01, 0.2, ""), function(param) return param:get() == 0 and "as played" or param:get().." s" end)
-  params:set_action("note_length7", function(val) voice[midi_out_dev].length = val end)
-  params:hide("note_length7")
-
   params:add_binary("glb_midi_panic", "don't panic", "trigger", 0)
   params:set_action("glb_midi_panic", function() all_notes_off() end)
 
-  params:add_group("keyboard_group", "keyboard settings", 12)
+
+  params:add_group("keyboard_group", "keyboard settings", 21)
 
   params:add_separator("scale_keys", "scale keys")
+
   params:add_number("scale_keys_y", "interval [y]", 1, 6, 4)
-  params:set_action("scale_keys_y", function(val) sc_iy = val - 1 dirtygrid = true end)
+  params:set_action("scale_keys_y", function(val) scalekeys_y = val - 1 dirtygrid = true end)
 
   params:add_separator("chrom_keys", "chromatic keys")
+
   params:add_number("chrom_keys_x", "interval [x]", 1, 6, 1)
-  params:set_action("chrom_keys_x", function(val) ch_ix = val dirtygrid = true end)
-  params:add_number("chrom_keys_y", "interval [y]", 1, 6, 4)
-  params:set_action("chrom_keys_y", function(val) ch_iy = val dirtygrid = true end)
+  params:set_action("chrom_keys_x", function(val) chromakeys_x = val dirtygrid = true end)
+
+  params:add_number("chrom_keys_y", "interval [y]", 1, 6, 5)
+  params:set_action("chrom_keys_y", function(val) chromakeys_y = val dirtygrid = true end)
 
   params:add_separator("chord_keys", "chord keys")
-  params:add_number("arp_length", "arp length", 4, 12, 6)
-  params:set_action("arp_length", function(val) strum_num = val end)
+
+  params:add_option("chord_limit", "limit to scale", {"no", "yes"}, 2)
+  params:set_action("chord_limit", function(mode) chord_any = mode == 1 and true or false end)
+
+  params:add_number("strm_length", "strum length", 4, 12, 6, function(param) return round_form((param:get()), 1,"notes") end)
+  params:set_action("strm_length", function(val) strum_count = val end)
+
+  params:add_option("strm_mode", "strum mode", {"up", "alt lo", "random", "alt hi", "down"}, 1)
+  params:set_action("strm_mode", function(val) strum_mode = val end)
+
+  params:add_number("strm_skew", "strum skew", -30, 30, 0, function(param) return round_form((util.linlin(-30, 30, -100, 100, param:get())), 1,"%") end)
+  params:set_action("strm_skew", function(val) strum_skew = val end)
+
+  params:add_number("strm_rate", "strum rate", 4, 100, 20, function(param) return round_form((1 / param:get()), 0.001,"hz") end)
+  params:set_action("strm_rate", function(val) strum_rate = val / 200 end)
 
   params:add_separator("drum_keys", "drumpad keys")
-  params:add_number("drum_root_note", "root note", 0, 127, 0, function(param) return mu.note_num_to_name(param:get(), true) end)
+
+  params:add_number("drum_root_note", "drumpad root note", 0, 127, 0, function(param) return mu.note_num_to_name(param:get(), true) end)
+  params:set_action("drum_root_note", function(val) drum_root_note = val end)
+
   params:add_number("drum_vel_hi", "hi velocity", 1, 127, 100)
+  params:set_action("drum_vel_hi", function(val) drum_vel_hi = val end)
+
   params:add_number("drum_vel_mid", "mid velocity", 1, 127, 64)
+  params:set_action("drum_vel_mid", function(val) drum_vel_mid = val end)
+
   params:add_number("drum_vel_lo", "lo velocity", 1, 127, 32)
+  params:set_action("drum_vel_lo", function(val) drum_vel_lo = val end)
+
+  params:add_separator("kit_keys", "kit keys")
+
+  params:add_option("kit_out_device", "kit out device", midi_devices, 1)
+  params:set_action("kit_out_device", function(val) m[kit_midi_dev] = midi.connect(val) end)
+
+  params:add_number("kit_midi_channel", "kit midi channel", 1, 16, 7)
+  params:set_action("kit_midi_channel", function(val) kit_midi_ch = val end)
+
+  params:add_number("kit_root_note", "kit root note", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
+  params:set_action("kit_root_note", function(val) kit_root_note = val dirtygrid = true end)
+
+  params:add_number("kit_note_velocity", "kit velocity", 1, 127, 100)
+  params:set_action("kit_note_velocity", function(val) kit_velocity = val end)
+
+  params:add_group("octave_params", "octaves", 14)
+  params:hide("octave_params")
+
+  for i = 1, NUM_VOICES do
+    params:add_number("interval_octaves_"..i, "interval octaves", -3, 3, 0)
+    params:set_action("interval_octaves_"..i, function(val) notes_oct_int[i] = val end)
+
+    params:add_number("keys_octaves_"..i, "keys octaves", -3, 3, 0)
+    params:set_action("keys_octaves_"..i, function(val) notes_oct_key[i] = val end)
+  end
+
+  params:add_number("strum_octaves", "strum octaves", -3, 3, 0)
+  params:set_action("strum_octaves", function(val) chord_oct_shift = val end)
+
+  params:add_number("kit_octaves", "kit octaves", -3, 3, 0)
+  params:set_action("kit_octaves", function(val) kit_oct = val end)
 
   -- patterns params
   params:add_group("patterns", "patterns", 48)
   params:hide("patterns")
-
   for i = 1, 8 do
     params:add_separator("patterns_params"..i, "pattern "..i)
 
-    params:add_option("patterns_playback"..i, "playback", options.pattern_play, 1)
-    params:set_action("patterns_playback"..i, function(mode) pattern[i].loop = mode == 1 and 1 or 0 save_pattern_bank(i, p[i].bank) end)
+    params:add_option("patterns_playback_"..i, "playback", options.pattern_play, 1)
+    params:set_action("patterns_playback_"..i, function(mode) pattern[i].loop = mode == 1 and 1 or 0 save_pattern_bank(i, p[i].bank) end)
 
-    params:add_option("patterns_quantize"..i, "quantize", options.pattern_quantize, 7)
-    params:set_action("patterns_quantize"..i, function(idx) pattern[i].quantize = options.pattern_quantize_value[idx] save_pattern_bank(i, p[i].bank) end)
+    params:add_option("patterns_quantize_"..i, "quantize", options.pattern_quantize, 7)
+    params:set_action("patterns_quantize_"..i, function(idx) pattern[i].quantize = options.pattern_quantize_value[idx] save_pattern_bank(i, p[i].bank) end)
 
-    params:add_option("patterns_countin"..i, "count in", options.pattern_countin, 3)
-    params:set_action("patterns_countin"..i, function() save_pattern_bank(i, p[i].bank) end)
+    params:add_option("patterns_launch_"..i, "launch mode", options.pattern_launch, 3)
+    params:set_action("patterns_launch_"..i, function() save_pattern_bank(i, p[i].bank) end)
 
-    params:add_option("patterns_meter"..i, "meter", options.pattern_meter, 3)
-    params:set_action("patterns_meter"..i, function(idx) pattern[i].meter = options.meter_val[idx] update_pattern_length(i) end)
+    params:add_option("patterns_meter_"..i, "meter", options.pattern_meter, 3)
+    params:set_action("patterns_meter_"..i, function(idx) pattern[i].meter = options.meter_val[idx] update_pattern_length(i) end)
 
-    params:add_number("patterns_beatnum"..i, "length", 1, 16, 4, function(param) return param:get()..(param:get() == 1 and " bar" or " bars") end)
-    params:set_action("patterns_beatnum"..i, function(num) pattern[i].beatnum = num * 4 update_pattern_length(i) dirtygrid = true end)
+    params:add_number("patterns_beatnum_"..i, "length", 1, 16, 4, function(param) return param:get()..(param:get() == 1 and " bar" or " bars") end)
+    params:set_action("patterns_beatnum_"..i, function(num) pattern[i].beatnum = num * 4 update_pattern_length(i) dirtygrid = true end)
   end
 
   -- voice params
@@ -1187,13 +1622,13 @@ function init()
     params:add_group("voice_"..i, "voice "..i, 11)
     -- output
     params:add_option("voice_out"..i, "output", options.output, 1)
-    params:set_action("voice_out"..i, function() set_voice_output() build_menu() end)
+    params:set_action("voice_out"..i, function(val) voice[i].output = val manage_ii() build_menu() end)
     -- mute
     params:add_option("voice_mute"..i, "mute", {"off", "on"}, 1)
     params:set_action("voice_mute"..i, function(val) voice[i].mute = val == 2 and true or false dirtygrid = true end)
     -- keyboard
     params:add_option("keys_option"..i, "keyboard type", {"scale", "chromatic", "chords", "drums"}, 1)
-    params:set_action("keys_option"..i, function() dirtygrid = true build_menu() end)
+    params:set_action("keys_option"..i, function(val) voice[i].keys_option = val dirtygrid = true build_menu() end)
 
     -- midi params
     params:add_option("midi_device"..i, "midi device", midi_devices, 1)
@@ -1205,7 +1640,7 @@ function init()
     params:add_number("note_velocity"..i, "velocity", 1, 127, 100)
     params:set_action("note_velocity"..i, function(val) voice[i].velocity = val end)
 
-    params:add_control("note_length"..i, "note length", controlspec.new(0, 2, "lin", 0.01, 0, ""), function(param) return param:get() == 0 and "as played" or param:get().." s" end)
+    params:add_control("note_length"..i, "note length", controlspec.new(0, 2, "lin", 0.01, 0, ""), function(param) return param:get() == 0 and "played" or param:get().." s" end)
     params:set_action("note_length"..i, function(val) voice[i].length = val end)
 
     params:add_binary("midi_panic"..i, "don't panic", "trigger", 0)
@@ -1230,33 +1665,38 @@ function init()
 
   params:add_separator("sound_params", "synthesis & cv")
   -- engine params
-  --moons.add_params()
-  moonunit.add_params()
+  polyform.add_params()
   -- crow params
-  params:add_group("crow_out_1+2", "crow [out 1+2]", 4)
+  params:add_group("crow_out_1+2", "crow [out 1+2]", 5)
   params:add_option("v8_type_1", "v/oct type", {"1 v/oct", "1.2 v/oct"}, 1)
   params:set_action("v8_type_1", function(x) if x == 1 then v8_std_1 = 12 else v8_std_1 = 10 end end)
 
   params:add_control("env1_amplitude", "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
   params:set_action("env1_amplitude", function(value) env1_amp = value end)
 
-  params:add_control("env1_attack", "attack", controlspec.new(0.00, 1, "lin", 0.01, 0.00, "s"))
+  params:add_option("env1_shape", "env shape", env_shapes, 2)
+  params:set_action("env1_shape", function(mode) env1_crv = env_shapes[mode] end)
+
+  params:add_control("env1_attack", "attack", controlspec.new(0.00, 10, "lin", 0.01, 0.00, "s"))
   params:set_action("env1_attack", function(value) env1_a = value end)
 
-  params:add_control("env1_decay", "release", controlspec.new(0.01, 1, "lin", 0.01, 0.4, "s"))
+  params:add_control("env1_decay", "release", controlspec.new(0.01, 10, "lin", 0.01, 0.4, "s"))
   params:set_action("env1_decay", function(value) env1_r = value end)
 
-  params:add_group("crow_out_3+4", "crow [out 3+4]", 4)
+  params:add_group("crow_out_3+4", "crow [out 3+4]", 5)
   params:add_option("v8_type_2", "v/oct type", {"1 v/oct", "1.2 v/oct"}, 1)
   params:set_action("v8_type_2", function(x) if x == 1 then v8_std_2 = 12 else v8_std_2 = 10 end end)
 
   params:add_control("env2_amplitude", "env amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
   params:set_action("env2_amplitude", function(value) env2_amp = value end)
 
-  params:add_control("env2_attack", "attack", controlspec.new(0.00, 1, "lin", 0.01, 0.00, "s"))
+  params:add_option("env2_shape", "env shape", env_shapes, 2)
+  params:set_action("env2_shape", function(mode) env2_crv = env_shapes[mode] end)
+
+  params:add_control("env2_attack", "attack", controlspec.new(0.00, 10, "lin", 0.01, 0.00, "s"))
   params:set_action("env2_attack", function(value) env2_a = value end)
 
-  params:add_control("env2_decay", "release", controlspec.new(0.01, 1, "lin", 0.01, 0.4, "s"))
+  params:add_control("env2_decay", "release", controlspec.new(0.01, 10, "lin", 0.01, 0.4, "s"))
   params:set_action("env2_decay", function(value) env2_r = value end)
 
   -- wsyn
@@ -1267,28 +1707,28 @@ function init()
 
   params:add_control("wsyn_amp", "wsyn level", controlspec.new(0, 10, "lin", 0, 5, "vpp"))
   params:set_action("wsyn_amp", function(level) wsyn_amp = level end)
-  
+
   params:add_control("wsyn_curve", "curve",  controlspec.new(-5, 5, "lin", 0, 5, "v"))
   params:set_action("wsyn_curve", function(v) crow.ii.wsyn.curve(v) end)
-  
+
   params:add_control("wsyn_ramp", "ramp", controlspec.new(-5, 5, "lin", 0, 0, "v"))
   params:set_action("wsyn_ramp", function(v) crow.ii.wsyn.ramp(v) end)
-  
+
   params:add_control("wsyn_lpg_time", "lpg time", controlspec.new(-5, 5, "lin", 0, 0, "v"))
   params:set_action("wsyn_lpg_time", function(v) crow.ii.wsyn.lpg_time(v) end)
-  
+
   params:add_control("wsyn_lpg_sym", "lpg symmetry", controlspec.new(-5, 5, "lin", 0, -5, "v"))
   params:set_action("wsyn_lpg_sym", function(v) crow.ii.wsyn.lpg_symmetry(v) end)
-  
+
   params:add_control("wsyn_fm_index", "fm index", controlspec.new(-5, 5, "lin", 0, 0, "v"))
   params:set_action("wsyn_fm_index", function(v) crow.ii.wsyn.fm_index(v) end)
-  
+
   params:add_control("wsyn_fm_env", "fm envelope", controlspec.new(-5, 5, "lin", 0, 0, "v"))
   params:set_action("wsyn_fm_env", function(v) crow.ii.wsyn.fm_env(v) end)
-  
+
   params:add_number("wsyn_fm_num", "fm ratio num", 1, 16, 1)
   params:set_action("wsyn_fm_num", function(num) crow.ii.wsyn.fm_ratio(num, params:get("wsyn_fm_den")) end)
-  
+
   params:add_number("wsyn_fm_den", "fm ratio denom", 1, 16, 2)
   params:set_action("wsyn_fm_den", function(denom) crow.ii.wsyn.fm_ratio(params:get("wsyn_fm_num"), denom) end)
   -- nb params
@@ -1298,10 +1738,6 @@ function init()
     nb:add_param("nb_"..i, "nb "..name[i].." player")
   end
   nb:add_player_params()
-
-  -- samples params
-  params:add_separator("samples_params", "samples")
-  smpls.init()
 
   -- delay params
   params:add_separator("fx_params", "fx")
@@ -1322,6 +1758,8 @@ function init()
       for i = 1, 8 do
         -- paste data
         pattern_data[i] = {}
+        pattern_data[i].trigs_max = trigs[i].step_max
+        pattern_data[i].trigs_pattern = {table.unpack(trigs[i].pattern)}
         pattern_data[i].bank = p[i].bank
         pattern_data[i].loop = {}
         pattern_data[i].quantize = {}
@@ -1349,6 +1787,7 @@ function init()
   end
 
   params.action_read = function(filename, silent, number)
+    --softcut.buffer_clear()
     local loaded_file = io.open(filename, "r")
     if loaded_file then
       io.input(loaded_file)
@@ -1369,6 +1808,10 @@ function init()
           p[i].length[j] = pattern_data[i].length[j]
         end
         load_pattern_bank(i, p[i].bank)
+        if pattern_data[i].trigs_max then -- TODO: remove when saved all psets
+          trigs[i].step_max = pattern_data[i].trigs_max
+          trigs[i].pattern = {table.unpack(pattern_data[i].trigs_pattern)}
+        end
       end
       dirtyscreen = true
       dirtygrid = true
@@ -1387,16 +1830,15 @@ function init()
   else
     params:bang()
   end
-
+  
   -- set defaults
-  notes.last = notes.home
+  notes_last = notes_home
   --set_defaults()
   set_my_defaults()
+  midi_thru_dur = clock.get_beat_sec() * 1/4
 
   -- hardware callbacks
   m[midi_in_dev].event = midi_events
-  -- script callbacks
-  softcut.event_render(wave_render)
 
   -- metros
   hardwareredrawtimer = metro.init(hardware_redraw, 1/30, -1)
@@ -1407,118 +1849,93 @@ function init()
   screenredrawtimer:start()
   dirtyscreen = true
 
-  slowpulse = metro.init(ledpulse_slow, 0.2, -1)
-  slowpulse:start()
-
   -- clocks
   clock.run(event_q_clock)
-  clock.run(ledpulse_fast)
   clock.run(run_seq)
-  clock.run(run_retrig)
+  clock.run(run_keyrepeat)
+
+  -- lattice
+  vizclock = lattice:new()
+
+  fastpulse = vizclock:new_sprocket{
+    action = function(t) ledpulse_fast() end,
+    division = 1/32,
+    enabled = true
+  }
+
+  midpulse = vizclock:new_sprocket{
+    action = function() ledpulse_mid() end,
+    division = 1/24,
+    enabled = true
+  }
+
+  slowpulse = vizclock:new_sprocket{
+    action = function() ledpulse_slow() end,
+    division = 1/12,
+    enabled = true
+  }
+
+  vizclock:start()
 
 end
-
--------- playback --------
-function play_midi(i, note_num, velocity, channel)
-  m[i]:note_on(note_num, velocity, channel)
-  if voice[i].length > 0 then
-    clock.run(function()
-      clock.sleep(voice[i].length)
-      m[i]:note_off(note_num, 0, channel)
-    end)
-  end
-end
-
-function play_nb(i, note_num, velocity)
-  local player = params:lookup_param("nb_"..i):get_player()
-  player:note_on(note_num, velocity)
-  if voice[i].length > 0 then
-    clock.run(function()
-      clock.sleep(voice[i].length)
-      player:note_off(note_num)
-    end)
-  end
-end
-
-function mute_voice(i, note_num)
-  if voice[i].output == 3 or midi_thru then
-    m[i]:note_off(note_num, 0, voice[i].midi_ch)
-  elseif voice[i].output > 7 then
-    local player = params:lookup_param("nb_"..(voice[i].output - 7)):get_player()
-    player:note_off(note_num)
-  end
-end
-
-function play_voice(i, note_num, vel)
-  local velocity = vel or voice[i].velocity
-  if not voice[i].mute then
-    -- moonunit group 1
-    if voice[i].output == 1 then
-      pool_count_1 = pool_count_1 % 4 + 1
-      local freq = mu.note_num_to_freq(note_num)
-      engine.trig(pool_count_1, freq)
-    -- moonunit group 2
-    elseif voice[i].output == 2 then
-      pool_count_2 = pool_count_2 % 4 + 5
-      local freq = mu.note_num_to_freq(note_num)
-      engine.trig(pool_count_2, freq)
-    -- midi output
-    elseif voice[i].output == 3 then
-      play_midi(i, note_num, velocity, voice[i].midi_ch)
-    -- crow output 1+2
-    elseif voice[i].output == 4 then
-      crow.output[1].volts = ((note_num - 60) / v8_std_1)
-      crow.output[2].action = "{ to(0, 0), to("..env1_amp..", "..env1_a.."), to(0, "..env1_r..", 'log') }"
-      crow.output[2]()
-    -- crow output 3+4
-    elseif voice[i].output == 5 then
-      crow.output[3].volts = ((note_num - 60) / v8_std_2)
-      crow.output[4].action = "{ to(0, 0), to("..env2_amp..", "..env2_a.."), to(0, "..env2_r..", 'log') }"
-      crow.output[4]()
-    -- crow ii jf
-    elseif voice[i].output == 6 then
-      if params:get("jf_mode"..i) == 1 then
-        crow.ii.jf.play_voice(voice[i].jf_ch, ((note_num - 60) / 12), voice[i].jf_amp)
-      else
-        crow.ii.jf.play_note(((note_num - 60) / 12), voice[i].jf_amp)
-      end
-    elseif voice[i].output == 7 then
-      crow.ii.wsyn.play_note(((note_num - 60) / 12), wsyn_amp)
-    elseif voice[i].output > 7 then
-      play_nb(voice[i].output - 7, note_num, util.linlin(1, 127, 0, 1, velocity))
-    end
-    if midi_thru then
-      local channel = midi_out_ch + i - 1
-      play_midi(midi_out_dev, note_num, velocity, channel)
-    end
-  end
-end
-
 
 -------- norns interface --------
+function key(n, z)
+  if n == 1 then
+    shift = z == 1 and true or false
+  end
+  if (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config or pageNum == 3) then
+    if n > 1 and z == 1 then
+      local d = n == 2 and -1 or 1
+      if shift then
+        pattern_focus = util.wrap(pattern_focus + d, 1, 8)
+      else
+        pattern_param_focus = util.wrap(pattern_param_focus + d, 1, 3)
+      end
+    end
+  else
+    if pageNum == 1 then
+      if n == 2 and z == 1 then
+        transposing = not transposing
+      elseif n == 3 and z == 1 then
+        if not transposing then
+          transpose_value = 0
+        end
+      end
+    elseif pageNum == 2 then
+      if n > 1 and z == 1 then
+        if shift then
+          local d = n == 2 and -1 or 1
+          voice_focus = util.wrap(voice_focus + d, 1, 6)
+        else
+          local d = n == 2 and -2 or 2
+          if voice[voice_focus].output < 8 then
+            voice_param_focus[voice_focus] = util.wrap(voice_param_focus[voice_focus] + d, 1, #voice_params[voice[voice_focus].output])
+          end
+        end        
+      end
+    end
+  end
+  dirtyscreen = true
+  dirtygrid = true
+end
+
 function enc(n, d)
   if n == 1 then
     pageNum = util.clamp(pageNum + d, 1, 3)
   end
-  if (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config) then
-    if n == 2 then
-      if not pattern[pattern_focus].manual_length then
-        if viewinfo == 0 then
-          params:delta("patterns_meter"..pattern_focus, d)
-        else
-          params:delta("patterns_beatnum"..pattern_focus, d)
-        end
+  if keyquant_edit then
+    if n > 1 then
+      params:delta("key_quant_value", d)
+    end
+  elseif (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config or pageNum == 3) then
+    if not (pattern_param_focus == 1 and ((pattern_rec_mode == "free" and pattern[pattern_focus].endpoint == 0) or pattern[pattern_focus].manual_length)) then
+      if n == 2 then
+        params:delta(pattern_e2_params[pattern_param_focus]..pattern_focus, d)
+      elseif n == 3 and pattern_param_focus ~= 3 then
+        params:delta(pattern_e3_params[pattern_param_focus]..pattern_focus, d)
       end
-    elseif n == 3 then
-      if shift then
-        params:delta("key_quant_value", d)
-      else
-        if viewinfo == 0 then
-          params:delta("patterns_quantize"..pattern_focus, d) 
-        else
-          params:delta("patterns_countin"..pattern_focus, d)
-        end
-      end
+      dirtyscreen = true
     end
   elseif pageNum == 1 then
     if n == 2 then
@@ -1535,156 +1952,81 @@ function enc(n, d)
       end
     end
   elseif pageNum == 2 then
-    local out_dest = params:get("voice_out"..voice_focus)
-    if out_dest < 8 then
-      if n == 2 then
-        param_focus[voice_focus] = util.clamp(param_focus[voice_focus] + d, 1, #voice_params[out_dest])
-      elseif n == 3 then
-        local param = param_focus[voice_focus]
-        if out_dest == 3 or out_dest == 6 then
-          params:delta(voice_params[out_dest][param]..voice_focus, d)
-        else
-          params:delta(voice_params[out_dest][param], d)
-        end
-      end
-    end
-  elseif pageNum == 3 then
-    if shift then
-      local b = smpls.bank_focus
-      local s = smpls.slot_focus
-      if n == 2 then
-        smpls.bank[b].slot[s].ns = util.clamp(smpls.bank[b].slot[s].ns + d / 500 , smpls.bank[b].slot[s].s, smpls.bank[b].slot[s].ne - 0.005)
-      elseif n == 3 then
-        smpls.bank[b].slot[s].ne = util.clamp(smpls.bank[b].slot[s].ne + d / 500 , smpls.bank[b].slot[s].ns + 0.005, smpls.bank[b].slot[s].e)
-      end
-    else
-      if n == 2 then
-        sampl_param = util.clamp(sampl_param + d, 1, 6)
-      elseif n == 3 then
-        local param = {"level_bank_", "pan_bank_", "send_bank_", "cutoff_bank_", "reso_bank_", "rate_bank_"}
-        params:delta(param[sampl_param]..smpls.bank_focus.."_slot_"..smpls.slot_focus, d)
+    local dest = voice[voice_focus].output
+    local param = voice_param_focus[voice_focus]
+    if dest < 8 and n > 1 then
+      local off = n == 2 and 0 or 1
+      if dest == 3 or dest == 6 then
+        params:delta(voice_params[dest][param + off]..voice_focus, d)
+      else
+        params:delta(voice_params[dest][param + off], d)
       end
     end
   end
   dirtygrid = true
   dirtyscreen = true
-end
-
-function key(n, z)
-  if n == 1 then
-    shift = z == 1 and true or false
-    render_sample()
-  end
-  if n == 2 and z == 1 then
-    if (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config) then
-      if not shift then
-        viewinfo = 1 - viewinfo
-      end
-    else
-      if pageNum == 1 then
-        transposing = not transposing
-      elseif pageNum == 2 then
-        voice_focus = util.clamp(voice_focus - 1, 1, 6)
-      elseif pageNum == 3 then
-        if shift then
-          smpls.bank_focus = util.clamp(smpls.bank_focus - 1, 1, 5)
-        else
-          smpls.slot_focus = util.clamp(smpls.slot_focus - 1, 1, 4)
-        end
-      end
-    end
-  elseif n == 3 and z == 1 then
-    if (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config) then
-      pattern_focus = util.wrap(pattern_focus + 1, 1, 8)
-    else
-      if pageNum == 1 then
-        if not transposing then
-          transpose_value = 0
-        end
-      elseif pageNum == 2 then
-        voice_focus = util.clamp(voice_focus + 1, 1, 6)
-      elseif pageNum == 3 then
-        if shift then
-          smpls.bank_focus = util.clamp(smpls.bank_focus + 1, 1, 5)
-        else
-          smpls.slot_focus = util.clamp(smpls.slot_focus + 1, 1, 4)
-        end
-      end
-    end
-  end
-  dirtyscreen = true
-  dirtygrid = true
 end
 
 function redraw()
   screen.clear()
-  local sel = viewinfo == 0
-  if (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config) then
-    if shift then
-      screen.font_size(16)
-      screen.level(15)
-      screen.move(64, 30)
-      screen.text_center(params:string("key_quant_value"))
-      screen.level(3)
-      screen.move(64, 44)
-      screen.text_center("key quant") 
+  screen.font_face(2)
+  if keyquant_edit then
+    screen.font_size(16)
+    screen.level(15)
+    screen.move(64, 28)
+    screen.text_center(params:string("key_quant_value"))
+    screen.level(3)
+    screen.move(64, 46)
+    screen.text_center("key     quantization") 
+  elseif (pattern_view or pattern_meter_config or pattern_length_config or pattern_options_config or pageNum == 3) then
+    screen.font_size(8)
+    screen.level(15)
+    screen.move(64, 12)
+    screen.text_center("pattern   "..pattern_focus.."       bank   "..p[pattern_focus].bank)
+    -- param list
+    screen.level(4)
+    screen.move(30, 60)
+    screen.text_center(pattern_e2_names[pattern_param_focus])
+    screen.move(98, 60)
+    screen.text_center(pattern_e3_names[pattern_param_focus])
+
+    screen.level(15)
+    screen.font_size(16)
+    screen.move(30, 39)
+    if pattern_param_focus == 1 and ((pattern_rec_mode == "free" and pattern[pattern_focus].endpoint == 0) or pattern[pattern_focus].manual_length) then
+      screen.text_center("-")
     else
-      local idx = tab.key(options.meter_val, pattern[pattern_focus].meter)
-      screen.font_size(8)
-      screen.level(15)
-      screen.move(64, 12)
-      screen.text_center("PATTERN "..pattern_focus.." BANK "..p[pattern_focus].bank)
-
-      screen.level(sel and 15 or 4)
-      screen.move(32, 28)
-      screen.text_center(pattern[pattern_focus].manual_length and "-" or options.pattern_meter[idx])
-      screen.move(96, 28)
-      screen.text_center(params:string("patterns_quantize"..pattern_focus))
-      screen.level(pattern_meter_config and 15 or 3)
-      screen.move(32, 36)
-      screen.text_center("meter")
-      screen.level(3)
-      screen.move(96, 36)
-      screen.text_center("quantize")
-
-      screen.level(not sel and 15 or 4)
-      screen.move(32, 52)
-      screen.text_center(pattern[pattern_focus].manual_length and "-" or params:string("patterns_beatnum"..pattern_focus))
-      screen.move(96, 52)
-      screen.text_center(params:string("patterns_countin"..pattern_focus))
-      screen.level(pattern_length_config and 15 or 3)
-      screen.move(32, 60)
-      screen.text_center("length")
-      screen.level(3)
-      screen.move(96, 60)
-      screen.text_center("count in")
+      screen.text_center(params:string(pattern_e2_params[pattern_param_focus]..pattern_focus))
+    end
+    screen.move(98, 39)
+    if (pattern_param_focus == 1 and ((pattern_rec_mode == "free" and pattern[pattern_focus].endpoint == 0) or pattern[pattern_focus].manual_length)) or pattern_param_focus == 3 then
+      screen.text_center("-")
+    else
+      screen.text_center(params:string(pattern_e3_params[pattern_param_focus]..pattern_focus))
     end
   else
     if pageNum == 1 then
       local offset = 16
-      local white_keys = {"C", "D", "E", "F", "G", "A", "B"}
-      local black_keys_a = {"C#", "D#"}
-      local black_keys_b = {"F#", "G#", "A#"}
 
       for i = 1, #white_keys do
-        screen.level((notes.viz - notenum_w[i]) % 12 == 0 and 15 or (noteis_w[i] and 4 or 1))
+        screen.level((notes_viz - notenum_w[i]) % 12 == 0 and 15 or (noteis_w[i] and 6 or 1))
         screen.move(16 + (i - 1) * offset, 41)
         screen.font_size(8)
         screen.text_center(white_keys[i])
       end
 
-      for i = 1, #black_keys_a do
-        screen.level((notes.viz - notenum_ba[i]) % 12 == 0 and 15 or (noteis_ba[i] and 4 or 1))
+      for i = 1, #black_keys_1 do
+        screen.level((notes_viz - notenum_b1[i]) % 12 == 0 and 15 or (noteis_b1[i] and 6 or 1))
         screen.move(24 + (i - 1) * offset, 29)
         screen.font_size(8)
-        screen.text_center(black_keys_a[i])
+        screen.text_center(black_keys_1[i])
       end
 
-      for i = 1, #black_keys_b do
-        screen.level((notes.viz - notenum_bb[i]) % 12 == 0 and 15 or (noteis_bb[i] and 4 or 1))
+      for i = 1, #black_keys_2 do
+        screen.level((notes_viz - notenum_b2[i]) % 12 == 0 and 15 or (noteis_b2[i] and 6 or 1))
         screen.move(72 + (i - 1) * offset, 29)
         screen.font_size(8)
-        screen.text_center(black_keys_b[i])
+        screen.text_center(black_keys_2[i])
       end
 
       if shift and not collecting_notes then
@@ -1705,7 +2047,7 @@ function redraw()
           screen.text(params:string("root_note"))
         end
       end
-      local semitone = scale_notes[tab.key(scale_notes, params:get("root_note")) + transpose_value] - params:get("root_note")
+      local semitone = scale_notes[tab.key(scale_notes, root_note) + transpose_value] - root_note
       if transposing then
         screen.level(15)
         screen.font_size(8)
@@ -1735,115 +2077,64 @@ function redraw()
     elseif pageNum == 2 then
       screen.level(15)
       screen.font_size(8)
-      screen.move(64, 10)
+      screen.move(64, 12)
       screen.text_center("voice "..voice_focus.." - "..params:string("voice_out"..voice_focus))
-      -- params
-      local out_dest = params:get("voice_out"..voice_focus)
-      local param = param_focus[voice_focus]
-      screen.font_size(16)
-      if out_dest < 8 then
-        local off = get_mid(voice_param_names[out_dest][param])
-        screen.level(12)
-        screen.move(64, 39)
-        if (out_dest == 3 or out_dest == 6) then
-          screen.text_center(params:string(voice_params[out_dest][param]..voice_focus))
+      -- param list
+      local dest = voice[voice_focus].output
+      local param = voice_param_focus[voice_focus]
+      if dest < 8 then
+        screen.level(4)
+        screen.move(30, 60)
+        screen.text_center(voice_param_names[dest][param])
+        screen.move(98, 60)
+        screen.text_center(voice_param_names[dest][param + 1])
+
+        screen.font_size(16)
+        screen.level(15)
+        screen.move(30, 39)
+        if (dest == 3 or dest == 6) then
+          screen.text_center(params:string(voice_params[dest][param]..voice_focus))
         else
-          screen.text_center(params:string(voice_params[out_dest][param]))
+          if dest < 3 then
+            if param == 7 then
+              local width = 50
+              local offset = params:get(voice_params[dest][param]) * 25 + 25
+              screen.line_width(2)
+              screen.move(6, 40)
+              --screen.curve_rel (x1, y1, x2, y2, 0 + offset, -16)
+              screen.line_rel(0 + offset, -16)
+              screen.move(6 + width, 40)
+              screen.line_rel(-width + offset, -16)
+              screen.stroke()
+            else
+              screen.text_center(params:string(voice_params[dest][param]))
+            end
+          else
+            screen.text_center(params:string(voice_params[dest][param]))
+          end
         end
-        screen.font_size(8)
-        screen.level(6)
-        screen.move(64, 55)
-        screen.text_center(voice_param_names[out_dest][param])
-        -- list right
-        if param > 1 then
-          screen.level(2)
-          screen.move(64 - off - 12, 55)
-          screen.text_right(voice_param_names[out_dest][param - 1].."  <")
-        end
-        -- list left
-        if param < #voice_params[out_dest] then
-          screen.level(2)
-          screen.move(64 + off + 12, 55)
-          screen.text(">  "..voice_param_names[out_dest][param + 1])
+        screen.move(98, 39)
+        if (dest == 3 or dest == 6) then
+          screen.text_center(params:string(voice_params[dest][param + 1]..voice_focus))
+        else
+          screen.text_center(params:string(voice_params[dest][param + 1]))
         end
       else
+        screen.font_size(16)
         screen.level(12)
         screen.move(64, 39)
-        screen.text_center(params:string("nb_"..out_dest - 7))
+        screen.text_center(params:string("nb_"..dest - 7))
         screen.font_size(8)
         screen.level(6)
         screen.move(64, 55)
         screen.text_center("edit in params")
-      end
-    elseif pageNum == 3 then
-      local s_banks = {"A", "B", "C", "D", "E"}
-      local b = smpls.bank_focus
-      local s = smpls.slot_focus
-      screen.level(15)
-      screen.font_size(8)
-      screen.move(64, 10)
-      screen.text_center("sample "..s_banks[b]..""..s)
-      -- filename
-      screen.level(8)
-      screen.move(64, 22)
-      local name = params:string("load_bank_"..b.."_slot_"..s)
-      screen.text_center("- "..truncateMiddle(name, 20, "-").." -")
-      if shift then
-        -- draw waveform
-        screen.level(4)
-        local x_pos = 0
-        if #waveform_samples > 0 then
-          for i, s in ipairs(waveform_samples) do
-            local height = util.round(math.abs(s) * 12)
-            screen.move(util.linlin(1, 128 , 7, 121, x_pos), 44 - height)
-            screen.line_rel(0, 2 * height)
-            screen.stroke()
-            x_pos = x_pos + 1
-          end
-        end
-        -- draw start and endpoints
-        local b = smpls.bank_focus
-        local s = smpls.slot_focus
-        local start = smpls.bank[b].slot[s].s
-        local stop = smpls.bank[b].slot[s].e
-        screen.level(15)
-        screen.move(util.linlin(smpls.bank[b].slot[s].s, smpls.bank[b].slot[s].e, 7, 121, smpls.bank[b].slot[s].ns), 28)
-        screen.line_rel(0, 32)
-        screen.level(8)
-        screen.move(util.linlin(smpls.bank[b].slot[s].s, smpls.bank[b].slot[s].e, 7, 121, smpls.bank[b].slot[s].ne), 28)
-        screen.line_rel(0, 32)
-        screen.stroke()
-      else
-        -- params
-        local param = {"level_bank_", "pan_bank_", "send_bank_", "cutoff_bank_", "reso_bank_", "rate_bank_"}
-        local param_names = {"level", "pan", "send", "cutoff", "filter q", "rate"}
-        local off = get_mid(param_names[sampl_param])
-        screen.font_size(16)
-        screen.level(12)
-        screen.move(64, 39)
-        screen.text_center(params:string(param[sampl_param]..b.."_slot_"..s))
-        screen.font_size(8)
-        screen.level(6)
-        screen.move(64, 55)
-        screen.text_center(param_names[sampl_param])
-        -- list right
-        if sampl_param > 1 then
-          screen.level(2)
-          screen.move(64 - off - 12, 55)
-          screen.text_right(param_names[sampl_param - 1].."  <")
-        end
-        -- list left
-        if sampl_param < #param then
-          screen.level(2)
-          screen.move(64 + off + 12, 55)
-          screen.text(">  "..param_names[sampl_param + 1])
-        end
       end
     end
   end
   -- display messages
   if view_message ~= "" then
     screen.clear()
+    screen.font_size(8)
     screen.level(10)
     screen.rect(0, 25, 129, 16)
     screen.stroke()
@@ -1854,50 +2145,15 @@ function redraw()
   screen.update()
 end
 
-
 -------- grid interface -------- 
-
 function g.key(x, y, z)
   if GRIDSIZE == 128 then
-    grd_one.func_keys(x, y, z)
-    if y == 1 and x > 4 and x < 13 and z == 1 then
-      local i = x - 4
-      grd_one.pattern_keys(i)
-    end
-    if pattern_view then
-      grd_one.pattern_grid(x, y, z)
-    else
-      grd_one.main_grid(x, y, z)
-      if params:get("keys_option"..key_focus) == 1 then
-        grd_one.scale_grid(x, y, z)
-      elseif params:get("keys_option"..key_focus) == 2 then
-        grd_one.chrom_grid(x, y, z)
-      elseif params:get("keys_option"..key_focus) == 3 then
-        grd_one.chord_grid(x, y, z)
-      elseif params:get("keys_option"..key_focus) == 4 then
-        grd_one.drum_grid(x, y, z)
-      end
-    end
+    grd_one.keys(x, y, z)
   elseif GRIDSIZE == 256 then
-    grd_zero.func_keys(x, y, z)
-    if y == 7 and x > 4 and x < 13 and z == 1 then
-      local i = x - 4
-      grd_zero.pattern_keys(i)
-    end
-    grd_zero.pattern_grid(x, y, z)
-    grd_zero.main_grid(x, y, z)
-    if params:get("keys_option"..key_focus) == 1 then
-      grd_zero.scale_grid(x, y, z)
-    elseif params:get("keys_option"..key_focus) == 2 then
-      grd_zero.chrom_grid(x, y, z)
-    elseif params:get("keys_option"..key_focus) == 3 then
-      grd_zero.chord_grid(x, y, z)
-    elseif params:get("keys_option"..key_focus) == 4 then
-      grd_zero.drum_grid(x, y, z)
-    end
+    grd_zero.keys(x, y, z)
   end
   dirtygrid = true
-end
+end 
 
 function gridredraw()
   if GRIDSIZE == 128 then
@@ -1913,45 +2169,22 @@ function r()
   norns.script.load(norns.state.script)
 end
 
+function hardware_redraw()
+  if dirtygrid then
+    gridredraw()
+    dirtygrid = false
+  end
+end
+
+function screen_redraw()
+  if dirtyscreen then
+    redraw()
+    dirtyscreen = false
+  end
+end
+
 function round_form(param, quant, form)
   return(util.round(param, quant)..form)
-end
-
-function get_mid(str)
-  local len = string.len(str) / 2
-  local pix = len * 5
-  return pix
-end
-
-function truncateMiddle(str, maxLength, separator)
-  local maxLength = maxLength or 30
-  local separator = separator or "..."
-  str = string.sub(str, 1, -5)
-
-  if (maxLength < 1) then return str end
-  if (string.len(str) <= maxLength) then return str end
-  if (maxLength == 1) then return string.sub(str, 1, 1) .. separator end
-
-  local midpoint = math.ceil(string.len(str) / 2)
-  local toremove = string.len(str) - maxLength
-  local lstrip = math.ceil(toremove / 2)
-  local rstrip = toremove - lstrip
-
-  return string.sub(str, 1, midpoint - lstrip) .. separator .. string.sub(str, 1 + midpoint + rstrip)
-end
-
-function wave_render(ch, start, i, s)
-  waveform_samples = {}
-  waveform_samples = s
-end
-
-function render_sample()
-  if pageNum == 3 and shift then
-    local b = smpls.bank_focus
-    local s = smpls.slot_focus
-    softcut.render_buffer(1, smpls.bank[b].slot[s].s, smpls.bank[b].slot[s].l, 128)
-    dirtyscreen = true
-  end
 end
 
 function pan_display(param)
@@ -1988,23 +2221,9 @@ function show_message(message)
   )
 end
 
-function hardware_redraw()
-  if dirtygrid then
-    gridredraw()
-    dirtygrid = false
-  end
-end
-
-function screen_redraw()
-  if dirtyscreen then
-    redraw()
-    dirtyscreen = false
-  end
-end
-
 function build_menu()
   for i = 1, NUM_VOICES do
-    if (voice[i].output == 3 or voice[i].output > 7) and params:get("keys_option"..i) < 4 then
+    if (voice[i].output == 3 or voice[i].output == 8 or voice[i].output == 9) and voice[i].keys_option < 4 then
       params:show("note_velocity"..i)
       params:show("note_length"..i)
     else
@@ -2055,19 +2274,26 @@ function page_redraw(page)
 end
 
 function get_grid_size()
-  if g.device then
-    GRIDSIZE = g.device.cols * g.device.rows
+  if g then
+    GRIDSIZE = g.cols * g.rows
+  end
+  if GRIDSIZE == 256 and rotate_grid then
+    g:rotation(1) -- 1 is 90°
   end
 end
 
 function grid.add()
   get_grid_size()
   dirtygrid = true
-  gridredraw()
 end
 
 function cleanup()
-  params:set("cut_input_eng", eng_level)
+  --params:set("cut_input_eng", eng_level)
+  if GRIDSIZE == 128 then
+    grd_one.end_msg()
+  elseif GRIDSIZE == 256 then
+    grd_zero.end_msg()
+  end
   grid.add = function() end
   midi.add = function() end
   midi.remove = function() end
