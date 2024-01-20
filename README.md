@@ -1,6 +1,7 @@
 # nisho
 
-an interval player, keyboard and pattern sequencer for norns.
+nisho is a personal instrument that has been written and redefined over the past year.
+it's an interval player, keyboard and pattern sequencer for norns.
 
 **requires:**
 
@@ -13,3 +14,5 @@ an interval player, keyboard and pattern sequencer for norns.
 - jf ii
 - wysn ii
 - nb
+
+
