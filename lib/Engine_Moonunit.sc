@@ -1,7 +1,7 @@
-// Written by Dan Derks + Ezra Buchla for monome.org
-// Adapted by Sacha di Piazza for nisho
+// written by dan derks & ezra buchla for monome.org
+// adapted by sacha di piazza for nisho
 
-Engine_Moonunit : CroneEngine {
+Engine_Formantpulse : CroneEngine {
 
 	var kernel;
 
@@ -11,7 +11,7 @@ Engine_Moonunit : CroneEngine {
 
 	alloc { // allocate memory to the following:
 
-		kernel = Moonunit.new(Crone.server);
+		kernel = Formantpulse.new(Crone.server);
 
 		// NEW: build an 'engine.trig(x,y)' command,
 		this.addCommand(\trig, "sf", { arg msg;
