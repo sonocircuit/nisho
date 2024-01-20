@@ -41,7 +41,7 @@ function reflection.new(id)
   return p
 end
 
-local RES = 64 -- clock resolution in steps per beat
+local PPQN = 64 -- clock resolution in ppqn
 
 local function deep_copy(tbl)
   local ret = {}
@@ -97,17 +97,11 @@ end
 -- beat_sync (optional) sync recording start to beat value
 function reflection:set_rec(rec, dur, beat_sync)
   self.rec = rec == 1 and 1 or 0
+  self.rec_enabled = rec > 0 and 1 or 0
   self.queued_rec = nil
-  -- if rec is enabled, even if queued, we'd like to know, right?
-  if rec > 0 then
-    self.rec_enabled = 1
-  else
-    self.rec_enabled = 0
-  end
   if rec == 1 and self.play == 0 then
     self:start(beat_sync)
   end
-  -- if pattern contains data then copy event data to temp table
   if rec == 1 and self.count > 0 then
     self.event_prev = {}
     self.event_prev = deep_copy(self.event)
@@ -119,11 +113,8 @@ function reflection:set_rec(rec, dur, beat_sync)
     if self.count > 0 then
       local fn = self.start_callback
       self.start_callback = function()
-        -- on next data pass, enable recording,
         self:set_rec(1, dur)
-        -- call our callback
         fn()
-        -- and restore the state of the callback
         self.start_callback = fn
       end
     else
@@ -149,7 +140,7 @@ end
 --- set length in beats
 function reflection:set_length(beats)
   if self.count > 0 then
-    self.endpoint = beats * RES
+    self.endpoint = beats * PPQN
     self.step_max = self.endpoint
   end
 end
@@ -202,15 +193,12 @@ function reflection:watch(event)
 end
 
 function reflection:begin_playback()
-  if self.clock then
-    clock.cancel(self.clock)
-  end
   self.step = self.step_min
   self.play = 1
+  self.start_callback()
   self.clock = clock.run(function()
-    self.start_callback()
     while self.play == 1 do
-      clock.sync(1/RES)
+      clock.sync(1/PPQN)
       self.step = self.step + 1
       if self.count > 0 then
         local prev_pos = self.position
@@ -219,13 +207,13 @@ function reflection:begin_playback()
           self:step_callback()
         end
       end
-      local q = math.floor(RES * self.quantize)
+      local q = math.floor(PPQN * self.quantize)
       if self.endpoint == 0 then
         -- don't process on first pass
         if self.rec_dur then
-          self.rec_dur.count = self.rec_dur.count - 1/RES
+          self.rec_dur.count = self.rec_dur.count - 1/PPQN
           if self.rec_dur.count <= 0 then
-            self.endpoint = self.rec_dur.length * RES
+            self.endpoint = self.rec_dur.length * PPQN
             self.endpoint_init = self.endpoint
             self.step_max = self.endpoint
             self:set_rec(0)
@@ -264,7 +252,7 @@ function reflection:begin_playback()
         ::continue::
         -- if overdubbing with dur as arg then cound down and end rec
         if self.rec_dur then
-          self.rec_dur.count = self.rec_dur.count - 1/RES
+          self.rec_dur.count = self.rec_dur.count - 1/PPQN
           if self.rec_dur.count <= 0 then
             self:set_rec(0)
             self.rec_dur = nil
@@ -286,8 +274,8 @@ function reflection:begin_playback()
   end)
 end
 
-function reflection:end_playback(silent)
-  if self.clock and not silent then
+function reflection:end_playback()
+  if self.clock then
     clock.cancel(self.clock)
   end
   self.play = 0
