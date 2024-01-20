@@ -7,6 +7,7 @@ local div_view = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/
 local feedback = 0.3
 
 local sc_voice = 6
+local start_pos = 300 -- seconds on buffer
 
 local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
@@ -18,6 +19,8 @@ warble.freq = 8
 warble.counter = 1
 warble.slope = 0
 warble.active = false
+warble.amount = 0
+warble.depth = 0
 
 function softsync.init()
   audio.level_cut(1.0)
@@ -25,7 +28,7 @@ function softsync.init()
   audio.level_eng_cut(1)
 
   softcut.enable(sc_voice, 1)
-  softcut.buffer(sc_voice, 2)
+  softcut.buffer(sc_voice, 1)
 
   softcut.level(sc_voice, 1)
   softcut.level_slew_time(sc_voice, 0.25)
@@ -36,8 +39,8 @@ function softsync.init()
   softcut.play(sc_voice, 1)
   softcut.rate(sc_voice, 1)
   softcut.rate_slew_time(sc_voice, 0)
-  softcut.loop_start(sc_voice, 1)
-  softcut.loop_end(sc_voice, 1)
+  softcut.loop_start(sc_voice, start_pos)
+  softcut.loop_end(sc_voice, start_pos + 4)
   softcut.loop(sc_voice, 1)
   softcut.fade_time(sc_voice, 0.1)
   softcut.rec(sc_voice, 1)
@@ -68,25 +71,21 @@ function softsync.init()
   params:add_separator("warble_sep", "warble")
 
   params:add_number("warble_amount", "amount", 0, 100, 0, function(param) return (param:get().."%") end)
+  params:set_action("warble_amount", function(x) warble.amount = x end)
 
   params:add_number("warble_depth", "depth", 0, 100, 12, function(param) return (param:get().."%") end)
+  params:set_action("warble_depth", function(x) warble.depth = x end)
 
   params:add_control("warble_freq","speed", controlspec.new(1.0, 10.0, "lin", 0.1, 6.0, ""))
   params:set_action("warble_freq", function(val) warble.freq = val * 1.2 end)
 
   warbletimer = metro.init(function() make_warble() end, 0.1, -1)
   warbletimer:start()
-
 end
 
-function set_feedback(x)
-  local fb = x
+function set_feedback(fb)
   softcut.pre_level(sc_voice, fb)
-  if fb == 1.0 then
-    softcut.rec_level(sc_voice, 0)
-  else
-    softcut.rec_level(sc_voice, 1)
-  end
+  softcut.rec_level(sc_voice, fb == 1 and 0 or 1)
 end
 
 function clock.tempo_change_handler()
@@ -95,7 +94,7 @@ end
 
 function set_del_rate()
   local del_rate = (clock.get_beat_sec() * div_options[params:get("delay_length")] * 4)
-  local set_rate = 1 + del_rate - (del_rate * (params:get("delay_length_ft") / 100))
+  local set_rate = start_pos + del_rate - (del_rate * (params:get("delay_length_ft") / 100))
   softcut.loop_end(sc_voice, set_rate)
 end
 
@@ -103,10 +102,10 @@ function make_warble()
   local tau = math.pi * 2
   -- make sine
   slope = 1 * math.sin(((tau / 100) * (warble.counter)) - (tau / (warble.freq)))
-  warble.slope = util.linlin(-1, 1, -1, 0, math.max(-1, math.min(1, slope))) * (params:get("warble_depth") * 0.001)
+  warble.slope = util.linlin(-1, 1, -1, 0, math.max(-1, math.min(1, slope)) * warble.depth * 0.001)
   warble.counter = warble.counter + warble.freq
   -- activate warble
-  if math.random(100) <= params:get("warble_amount") then
+  if math.random(100) <= warble.amount then
     if not warble.active then
       warble.active = true
     end
