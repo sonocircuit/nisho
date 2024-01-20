@@ -7,6 +7,7 @@ it's an interval player, keyboard and pattern sequencer for norns.
 
 - norns
 - grid (one or zero)
+- nb mod `requires nb/lib/nb`
 
 **supports:**
 - midi
