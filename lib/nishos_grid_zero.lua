@@ -1,27 +1,26 @@
 grd_zero = {}
 
 function grd_zero.keys(x, y, z)
-  if midi_view then
-    grd_zero.midi_ctrl(x, y, z)
-  else
-    if (x < 4 or x > 13) and y < 4 then
-      grd_zero.pattern_options(x, y, z)
-    elseif x > 4 and x < 13 and y < 4 then
+  if (x < 5 or x > 12) and y < 4 then
+    grd_zero.pattern_options(x, y, z)
+  elseif x > 4 and x < 13 and y < 5 then
+    if prgchange_view then
+      grd_zero.prg_change(x, y, z)
+    else
       grd_zero.pattern_slots(x, y, z)
-    elseif y == 5 then
-      grd_zero.pattern_trigs(x, y, z)
     end
-  end
-  if y == 6 then
-    if x == 16 and midi_control and z == 1 then
-      midi_view = not midi_view
-    end
+  elseif y == 4 and x == 13 and z == 1 then
+    stop_all_patterns()
+  elseif y == 5 then
+    grd_zero.pattern_trigs(x, y, z)
   elseif x > 4 and x < 13 and y == 7 and z == 1 then
     grd_zero.pattern_keys(x - 4)
+  elseif x > 4 and x < 13 and y == 8 and z == 1 then
+    pattern_bank_page = x - 5
+  elseif (x == 4 or x == 13) and (y == 7 or y == 8) then
+    grd_zero.modifier_keys(x, y, z)
   elseif (x < 4 or x > 13) and y > 6 and y < 9 then
     grd_zero.voice_settings(x, y, z)
-  elseif (x < 4 or x > 13) and y == 9 then
-    grd_zero.modifier_keys(x, z)
   elseif x > 3 and x < 14 and y > 8 and y < 12 then
     grd_zero.center_grid(x, y, z)
   elseif x < 3 and y > 9 and y < 12 then
@@ -41,205 +40,98 @@ function grd_zero.keys(x, y, z)
 end
 
 function grd_zero.pattern_options(x, y, z)
-  if y == 1 and x == 1 and z == 1 then
-    copying_pattern = not copying_pattern
-    if not copying_pattern then
-      copy_src = {state = false, pattern = nil, bank = nil}
-    end
-  elseif y == 1 and x == 2 then
-    pasting_pattern = z == 1 and true or false
-  elseif y == 1 and x == 3 then
-    appending_pattern = z == 1 and true or false
-  elseif y == 1 and x == 14 and z == 1 then
-    pattern_rec_mode = "queued"
-    dirtyscreen = true
-  elseif y == 1 and x == 15 and z == 1  then
-    pattern_rec_mode = "synced"
-    dirtyscreen = true
-  elseif y == 1 and x == 16 and z == 1  then
-    pattern_rec_mode = "free"
-    dirtyscreen = true
-  elseif y == 2 and x == 1 then
-    gkey[x][y].active = z == 1 and true or false
-    if z == 1 then
-      if gkey[1][2].active and not gkey[2][2].active then
-        pattern_reset = true
+  if (x < 4 or x > 13) then
+    if y == 1 and x == 1 and z == 1 then
+      copying_pattern = not copying_pattern
+      if not copying_pattern then
+        copy_src = {state = false, pattern = nil, bank = nil}
       end
-    else
-      pattern_clear = false
-      pattern_reset = false
-    end
-  elseif y == 2 and x == 2 then
-    gkey[x][y].active = z == 1 and true or false
-    if z == 1 then
-      if gkey[1][2].active and gkey[2][2].active then
-        pattern_clear = true
-        duplicating_pattern = false
-        pattern_reset = false
-      elseif not gkey[1][2].active and gkey[2][2].active then
+    elseif y == 1 and x == 2 then
+      pasting_pattern = z == 1 and true or false
+    elseif y == 1 and x == 3 then
+      appending_pattern = z == 1 and true or false
+    elseif y == 1 and x == 14 and z == 1 then
+      pattern_rec_mode = "queued"
+      dirtyscreen = true
+    elseif y == 1 and x == 15 and z == 1  then
+      pattern_rec_mode = "synced"
+      dirtyscreen = true
+    elseif y == 1 and x == 16 and z == 1  then
+      pattern_rec_mode = "free"
+      dirtyscreen = true
+    elseif y == 2 and x == 1 then
+      gkey[x][y].active = z == 1 and true or false
+      if z == 1 then
+        if gkey[1][2].active and not gkey[2][2].active then
+          pattern_reset = true
+        end
+      else
         pattern_clear = false
-        duplicating_pattern = true
+        pattern_reset = false
       end
-    else
-      duplicating_pattern = false
-    end
-  elseif y == 2 and x == 15 then
-    if z == 1 then
-      pattern_meter_config = not pattern_meter_config
-      if pattern_meter_config then
-        pattern_length_config = false
-        pattern_options_config = false
-      end
-    end
-    dirtyscreen = true
-  elseif y == 2 and x == 16 then
-    if z == 1 then
-      pattern_length_config = not pattern_length_config
-      if pattern_length_config then
-        pattern_meter_config = false
-        pattern_options_config = false
-      end
-    end
-    dirtyscreen = true
-  elseif y == 3 and x == 1 then
-    pattern_overdub = z == 1 and true or false
-  elseif y == 3 and x == 16 then
-    if z == 1 then
-      pattern_options_config = not pattern_options_config
-      if pattern_options_config then
-        pattern_meter_config = false
-        pattern_length_config = false
-      end
-    end
-    dirtyscreen = true
-  end
-end
-
-function grd_zero.pattern_slots(x, y, z)
-  local i = x - 4
-  local bank = y
-  if pattern_meter_config and z == 1 then
-    -- set meter
-    if y == 1 then
-      params:set("patterns_meter_"..pattern_focus, i)
-      if pattern[pattern_focus].manual_length then
-        pattern[pattern_focus].manual_length = false
-        --pattern[pattern_focus].length = pattern[pattern_focus].meter * pattern[pattern_focus].beatnum
-        --pattern[pattern_focus]:set_length(pattern[pattern_focus].length)
-      end
-    elseif y == 3 then
-      if pattern_focus ~= i and num_rec_enabled() == 0 then
-        pattern_focus = i
-        held[pattern_focus].num = 0
-      end
-    end
-    save_pattern_bank(i, p[i].bank)
-  elseif pattern_length_config and z == 1 then
-    -- set bar num
-    if y < 3 then
-      params:set("patterns_beatnum_"..pattern_focus, i + 8 * (y - 1))
-      if pattern[pattern_focus].manual_length then
-        pattern[pattern_focus].manual_length = false
-        --pattern[pattern_focus].length = pattern[pattern_focus].meter * pattern[pattern_focus].beatnum
-        --pattern[pattern_focus]:set_length(pattern[pattern_focus].length)
-      end
-    elseif y == 3 then
-      if pattern_focus ~= i and num_rec_enabled() == 0 then
-        pattern_focus = i
-        held[pattern_focus].num = 0
-      end
-    end
-    save_pattern_bank(i, p[i].bank)
-  elseif pattern_options_config and z == 1 then
-    -- set count-in, loop / oneshot
-    if y == 1 then
-      local val = params:get("patterns_launch_"..i)
-      val = util.wrap(val + 1, 1, 3)
-      params:set("patterns_launch_"..i, val)
-    elseif y == 2 then
-      params:set("patterns_playback_"..i, pattern[i].loop == 0 and 1 or 2)
-    elseif y == 3 then
-      if pattern_focus ~= i and num_rec_enabled() == 0 then
-        pattern_focus = i
-      end
-    end
-    save_pattern_bank(i, p[i].bank)
-  else
-    -- select active pattern bank, copy/paste/duplicate/append actions
-    if z == 1 then
-      -- set pattern focus
-      if pattern_focus ~= i and num_rec_enabled() == 0 then
-        pattern_focus = i
-        held[pattern_focus].num = 0
-      end
-      -- copy/paste/append/duplicate
-      if pasting_pattern and copy_src.state then
-        copy_pattern(copy_src.pattern, copy_src.bank, i, bank)
-        --show_message("pasted to pattern "..i.." bank "..bank)
-        copying_pattern = false
-        copy_src = {state = false, pattern = nil, bank = nil}
-      elseif appending_pattern and copy_src.state then
-        append_pattern(copy_src.pattern, copy_src.bank, i, bank)
-        --show_message("appended to pattern "..i.." bank "..bank)
-        copying_pattern = false
-        copy_src = {state = false, pattern = nil, bank = nil}
-      elseif (pasting_pattern or appending_pattern) and not copy_src.state then
-        --show_message("clipboard empty")
-      elseif copying_pattern and not copy_src.state then
-        copy_src.pattern = i
-        copy_src.bank = bank
-        copy_src.state = true
-        --show_message("pattern "..copy_src.pattern.." bank "..copy_src.bank.." selected")
-      elseif duplicating_pattern then
-        if p[i].count[bank] > 0 then
-          append_pattern(i, bank, i, bank)
-          --show_message("doubled pattern")
+    elseif y == 2 and x == 2 then
+      gkey[x][y].active = z == 1 and true or false
+      if z == 1 then
+        if gkey[1][2].active and gkey[2][2].active then
+          pattern_clear = true
+          duplicating_pattern = false
+          pattern_reset = false
+        elseif not gkey[1][2].active and gkey[2][2].active then
+          pattern_clear = false
+          duplicating_pattern = true
         end
-      -- reset pattern
-      elseif pattern_reset then
-        reset_pattern_length(i, bank)
-      -- clear pattern
-      elseif pattern_clear then
-        clear_pattern_bank(i, bank)
-        if pattern[i].count > 0 and p[i].bank == bank then
-          kill_active_notes(i)
-          pattern[i]:clear()
-        end
-      -- load pattern
-      elseif not copying_pattern and not pasting_pattern then
-        if p[i].bank ~= bank then
-          p[i].load = bank
-          if pattern[i].play == 0 then
-            set_pattern_bank(i)
-          end
-        elseif p[i].load then
-          p[i].load = nil
-        end
+      else
+        duplicating_pattern = false
+      end
+    elseif y == 2 and x == 15 then
+      pattern_len_edit = z == 1 and true or false
+      dirtyscreen = true
+    elseif y == 2 and x == 16 then
+      if z == 1 then
+        prgchange_view = not prgchange_view
+        if prgchange_view then loading_page = false end
+      end
+      dirtyscreen = true
+    elseif y == 3 and x == 1 then
+      pattern_overdub = z == 1 and true or false
+    elseif y == 3 and x == 16 and z == 1 then
+      loading_page = not loading_page
+      if loading_page then prgchange_view = false end
+      dirtyscreen = true
+    end
+  elseif x == 4 and z == 1 then
+    if y == 2 then
+      pattern_bank_page = util.clamp(pattern_bank_page - 1, 0, 7)
+    elseif y == 3 then
+      pattern_bank_page = util.clamp(pattern_bank_page + 1, 0, 7)
+    end
+  elseif x == 13 and z == 1 then
+    local bank = y + pattern_bank_page * 3
+    for i = 1, 8 do
+      p[i].load = bank
+      if pattern[i].play == 0 then
+        update_pattern_bank(i)
+      else
+        clock.run(function()
+          clock.sync(4)
+          update_pattern_bank(i)
+          pattern[i].step = 0
+        end)
+      end
+      if pattern_overdub and pattern[i].play == 0 and p[i].count[bank] > 0 then
+        pattern[i]:start(4)
       end
     end
   end
-  dirtyscreen = true
 end
 
 function grd_zero.pattern_keys(i)
   if pattern_focus ~= i and num_rec_enabled() == 0 then
     pattern_focus = i
   end
-  if duplicating_pattern then
-    if pattern[i].count > 0 then
-      append_pattern(i, p[i].bank, i, p[i].bank)
-      --show_message("doubled pattern")
-    end
-  elseif appending_pattern and copy_src.state then
-    append_pattern(copy_src.pattern, copy_src.bank, i, p[i].bank)
-    --show_message("appended to pattern "..i.." bank ".. p[i].bank)
-    copying_pattern = false
-    copy_src = {state = false, pattern = nil, bank = nil}
-  elseif pattern_reset then
-    reset_pattern_length(i, p[i].bank)
-  elseif not pasting_pattern and not copying_pattern then
+  if not (pasting_pattern or copying_pattern) then
     -- stop and clear
-    if pattern_clear or (mod_a and mod_b) then
+    if pattern_clear or (mod_a and mod_c) or (mod_b and mod_d) then
       if pattern[i].count > 0 then
         kill_active_notes(i)
         pattern[i]:clear()
@@ -254,7 +146,7 @@ function grd_zero.pattern_keys(i)
           if appending_notes then
             paste_seq_pattern(i)
           else
-            if num_rec_enabled() == 0 then -- and pattern[i].rec_enabled == 0 -- redundant right?
+            if num_rec_enabled() == 0 then
               local mode = pattern_rec_mode == "synced" and 1 or 2
               local dur = pattern_rec_mode ~= "free" and pattern[i].length or nil
               pattern[i]:set_rec(mode, dur, 4)
@@ -286,11 +178,105 @@ function grd_zero.pattern_keys(i)
             end
           else
             pattern[i]:stop()
+            p[i].stop = false
           end
         end
       end
     end
   end
+end
+
+function grd_zero.pattern_slots(x, y, z)
+  local i = x - 4
+  local bank = y + pattern_bank_page * 3
+  if y < 4 then
+    -- select active pattern bank, copy/paste/duplicate/append actions
+    if z == 1 then
+      -- set pattern focus
+      if pattern_focus ~= i and num_rec_enabled() == 0 then
+        pattern_focus = i
+        held[pattern_focus].num = 0
+      end
+      -- copy/paste/append/duplicate
+      if pasting_pattern and copy_src.state then
+        copy_pattern(copy_src.pattern, copy_src.bank, i, bank)
+        show_message("pasted  to  pattern  "..i.."  bank  "..bank)
+        copying_pattern = false
+        copy_src = {state = false, pattern = nil, bank = nil}
+      elseif appending_pattern and copy_src.state then
+        local src_s = nil
+        local src_e = nil
+        if p[copy_src.pattern].looping then
+          src_s = pattern[copy_src.pattern].step_min
+          src_e = pattern[copy_src.pattern].step_max
+        end
+        append_pattern(copy_src.pattern, copy_src.bank, i, bank, src_s, src_e)
+        show_message("appended  to  pattern  "..i.."  bank  "..bank)
+        copying_pattern = false
+        copy_src = {state = false, pattern = nil, bank = nil}
+      elseif (pasting_pattern or appending_pattern) and not copy_src.state then
+        show_message("clipboard  empty")
+      elseif copying_pattern and not copy_src.state then
+        copy_src.pattern = i
+        copy_src.bank = bank
+        copy_src.state = true
+        show_message("pattern  "..copy_src.pattern.."  bank  "..copy_src.bank.."  selected")
+      elseif duplicating_pattern then
+        if p[i].count[bank] > 0 then
+          append_pattern(i, bank, i, bank)
+          show_message("doubled  pattern")
+        end
+      elseif pattern_reset then
+        reset_pattern_length(i, bank)
+        show_message("pattern  reset")
+      elseif pattern_len_edit then
+        p[i].manual_length[bank] = false
+        pattern[i].manual_length = false
+        --pattern[i].length = pattern[i].meter * pattern[i].barnum * 4
+        --pattern[i]:set_length(pattern[i].length)
+      elseif pattern_clear or (mod_a and mod_c) or (mod_b and mod_d) then
+        clear_pattern_bank(i, bank)
+        if pattern[i].count > 0 and p[i].bank == bank then
+          kill_active_notes(i)
+          pattern[i]:clear()
+        end
+      -- load pattern
+      elseif not (copying_pattern or pasting_pattern) then
+        if p[i].bank ~= bank then
+          p[i].load = bank
+          if pattern[i].play == 0 then
+            update_pattern_bank(i)
+          end
+        elseif p[i].load then
+          p[i].load = nil
+        end
+      end
+    end
+  elseif y == 4 and z == 1 then
+    if pattern[i].play == 1 then
+      p[i].stop = not p[i].stop
+    else
+      p[i].stop = false
+    end
+  end
+  dirtyscreen = true
+end
+
+function grd_zero.prg_change(x, y, z)
+  local i = x - 4
+  local bank = y + pattern_bank_page * 3
+  if z == 1 then
+    if y == 4 then
+      p[i].prc_enabled = not p[i].prc_enabled
+    else
+      pattern_focus = i
+      bank_focus = bank
+      if pattern_clear then
+        p[i].prc_num[bank] = 0
+      end
+    end
+  end
+  dirtyscreen = true
 end
 
 function grd_zero.pattern_trigs(x, y, z)
@@ -316,57 +302,80 @@ function grd_zero.pattern_trigs(x, y, z)
         end
         if pattern_reset then
           clear_pattern_loops()
-        elseif not p[pattern_focus].looping and held[pattern_focus].max < 2 then
-          clock.run(function()
-            clock.sync(quant_rate)
-            local segment = util.round(pattern[pattern_focus].endpoint / 16, 1) -- TODO: test with math.ceil/math.floor
-            pattern[pattern_focus].step = segment * (x - 1)
-          end)
         end
       end
     else
       if held[pattern_focus].num == 1 and held[pattern_focus].max == 2 then
         local pf = pattern_focus
-        clock.run(function()
-          clock.sync(1)
-          local segment = util.round(pattern[pf].endpoint / 16, 1)
-          pattern[pf].step_min = segment * (math.min(held[pf].first, held[pf].second) - 1)
-          pattern[pf].step_max = segment * math.max(held[pf].first, held[pf].second)
-          pattern[pf].step = pattern[pf].step_min
-          p[pf].step_min_viz[p[pf].bank] = math.min(held[pf].first, held[pf].second)
-          p[pf].step_max_viz[p[pf].bank] = math.max(held[pf].first, held[pf].second)
-          p[pf].looping = true
-          -- store these in case you wanna add a "copy section function"
-          p[pf].step_min[p[pf].bank] = pattern[pf].step_min
-          p[pf].step_max[p[pf].bank] = pattern[pf].step_max
-        end)
+        if pattern_overdub then
+          for i = 1, 8 do
+            if pattern[i].play == 1 then
+              clock.run(function()
+                clock.sync(1)
+                local segment = math.floor(pattern[pf].endpoint / 16) --util.round(pattern[pf].endpoint / 16, 1)
+                pattern[i].step_min = segment * (math.min(held[pf].first, held[pf].second) - 1)
+                pattern[i].step_max = segment * math.max(held[pf].first, held[pf].second)
+                pattern[i].step = pattern[i].step_min
+                p[i].step_min_viz[p[i].bank] = math.min(held[pf].first, held[pf].second)
+                p[i].step_max_viz[p[i].bank] = math.max(held[pf].first, held[pf].second)
+                p[i].looping = true
+                -- store these in case you wanna add a "copy section function"
+                p[i].step_min[p[i].bank] = pattern[i].step_min
+                p[i].step_max[p[i].bank] = pattern[i].step_max
+              end)
+            end
+          end
+        else
+          clock.run(function()
+            clock.sync(1)
+            local segment = math.floor(pattern[pf].endpoint / 16)
+            pattern[pf].step_min = segment * (math.min(held[pf].first, held[pf].second) - 1)
+            pattern[pf].step_max = segment * math.max(held[pf].first, held[pf].second)
+            pattern[pf].step = pattern[pf].step_min
+            p[pf].step_min_viz[p[pf].bank] = math.min(held[pf].first, held[pf].second)
+            p[pf].step_max_viz[p[pf].bank] = math.max(held[pf].first, held[pf].second)
+            p[pf].looping = true
+            -- store these in case you wanna add a "copy section function"
+            p[pf].step_min[p[pf].bank] = pattern[pf].step_min
+            p[pf].step_max[p[pf].bank] = pattern[pf].step_max
+          end)
+        end
       elseif p[pattern_focus].looping and held[pattern_focus].max < 2 then
-        local pf = pattern_focus
-        p[pf].looping = false
+        p[pattern_focus].looping = false
         clock.run(function()
-          local wait = params:get("patterns_launch_"..pf) == 2 and 1 or (params:get("patterns_launch_"..pf) == 3 and 4 or pattern[pf].quantize)
+          local wait = params:get("patterns_launch_"..pattern_focus) == 2 and 1 or (params:get("patterns_launch_"..pattern_focus) == 3 and 4 or pattern[pattern_focus].quantize)
           clock.sync(wait)
-          pattern[pf].step = 0
-          pattern[pf].step_min = 0
-          pattern[pf].step_max = pattern[pf].endpoint
+          pattern[pattern_focus].step = 0
+          pattern[pattern_focus].step_min = 0
+          pattern[pattern_focus].step_max = pattern[pattern_focus].endpoint
           -- restore these so the loop points aren't saveed to the pattern bank
-          p[pf].step_min[p[pf].bank] = 0
-          p[pf].step_max[p[pf].bank] = pattern[pf].endpoint
+          p[pattern_focus].step_min[p[pattern_focus].bank] = 0
+          p[pattern_focus].step_max[p[pattern_focus].bank] = pattern[pattern_focus].endpoint
+        end)
+      elseif not (p[pattern_focus].looping or pattern_reset) and held[pattern_focus].max < 2 then
+        clock.run(function()
+          clock.sync(quant_rate)
+          local segment = math.floor(pattern[pattern_focus].endpoint / 16)
+          pattern[pattern_focus].step = segment * (x - 1)
         end)
       end
     end
   end
 end
 
-function grd_zero.modifier_keys(x, z)
-  if x == 1 then
-    mod_a = z == 1 and true or false
-  elseif x == 2 then
-    mod_c = z == 1 and true or false
-  elseif x == 15 then
-    mod_d = z == 1 and true or false
-  elseif x == 16 then
-    mod_b = z == 1 and true or false
+function grd_zero.modifier_keys(x, y, z)
+  if y == 7 then
+    if x == 4 then
+      mod_a = z == 1 and true or false
+    elseif x == 13 then
+      mod_b = z == 1 and true or false
+    end
+  elseif y == 8 then
+    if x == 4 then
+      mod_c = z == 1 and true or false
+    elseif x == 13 then
+      mod_d = z == 1 and true or false
+    end
   end
 end
 
@@ -474,10 +483,10 @@ function grd_zero.voice_settings(x, y, z)
         params:set("voice_mute"..i, voice[i].mute and 1 or 2)
       elseif (mod_c or mod_d) then
         if voice[i].output < 3 then
-          for _, value in ipairs(voicenotes[voice[i].output]) do
-            free_voice(voice[i].output, value)
-          end
-        elseif voice[i].output == 3 then
+          --for _, value in ipairs(voicenotes[voice[i].output]) do
+            --free_voice(voice[i].output, value)
+          --end
+        elseif voice[i].output == 3 or voice[i].output > 6 then
           notes_off(i)
         end
       elseif not voice[i].mute then
@@ -511,11 +520,7 @@ function grd_zero.grid_options(x, y, z)
     if x == 15 and z == 1 then
       key_quantize = not key_quantize -- toggle quantization
     elseif x == 16 then
-      if GIRDSIZE == 128 and z == 1 then
-        pattern_view = not pattern_view
-      elseif GRIDSIZE == 256 then
-        keyquant_edit = z == 1 and true or false
-      end
+      keyquant_edit = z == 1 and true or false
       dirtyscreen = true
     end
   elseif y == 11 and z == 1 then
@@ -563,16 +568,28 @@ function grd_zero.event_options(x, y, z)
       end
     elseif y == 14 and x == 16 then
       collecting_notes = z == 1 and true or false
+      if z == 1 and notes_added then
+        notes_added = false
+        prev_seq_notes = {table.unpack(seq_notes)}
+      end
       if z == 0 and #collected_notes > 0 then
         seq_step = 0
         trig_step = 0
         seq_notes = {table.unpack(collected_notes)}
+        prev_seq_notes = {table.unpack(collected_notes)}
       else
         collected_notes = {}
       end
       dirtyscreen = true
     elseif y == 15 and x == 16 then
       appending_notes = z == 1 and true or false
+      if z == 0 and notes_added then
+        seq_notes = {table.unpack(prev_seq_notes)}
+        notes_added = false
+        if seq_step >= #prev_seq_notes then
+          seq_step = 0
+        end
+      end
     elseif y == 16 and x == 16 and z == 1 then
       seq_hold = not seq_hold
       if not seq_hold then
@@ -660,6 +677,7 @@ function grd_zero.int_grid(x, y, z)
             dirtyscreen = true
           elseif appending_notes and not collecting_notes then
             table.insert(seq_notes, 0)
+            notes_added = true
           else
             local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
             local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = notes_last, action = "note_on"} event(e)
@@ -709,25 +727,25 @@ function grd_zero.kit_grid(x, y, z)
       table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
     end
   elseif x == 12 then
-    if y == 10 then
-      midi_bank_a = z == 1 and true or false
+    if y > 9 and y < 12 then
       gkey[x][y].active = z == 1 and true or false
-    end
-    if y == 11 then
-      midi_bank_b = z == 1 and true or false
-      gkey[x][y].active = z == 1 and true or false
+      held_bank = held_bank + (z * 2 - 1)
+      if held_bank < 1 then
+        midi_bank = 0
+      elseif held_bank == 1 then
+        if y == 10 then
+          midi_bank = z == 1 and 2 or 4
+        elseif y == 11 then
+          midi_bank = z == 1 and 4 or 2
+        end
+      elseif held_bank == 2 then
+        midi_bank = 6
+      end
     end
   elseif x == 13 then
     gkey[x][y].active = z == 1 and true or false
-    if midi_bank_a and not midi_bank_b then
-      m[midi_out_dev]:cc(23 + (y - 10), z == 1 and 127 or 0, 16)
-    elseif midi_bank_b and not midi_bank_a then
-      m[midi_out_dev]:cc(25 + (y - 10), z == 1 and 127 or 0, 16)
-    elseif midi_bank_a and midi_bank_b then
-      m[midi_out_dev]:cc(27 + (y - 10), z == 1 and 127 or 0, 16)
-    else
-      m[midi_out_dev]:cc(21 + (y - 10), z == 1 and 127 or 0, 16)
-    end
+    local n = y - 9 + midi_bank
+    m[kit_midi_dev]:cc(mcc[n].num, z == 1 and mcc[n].max or mcc[n].min, kit_midi_ch)
   end
 end
 
@@ -746,6 +764,7 @@ function grd_zero.scale_grid(x, y, z)
         table.insert(collected_notes, note)
       elseif appending_notes and not collecting_notes then
         table.insert(seq_notes, note)
+        notes_added = true
       end
       -- insert notes
       if seq_active and not (collecting_notes or appending_notes) then
@@ -754,6 +773,7 @@ function grd_zero.scale_grid(x, y, z)
           if seq_hold then seq_notes = {} end
         end
         table.insert(seq_notes, note)
+        prev_seq_notes = {table.unpack(seq_notes)}
       end
       -- play notes
       if (not seq_active or #seq_notes == 0) then
@@ -762,8 +782,7 @@ function grd_zero.scale_grid(x, y, z)
             trig_step = 0
           end
         else
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = note, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = key_focus, root = root_oct, note = note, action = "note_on"} event(e)
         end
       end
       -- set last note
@@ -776,8 +795,7 @@ function grd_zero.scale_grid(x, y, z)
         table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
       end
       if (not seq_active or #seq_notes == 0 or not key_repeat) then
-        local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-        local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       end
       table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
     end
@@ -799,6 +817,7 @@ function grd_zero.chrom_grid(x, y, z)
         table.insert(collected_notes, note)
       elseif appending_notes and not collecting_notes then
         table.insert(seq_notes, note)
+        notes_added = true
       end
       -- insert notes
       if seq_active and not (collecting_notes or appending_notes) then
@@ -807,16 +826,16 @@ function grd_zero.chrom_grid(x, y, z)
           if seq_hold then seq_notes = {} end
         end
         table.insert(seq_notes, note)
+        prev_seq_notes = {table.unpack(seq_notes)}
       end
-      --play notes
+      -- play notes
       if (not seq_active or #seq_notes == 0) then
         if key_repeat then
           if heldkey_key == 1 then
             trig_step = 0
           end
         else
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eKEYS, p = p, i = key_focus, note = note, action = "note_on"} event(e)
+          local e = {t = eKEYS, i = key_focus, note = note, action = "note_on"} event(e)
         end
       end
     elseif z == 0 then
@@ -824,8 +843,7 @@ function grd_zero.chrom_grid(x, y, z)
         table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
       end
       if (not seq_active or #seq_notes == 0) then
-        local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-        local e = {t = eKEYS, p = p, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
       end
       table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
     end
@@ -846,7 +864,7 @@ function grd_zero.chord_grid(x, y, z)
     elseif z == 0 then
       if heldkey_key == 0 then
         kill_chord()
-        if not seq_hold or appending_notes then
+        if not (seq_hold or appending_notes) then
           seq_notes = {}
         end
       end
@@ -924,19 +942,6 @@ function grd_zero.drum_grid(x, y, z)
   end
 end
 
-function grd_zero.midi_ctrl(x, y, z)
-  gkey[x][y].active = z == 1 and true or false
-  if x < 4 then
-    local i = x - 1
-    if y < 5 then
-      local val = util.round(util.linlin(1, 4, 127, 63, y), 1)
-      m[midi_out_dev]:cc(102 + x, z == 1 and val or 0, 16)
-    elseif y == 5 then
-      m[midi_out_dev]:cc(39 + x, z == 1 and 127 or 0, 16)
-    end
-  end
-end
-
 function grd_zero.draw()
   g:all(0)
   -- patterns
@@ -952,7 +957,14 @@ function grd_zero.draw()
     else
       g:led(i + 4, 7, 2)
     end
+    -- pattern bank page
+    g:led(i + 4, 8, pattern_bank_page + 1 == i and 1 or 0)
   end
+  -- mod keys
+  g:led(4, 7, mod_a and 15 or 0) 
+  g:led(13, 7, mod_b and 15 or 0)
+  g:led(4, 8, mod_c and 15 or 0) 
+  g:led(13, 8, mod_d and 15 or 0)
 
   if hide_metronome then
     g:led(16, 10, 3)
@@ -960,97 +972,83 @@ function grd_zero.draw()
     g:led(16, 10, pulse_bar and 15 or (pulse_beat and 8 or 3)) -- Q flash
   end
 
-  if midi_view then
-    for x = 1, 3 do
-      g:led(x, 5, gkey[x][5].active and 15 or 8)
-      for y = 1, 4 do
-        g:led(x, y, gkey[x][y].active and 15 or 1)
+  -- pattern edit
+  g:led(1, 1, (copying_pattern and not copy_src.state) and pulse_key_slow or (copy_src.state and 10 or 4))
+  g:led(2, 1, pasting_pattern and pulse_key_slow or 4)
+  g:led(3, 1, appending_pattern and 15 or 4)
+  g:led(1, 2, pattern_clear and pulse_key_slow or (pattern_reset and 15 or 4))
+  g:led(2, 2, pattern_clear and pulse_key_slow or (duplicating_pattern and 15 or 4))
+  g:led(1, 3, pattern_overdub and 15 or 4)
+
+  g:led(14, 1, pattern_rec_mode == "queued" and 10 or 4)
+  g:led(15, 1, pattern_rec_mode == "synced" and 10 or 4)
+  g:led(16, 1, pattern_rec_mode == "free" and 10 or 4)
+  g:led(15, 2, pattern_len_edit and 15 or 4)
+  g:led(16, 2, prgchange_view and 15 or 4)
+  g:led(16, 3, loading_page and pulse_key_mid or 4)
+
+  if prgchange_view then
+    local bank_off = pattern_bank_page * 3
+    for i = 1, 8 do
+      for j = 1, 3 do
+        local bank = j + bank_off
+        local led = 0
+        if bank_focus == bank and pattern_focus == i then
+          led = math.ceil(pulse_key_slow / 2)
+        elseif p[i].prc_num[bank] > 0 then
+          if p[i].count[bank] > 0 then
+            led = 10
+          else
+            led = 5
+          end
+        elseif p[i].prc_num[bank] == 0 then
+          if p[i].count[bank] > 0 then
+            led = 2
+          end
+        end
+        g:led(i + 4, j, led)
       end
-    end
-    for x = 5, 7 do
-      g:led(x, 5, gkey[x][5].active and 15 or 8)
-      for y = 1, 4 do
-        g:led(x, y, gkey[x][y].active and 15 or 1)
-      end
-    end
-    for x = 9, 11 do
-      g:led(x, 5, gkey[x][5].active and 15 or 8)
-      for y = 1, 4 do
-        g:led(x, y, gkey[x][y].active and 15 or 1)
-      end
+      g:led(i + 4, 4, p[i].prc_enabled and 8 or 3)
     end
   else
-    -- pattern edit
-    g:led(1, 1, (copying_pattern and not copy_src.state) and pulse_key_slow or (copy_src.state and 10 or 4))
-    g:led(2, 1, pasting_pattern and pulse_key_slow or 4)
-    g:led(3, 1, appending_pattern and 15 or 4)
-    g:led(1, 2, pattern_clear and pulse_key_slow or (pattern_reset and 15 or 4))
-    g:led(2, 2, pattern_clear and pulse_key_slow or (duplicating_pattern and 15 or 4))
-    g:led(1, 3, pattern_overdub and 15 or 4)
-
-    g:led(14, 1, pattern_rec_mode == "queued" and 10 or 4)
-    g:led(15, 1, pattern_rec_mode == "synced" and 10 or 4)
-    g:led(16, 1, pattern_rec_mode == "free" and 10 or 4)
-    g:led(15, 2, pattern_meter_config and 15 or 4)
-    g:led(16, 2, pattern_length_config and 15 or 4)
-    g:led(16, 3, pattern_options_config and 15 or 4)
-
-    if pattern_meter_config then
-      for i = 1, 8 do
-        g:led(i + 4, 1, pattern[pattern_focus].manual_length and 1 or (params:get("patterns_meter_"..pattern_focus) == i and 8 or 2))
-        g:led(i + 4, 3, pattern_focus == i and 10 or 1)
+    -- pattern slots
+    local bank_off = pattern_bank_page * 3
+    for i = 1, 8 do
+      local dim = pattern_focus == i and 0 or -1
+      for j = 1, 3 do
+        g:led(i + 4, j, p[i].load == j + bank_off and pulse_key_slow or (p[i].bank == j + bank_off and (p[i].count[j + bank_off] > 0 and 15 + dim or 4 + dim) or (p[i].count[j + bank_off] > 0 and 8 + dim or 2 + dim)))
       end
-    elseif pattern_length_config then
-      for i = 1, 8 do
-        g:led(i + 4, 1, pattern[pattern_focus].manual_length and 1 or (params:get("patterns_beatnum_"..pattern_focus) == i and 12 or 3))
-        g:led(i + 4, 2, pattern[pattern_focus].manual_length and 1 or (params:get("patterns_beatnum_"..pattern_focus) == i + 8 and 15 or 4))
-        g:led(i + 4, 3, pattern_focus == i and 10 or 1)
-      end
-    elseif pattern_options_config then
-      for i = 1, 8 do
-        g:led(i + 4, 1, params:get("patterns_launch_"..i) == 1 and 2 or (params:get("patterns_launch_"..i) == 2 and 6 or 12))
-        g:led(i + 4, 2, pattern[i].loop == 0 and 1 or 4)
-        g:led(i + 4, 3, pattern_focus == i and 10 or 1)
-      end
-    else
-      for i = 1, 8 do
-        local dim = pattern_focus == i and 0 or -1
-        for j = 1, 3 do
-          g:led(i + 4, j, p[i].load == j and pulse_key_slow or (p[i].bank == j and (p[i].count[j] > 0 and 15 + dim or 10 + dim) or (p[i].count[j] > 0 and 6 + dim or 2 + dim)))
-        end
+      g:led(i + 4, 4, p[i].stop and pulse_key_mid or 0)
+    end
+    -- stop all key
+    g:led(13, 4, stop_all and pulse_key_fast or 0)
+  end
+  -- pattern position
+  if trigs_config_view then
+    for x = 1, 16 do
+      if x <= trigs[trigs_focus].step_max then
+        g:led(x, 5, (trig_step == x and (seq_active or key_repeat)) and 12 or (trigs[trigs_focus].pattern[x] == 1 and 6 or 2))
       end
     end
-    -- pattern position
-    if trigs_config_view then
-      for x = 1, 16 do
-        if x <= trigs[trigs_focus].step_max then
-          g:led(x, 5, (trig_step == x and (seq_active or key_repeat)) and 12 or (trigs[trigs_focus].pattern[x] == 1 and 6 or 2))
-        end
+    for i = 1, 2 do
+      g:led(i, 12, trigs_focus == i and 12 or 4)
+    end
+    g:led(3, 12, set_trigs_end and 15 or 1)
+    g:led(14, 12, trigs_reset and 15 or 1)
+    g:led(15, 12, pulse_key_mid)
+  else
+    if p[pattern_focus].looping then
+      local min = p[pattern_focus].step_min_viz[p[pattern_focus].bank]
+      local max = p[pattern_focus].step_max_viz[p[pattern_focus].bank]
+      for i = min, max do
+        g:led(i, 5, 4)
       end
-      for i = 1, 2 do
-        g:led(i, 12, trigs_focus == i and 12 or 4)
-      end
-      g:led(3, 12, set_trigs_end and 15 or 1)
-      g:led(14, 12, trigs_reset and 15 or 1)
-      g:led(15, 12, pulse_key_mid)
-    else
-      if p[pattern_focus].looping then
-        local min = p[pattern_focus].step_min_viz[p[pattern_focus].bank]
-        local max = p[pattern_focus].step_max_viz[p[pattern_focus].bank]
-        for i = min, max do
-          g:led(i, 5, 4)
-        end
-      end
-      if pattern[pattern_focus].play == 1 and pattern[pattern_focus].endpoint > 0 then
-        g:led(pattern[pattern_focus].position, 5, pattern[pattern_focus].play == 1 and 10 or 0)
-      end
+    end
+    if pattern[pattern_focus].play == 1 and pattern[pattern_focus].endpoint > 0 then
+      g:led(pattern[pattern_focus].position, 5, pattern[pattern_focus].play == 1 and 10 or 0)
     end
   end
 
-  g:led(1, 9, mod_a and 15 or 0) 
-  g:led(16, 9, mod_b and 15 or 0)
-  g:led(2, 9, mod_c and 15 or 0) 
-  g:led(15, 9, mod_d and 15 or 0)
   -- focus
   for i = 1, 3 do
     if (strum_count_options or strum_mode_options or strum_skew_options) then
@@ -1063,6 +1061,7 @@ function grd_zero.draw()
     g:led(i, 8, voice[i].mute and 2 or (key_focus == i and 10 or 4))
     g:led(i + 13, 8, voice[i + 3].mute and 2 or (key_focus == i + 3 and 10 or 4))
   end
+  
   -- keyboard options
   g:led(1, 10, voice[key_focus].keys_option == 1 and 8 or 4)
   g:led(2, 10, voice[key_focus].keys_option == 2 and 8 or 4)
