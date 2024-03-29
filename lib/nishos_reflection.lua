@@ -26,12 +26,7 @@ function reflection.new(id)
   p.step_min = 0
   p.step_max = 0
   p.position = 1
-  --// for userscript only
   p.manual_length = false
-  p.meter = 4/4
-  p.beatnum = 16
-  p.length = 16
-  --//
   p.start_callback = function() end
   p.end_of_loop_callback = function() end
   p.end_of_rec_callback = function() end
@@ -196,82 +191,80 @@ function reflection:begin_playback()
   self.step = self.step_min
   self.play = 1
   self.start_callback()
-  self.clock = clock.run(function()
-    while self.play == 1 do
-      clock.sync(1/PPQN)
-      self.step = self.step + 1
-      if self.count > 0 then
-        local prev_pos = self.position
-        self.position = util.round(util.linlin(1, self.endpoint, 1, 16, self.step), 1)
-        if self.position ~= prev_pos then
-          self:step_callback()
-        end
+  while self.play == 1 do
+    clock.sync(1/PPQN)
+    self.step = self.step + 1
+    if self.count > 0 then
+      local prev_pos = self.position
+      self.position = util.round(util.linlin(1, self.endpoint, 1, 16, self.step), 1)
+      if self.position ~= prev_pos then
+        self:step_callback()
       end
-      local q = math.floor(PPQN * self.quantize)
-      if self.endpoint == 0 then
-        -- don't process on first pass
-        if self.rec_dur then
-          self.rec_dur.count = self.rec_dur.count - 1/PPQN
-          if self.rec_dur.count <= 0 then
-            self.endpoint = self.rec_dur.length * PPQN
-            self.endpoint_init = self.endpoint
-            self.step_max = self.endpoint
-            self:set_rec(0)
-            self.rec_dur = nil
-            -- if loop then start from beginning
-            if self.loop == 1 then
-              self.start_callback()
-              self.step = self.step_min
-              self.play = 1
-            end
-          end
-        else
-          if self.rec == 0 and self.count > 0 then
-            self.endpoint = self.step
-            self.endpoint_init = self.step
-            self.manual_length = true
-            self.step_max = self.step
-            if self.loop == 1 then 
-              self.step = self.step_min
-              self:_clear_flags()
-              self:start_callback()
-            end
+    end
+    local q = math.floor(PPQN * self.quantize)
+    if self.endpoint == 0 then
+      -- don't process on first pass
+      if self.rec_dur then
+        self.rec_dur.count = self.rec_dur.count - 1/PPQN
+        if self.rec_dur.count <= 0 then
+          self.endpoint = self.rec_dur.length * PPQN
+          self.endpoint_init = self.endpoint
+          self.step_max = self.endpoint
+          self:set_rec(0)
+          self.rec_dur = nil
+          -- if loop then start from beginning
+          if self.loop == 1 then
+            self.start_callback()
+            self.step = self.step_min
+            self.play = 1
           end
         end
-      -- if not first pass then do the quantization math
       else
-        if self.step % q ~= 1 then goto continue end
-        for i = q - 1, 0, - 1 do
-          if self.event[self.step - i] and next(self.event[self.step - i]) then
-            for j = 1, #self.event[self.step - i] do
-              local event = self.event[self.step - i][j]
-              if not event._flag then self.process(event) end
-            end
-          end
-        end
-        ::continue::
-        -- if overdubbing with dur as arg then cound down and end rec
-        if self.rec_dur then
-          self.rec_dur.count = self.rec_dur.count - 1/PPQN
-          if self.rec_dur.count <= 0 then
-            self:set_rec(0)
-            self.rec_dur = nil
-          end
-        end
-        -- if the endpoint is reached restart or stop playback
-        if self.count > 0 and self.step >= self.step_max then
-          self.end_of_loop_callback()
-          if self.loop == 0 then
-            self:end_playback()
-          elseif self.loop == 1 then
+        if self.rec == 0 and self.count > 0 then
+          self.endpoint = self.step
+          self.endpoint_init = self.step
+          self.manual_length = true
+          self.step_max = self.step
+          if self.loop == 1 then 
             self.step = self.step_min
             self:_clear_flags()
             self:start_callback()
           end
         end
       end
+    -- if not first pass then do the quantization math
+    else
+      if self.step % q ~= 1 then goto continue end
+      for i = q - 1, 0, - 1 do
+        if self.event[self.step - i] and next(self.event[self.step - i]) then
+          for j = 1, #self.event[self.step - i] do
+            local event = self.event[self.step - i][j]
+            if not event._flag then self.process(event, self.id) end
+          end
+        end
+      end
+      ::continue::
+      -- if overdubbing with dur as arg then cound down and end rec
+      if self.rec_dur then
+        self.rec_dur.count = self.rec_dur.count - 1/PPQN
+        if self.rec_dur.count <= 0 then
+          self:set_rec(0)
+          self.rec_dur = nil
+        end
+      end
+      -- if the endpoint is reached restart or stop playback
+      if self.count > 0 and self.step >= self.step_max then
+        self.end_of_loop_callback()
+        if self.loop == 0 then
+          self:end_playback()
+        elseif self.loop == 1 then
+          self.step = self.step_min
+          self:_clear_flags()
+          self:start_callback()
+        end
+      end
     end
-  end)
+  end
 end
 
 function reflection:end_playback()
