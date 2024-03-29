@@ -2,6 +2,15 @@
 
 local polyForm = {}
 
+local tx = require 'textentry'
+
+local preset_path = norns.state.path.."/polyform_presets"
+
+local polyform_params = {
+  "main_amp",
+  "pan"
+}
+
 local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
 end
@@ -9,14 +18,14 @@ end
 local function display_params(i, x)
   if x == 1 then
     params:hide("sustain"..i)
-    params:hide("decay"..i)
+    params:hide("release"..i)
     params:hide("mod_sustain"..i)
-    params:hide("mod_decay"..i)
+    params:hide("mod_release"..i)
   else
     params:show("sustain"..i)
-    params:show("decay"..i)
+    params:show("release"..i)
     params:show("mod_sustain"..i)
-    params:show("mod_decay"..i)
+    params:show("mod_release"..i)
   end
   _menu.rebuild_params()
 end
@@ -108,6 +117,22 @@ local function width_display(param)
     return ("1/"..util.round(param, 0.01))
   else
     return "1/1"
+  end
+end
+
+local function load_synth_patch(path)
+  if path then
+    print(txt)
+  end
+end
+
+local function save_synth_patch(txt, i)
+  if txt then
+    local patch = {}
+    for _, v in ipairs(polyform_params) do
+      patch.v = params:get(v..i)
+    end
+    tab.save(patch, preset_path..txt..".patch")
   end
 end
 
@@ -232,7 +257,7 @@ function polyForm.add_params()
     params:add_control("mod_delay"..i, "delay", controlspec.new(0, 5, "lin", 0, 0), function(param) return (round_form(param:get(),0.01," s")) end)
     params:set_action("mod_delay"..i, function(x) set_value(i, engine.envmod_h, x) end)
     -- attack
-    params:add_control("mod_attack"..i, "attack", controlspec.new(0.001, 10, "exp", 0, 0.001), function(param) return (round_form(param:get(),0.01," s")) end)
+    params:add_control("mod_attack"..i, "attack", controlspec.new(0.1, 10, "exp", 0, 0.1), function(param) return (round_form(param:get(),0.01," s")) end)
     params:set_action("mod_attack"..i, function(x) set_value(i, engine.envmod_a, x) end)
     -- decay
     params:add_control("mod_decay"..i, "decay", controlspec.new(0.01, 10, "exp", 0, 0.2), function(param) return (round_form(param:get(),0.01," s")) end)
