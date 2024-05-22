@@ -345,23 +345,23 @@ for i = 1, NUM_VOICES do
 end
 
 local voice_params = {
-  {"main_amp1", "mix1", "noise_mix1", "noise_crackle1",
-  "formant_shape1", "formant_curve1", "formant_type1", "formant_width1",
-  "pulse_tune1", "pulse_width1", "pwm_rate1", "pwm_depth1",
-  "lpf_cutoff1", "lpf_resonance1", "env_lpf_depth1", "hpf_cutoff1",
-  "env_type1", "env_curve1", "attack1", "decay1", "sustain1", "release1", 
-  "vib_freq1", "vib_depth1"}, --polyform [one]
-  {"main_amp2", "mix2", "noise_mix2", "noise_crackle2",
-  "formant_shape2", "formant_curve2", "formant_type2", "formant_width2",
-  "pulse_tune2", "pulse_width2", "pwm_rate2", "pwm_depth2",
-  "lpf_cutoff2", "lpf_resonance2", "env_lpf_depth2", "hpf_cutoff2",
-  "env_type2", "env_curve2", "attack2", "decay2", "sustain2", "release2", 
-  "vib_freq2", "vib_depth2"}, --polyform [two]
-  {"note_length", "note_velocity", "midi_device", "midi_channel",
+  {"polyform_main_amp_1", "polyform_mix_1", "polyform_noise_mix_1", "polyform_noise_crackle_1",
+  "polyform_formant_shape_1", "polyform_formant_curve_1", "polyform_formant_type_1", "polyform_formant_width_1",
+  "polyform_pulse_tune_1", "polyform_pulse_width_1", "polyform_pwm_rate_1", "polyform_pwm_depth_1",
+  "polyform_lpf_cutoff_1", "lpolyform_pf_resonance_1", "polyform_env_lpf_depth_1", "polyform_hpf_cutoff_1",
+  "polyform_env_type_1", "polyform_env_curve_1", "polyform_attack_1", "polyform_decay_1", "polyform_sustain_1", "polyform_release_1", 
+  "polyform_vib_freq_1", "polyform_vib_depth_1"}, --polyform [one]
+  {"polyform_main_amp_2", "polyform_mix_2", "polyform_noise_mix_2", "polyform_noise_crackle_2",
+  "polyform_formant_shape_2", "polyform_formant_curve_2", "polyform_formant_type_2", "polyform_formant_width_2",
+  "polyform_pulse_tune_2", "polyform_pulse_width_2", "polyform_pwm_rate_2", "polyform_pwm_depth_2",
+  "polyform_lpf_cutoff_2", "polyform_lpf_resonance_2", "polyform_env_lpf_depth_2", "polyform_hpf_cutoff_2",
+  "polyform_env_type_2", "polyform_env_curve_2", "polyform_attack_2", "polyform_decay_2", "polyform_sustain_2", "polyform_release_2", 
+  "polyform_vib_freq_2", "polyform_vib_depth_2"}, --polyform [two]
+  {"note_length_", "note_velocity_", "midi_device_", "midi_channel_",
   "midi_cc_val_1_", "midi_cc_val_2_", "midi_cc_val_3_", "midi_cc_val_4_"}, --midi
   {"crow_env_amp_1", "crow_env_shape_1", "crow_env_attack_1", "crow_env_decay_1", "crow_env_sustain_1", "crow_env_release_1", "crow_legato_1", "crow_v8_slew_1"}, --crow 1+2
   {"crow_env_amp_2", "crow_env_shape_2", "crow_env_attack_2", "crow_env_decay_2", "crow_env_sustain_2", "crow_env_release_2", "crow_legato_2", "crow_v8_slew_2"}, --crow 3+4
-  {"jf_amp", "jf_voice"}, --crow ii jf
+  {"jf_amp_", "jf_voice_"}, --crow ii jf
   {"wysn_mode", "wsyn_amp", "wsyn_curve", "wsyn_ramp", "wsyn_lpg_time",
   "wsyn_lpg_sym", "wsyn_fm_index", "wsyn_fm_env", "wsyn_fm_num", "wsyn_fm_den"} --crow ii wsyn
 }
@@ -658,42 +658,12 @@ function manage_ii()
 end
 
 function set_defaults()
-  params:set("voice_out1", 1)
-  params:set("voice_out2", 2)
-  params:set("voice_out3", 3)
-  params:set("voice_out4", 3)
-  params:set("voice_out5", 3)
-  params:set("voice_out6", 3)
-end
-
-function set_my_defaults() -- my standard setup
-  -- set midi 2host ch1
-  params:set("glb_midi_in_device", 3)
-  params:set("glb_midi_in_channel", 1)
-  params:set("glb_midi_out_device", 3)
-  params:set("glb_midi_out_channel", 1)
-  -- set kit midi 2host ch 7
-  params:set("kit_out_device", 3)
-  params:set("kit_midi_channel", 7)
-  -- voice settings:
-  params:set("voice_out1", 1)
-  params:set("voice_out2", 2)
-  -- midi out 2host ch 8
-  params:set("voice_out3", 3)
-  params:set("midi_device3", 1)
-  params:set("midi_channel3", 4)
-  -- analog 4 t1
-  params:set("voice_out4", 3)
-  params:set("midi_device4", 1)
-  params:set("midi_channel4", 5)
-  -- analog 4 t2
-  params:set("voice_out5", 3)
-  params:set("midi_device5", 1)
-  params:set("midi_channel5", 6)
-  -- prophet 6
-  params:set("voice_out6", 3)
-  params:set("midi_device6", 1)
-  params:set("midi_channel6", 1)
+  params:set("voice_out_1", 1)
+  params:set("voice_out_2", 2)
+  params:set("voice_out_3", 3)
+  params:set("voice_out_4", 3)
+  params:set("voice_out_5", 3)
+  params:set("voice_out_6", 3)
 end
 
 
@@ -1949,32 +1919,32 @@ function init()
   for i = 1, NUM_VOICES do
     params:add_group("voice_"..i, "voice "..i, 20)
     -- output
-    params:add_option("voice_out"..i, "output", options.output, 1)
-    params:set_action("voice_out"..i, function(val) voice[i].output = val manage_ii() build_menu() end)
+    params:add_option("voice_out_"..i, "output", options.output, 1)
+    params:set_action("voice_out_"..i, function(val) voice[i].output = val manage_ii() build_menu() end)
     -- mute
-    params:add_option("voice_mute"..i, "mute", {"off", "on"}, 1)
-    params:set_action("voice_mute"..i, function(val) voice[i].mute = val == 2 and true or false dirtygrid = true end)
+    params:add_option("voice_mute_"..i, "mute", {"off", "on"}, 1)
+    params:set_action("voice_mute_"..i, function(val) voice[i].mute = val == 2 and true or false dirtygrid = true end)
     -- keyboard
-    params:add_option("keys_option"..i, "keyboard type", {"scale", "chromatic", "chords", "drums"}, 1)
-    params:set_action("keys_option"..i, function(val) voice[i].keys_option = val dirtygrid = true build_menu() end)
+    params:add_option("keys_option_"..i, "keyboard type", {"scale", "chromatic", "chords", "drums"}, 1)
+    params:set_action("keys_option_"..i, function(val) voice[i].keys_option = val dirtygrid = true build_menu() end)
 
     -- midi params
-    params:add_option("midi_device"..i, "midi device", midi_devices, 1)
-    params:set_action("midi_device"..i, function(val) m[i] = midi.connect(val) end)
+    params:add_option("midi_device_"..i, "midi device", midi_devices, 1)
+    params:set_action("midi_device_"..i, function(val) m[i] = midi.connect(val) end)
 
-    params:add_number("midi_channel"..i, "midi channel", 1, 16, i)
-    params:set_action("midi_channel"..i, function(val) notes_off(i) voice[i].midi_ch = val end)
+    params:add_number("midi_channel_"..i, "midi channel", 1, 16, i)
+    params:set_action("midi_channel_"..i, function(val) notes_off(i) voice[i].midi_ch = val end)
 
-    params:add_number("note_velocity"..i, "velocity", 1, 127, 100)
-    params:set_action("note_velocity"..i, function(val) voice[i].velocity = val end)
+    params:add_number("note_velocity_"..i, "velocity", 1, 127, 100)
+    params:set_action("note_velocity_"..i, function(val) voice[i].velocity = val end)
 
-    params:add_control("note_length"..i, "note length", controlspec.new(0, 2, "lin", 0.01, 0), function(param) return param:get() == 0 and "played" or param:get().." s" end)
-    params:set_action("note_length"..i, function(val) voice[i].length = val end)
+    params:add_control("note_length_"..i, "note length", controlspec.new(0, 2, "lin", 0.01, 0), function(param) return param:get() == 0 and "played" or param:get().." s" end)
+    params:set_action("note_length_"..i, function(val) voice[i].length = val end)
 
-    params:add_binary("midi_panic"..i, "don't panic", "trigger", 0)
-    params:set_action("midi_panic"..i, function() notes_off(i) end)
+    params:add_binary("midi_panic_"..i, "don't panic", "trigger", 0)
+    params:set_action("midi_panic_"..i, function() notes_off(i) end)
 
-    params:add_separator("voice_midi_cc"..i, "midi cc's")
+    params:add_separator("voice_midi_cc_"..i, "midi cc's")
     for n = 1, 4 do
       local name = {"A", "C", "C", "D"}
       params:add_number("midi_cc_dest_"..n.."_"..i, "cc "..name[n].." number", 0, 127, 0, function(param) return param:get() == 0 and "off" or param:get() end)
@@ -1985,14 +1955,14 @@ function init()
     end
 
     -- jf params
-    params:add_option("jf_mode"..i, "jf mode", {"mono", "poly"}, 2)
-    params:set_action("jf_mode"..i, function(mode) voice[i].jf_mode = mode build_menu() end)
+    params:add_option("jf_mode_"..i, "jf mode", {"mono", "poly"}, 2)
+    params:set_action("jf_mode_"..i, function(mode) voice[i].jf_mode = mode build_menu() end)
 
-    params:add_number("jf_voice"..i, "jf voice", 1, 6, i)
-    params:set_action("jf_voice"..i, function(vox) voice[i].jf_ch = vox end)
+    params:add_number("jf_voice_"..i, "jf voice", 1, 6, i)
+    params:set_action("jf_voice_"..i, function(vox) voice[i].jf_ch = vox end)
 
-    params:add_control("jf_amp"..i, "jf level", controlspec.new(0.1, 10, "lin", 0.1, 8.0, "vpp"))
-    params:set_action("jf_amp"..i, function(level)
+    params:add_control("jf_amp_"..i, "jf level", controlspec.new(0.1, 10, "lin", 0.1, 8.0, "vpp"))
+    params:set_action("jf_amp_"..i, function(level)
       if voice[i].jf_mode == 2 then
         for i = 1, 6 do
           if voice[i].output == 6 and voice[i].jf_mode == 2 then
@@ -2043,6 +2013,14 @@ function init()
     params:set_action("crow_env_release_"..i, function(value) crw[i].env_r = value end)
   end
 
+  -- jf
+  params:add_group("jf_params", "crow [jf]", 2)
+  params:add_option("jf_run_mode", "jf run mode", {"off", "on"}, 1)
+  params:set_action("jf_run_mode", function(mode) crow.ii.jf.run_mode(mode - 1) end)
+
+  params:add_control("jf_run", "jf run", controlspec.new(-5, 5, "lin", 0, 0, "v"))
+  params:set_action("jf_run", function(volts) crow.ii.jf.run(volts) end)
+
   -- wsyn
   params:add_group("wsyn_params", "crow [wsyn]", 10)
 
@@ -2075,15 +2053,10 @@ function init()
 
   params:add_number("wsyn_fm_den", "fm ratio denom", 1, 16, 2)
   params:set_action("wsyn_fm_den", function(denom) crow.ii.wsyn.fm_ratio(params:get("wsyn_fm_num"), denom) end)
+  
+  -- drmFM params
+  drmfm.add_params()
 
-  -- jf
-  params:add_group("jf_params", "crow [jf]", 2)
-  params:add_option("jf_run_mode", "jf run mode", {"off", "on"}, 1)
-  params:set_action("jf_run_mode", function(mode) crow.ii.jf.run_mode(mode - 1) end)
-
-  params:add_control("jf_run", "jf run", controlspec.new(-5, 5, "lin", 0, 0, "v"))
-  params:set_action("jf_run", function(volts) crow.ii.jf.run(volts) end)
-    
   -- nb params
   params:add_group("nb_voices", "nb [players]", 4)
   for i = 1, 2 do
@@ -2092,8 +2065,6 @@ function init()
   end
   nb:add_player_params()
 
-  -- drmFM params
-  drmfm.add_params()
 
   -- fx separator
   if md.is_loaded("fx") then
@@ -2213,8 +2184,7 @@ function init()
   
   -- set defaults
   notes_last = notes_home
-  --set_defaults()
-  set_my_defaults()
+  set_defaults()
 
   -- hardware callbacks
   m[midi_in_dev].event = midi_events
@@ -2630,7 +2600,7 @@ function redraw()
       screen.level(15)
       screen.font_size(8)
       screen.move(64, 12)
-      screen.text_center("voice "..voice_focus.." - "..params:string("voice_out"..voice_focus))
+      screen.text_center("voice "..voice_focus.." - "..params:string("voice_out_"..voice_focus))
       -- param list
       local dest = voice[voice_focus].output
       local param = voice_param_focus[voice_focus]
@@ -2886,26 +2856,26 @@ end
 function build_menu()
   for i = 1, NUM_VOICES do
     if (voice[i].output == 3 or voice[i].output == 8 or  voice[i].output == 9) and voice[i].keys_option < 4 then
-      params:show("note_velocity"..i)
-      params:show("note_length"..i)
+      params:show("note_velocity_"..i)
+      params:show("note_length_"..i)
     else
-      params:hide("note_velocity"..i)
-      params:hide("note_length"..i)
+      params:hide("note_velocity_"..i)
+      params:hide("note_length_"..i)
     end
     if voice[i].output == 3  then
-      params:show("midi_device"..i)
-      params:show("midi_channel"..i)
-      params:show("midi_panic"..i)
-      params:show("voice_midi_cc"..i)
+      params:show("midi_device_"..i)
+      params:show("midi_channel_"..i)
+      params:show("midi_panic_"..i)
+      params:show("voice_midi_cc_"..i)
       for n = 1, 4 do
         params:show("midi_cc_dest_"..n.."_"..i)
         params:show("midi_cc_val_"..n.."_"..i)
       end
     else
-      params:hide("midi_device"..i)
-      params:hide("midi_channel"..i)
-      params:hide("midi_panic"..i)
-      params:hide("voice_midi_cc"..i)
+      params:hide("midi_device_"..i)
+      params:hide("midi_channel_"..i)
+      params:hide("midi_panic_"..i)
+      params:hide("voice_midi_cc_"..i)
       for n = 1, 4 do
         params:hide("midi_cc_dest_"..n.."_"..i)
         params:hide("midi_cc_val_"..n.."_"..i)
@@ -2922,17 +2892,17 @@ function build_menu()
       end
     end
     if voice[i].output == 6 then
-      if params:get("jf_mode"..i) == 1 then
-        params:show("jf_voice"..i)
+      if params:get("jf_mode_"..i) == 1 then
+        params:show("jf_voice_"..i)
       else
-        params:hide("jf_voice"..i)
+        params:hide("jf_voice_"..i)
       end
-      params:show("jf_amp"..i)
-      params:show("jf_mode"..i)
+      params:show("jf_amp_"..i)
+      params:show("jf_mode_"..i)
     else
-      params:hide("jf_mode"..i)
-      params:hide("jf_voice"..i)
-      params:hide("jf_amp"..i)
+      params:hide("jf_mode_"..i)
+      params:hide("jf_voice_"..i)
+      params:hide("jf_amp_"..i)
     end
   end
   _menu.rebuild_params()
