@@ -2936,8 +2936,8 @@ function show_banner()
     {1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1},
     {1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1},
   }
-  local hi = GRIDSIZE == 256 and 7 or 2
-  local lo = GRIDSIZE == 256 and 10 or 5
+  local hi = GRIDSIZE == 256 and 7 or 3
+  local lo = GRIDSIZE == 256 and 10 or 6
   g:all(0)
   for x = 1, 16 do
     for y = hi, lo do
