@@ -17,9 +17,9 @@ Formantpulse {
 			s.waitForBoot {
 
 				SynthDef("Formantpulse",{
-					arg out, gate = 1, freq = 110, main_amp = 0.2, pan = 0,
+					arg out, gate = 1, freq = 110, main_amp = 0.2, pan = 0, mix_osc_level = 0.5, mix_noise_level = 0,
+					sendA = 0, sendB = 0, sendABus = 0, sendBBus = 0,
 					// formant output args
-					formant_amp = 1,
 					formant_tune = 0,
 					formant_type = 0,
 					formant_shape = 0,
@@ -27,14 +27,12 @@ Formantpulse {
 					formant_curve = 0,
 					formant_width = 2,
 					// pulse output args
-					pulse_amp = 0,
 					pulse_tune = 0,
 					pulse_width = 0.5,
 					pulse_width_mod = 0,
 					pulse_mod_freq = 6,
 					pulse_mod_depth = 0,
 					// noise args
-					noise_amp = 0,
 					noise_amp_mod = 0,
 					noise_crackle = 0,
 					// envelope args
@@ -55,22 +53,23 @@ Formantpulse {
 					freq_slop = 0, cut_slop = 0, env_slop = 0, pan_slop = 0;
 
 					// variables
-					var signal, osc_formant, osc_pulse, osc_noise, pulse_train, formant_period, formant_time, formant_rise, formant_fall,
-					freq_formant, freq_pulse, cut_lin_scale = 1, cut_lin_lpf, cut_lpf_mod, cut_lin_hpf, cut_hpf_mod, rq_lpf, rq_hpf,
+					var signal, osc_mix, osc_formant, osc_pulse, osc_noise, noise_amp, pulse_train,
+					formant_period, formant_time, formant_rise, formant_fall,
+					freq_formant, freq_pulse, cut_lin_scale = 1, cut_lin_lpf,
+					cut_lpf_mod, cut_lin_hpf, cut_hpf_mod, rq_lpf, rq_hpf,
 					env, env_ar, env_adsr, action_ar, action_adsr, env_mod, env_mod_ar, env_mod_adsr;
 
 					// smooth args
 					main_amp = Lag.kr(main_amp);
 					pan = Lag.kr(pan);
-					formant_amp = Lag.kr(formant_amp);
+					mix_osc_level = Lag.kr(mix_osc_level);
+					mix_noise_level = Lag.kr(mix_noise_level);
 					formant_tune = Lag.kr(formant_tune);
 					formant_shape = Lag.kr(formant_shape);
 					formant_curve = Lag.kr(formant_curve);
 					formant_width = Lag.kr(formant_width);
-					pulse_amp = Lag.kr(pulse_amp);
 					pulse_tune = Lag.kr(pulse_tune);
 					pulse_width = Lag.kr(pulse_width);
-					noise_amp = Lag.kr(noise_amp);
 					cutoff_lpf = Lag.kr(cutoff_lpf);
 					res_lpf = Lag.kr(res_lpf);
 					cutoff_hpf = Lag.kr(cutoff_hpf);
@@ -86,12 +85,12 @@ Formantpulse {
 					action_ar = Select.kr(env_type > 0, [2, 0]);
 					action_adsr = Select.kr(env_type > 0, [0, 2]);
 
-					env_ar = EnvGen.kr(Env.perc(env_a, env_r + env_slop, curve: env_curve), gate, doneAction: action_ar);
-					env_adsr = EnvGen.kr(Env.adsr(env_a, env_d, env_s, env_r + env_slop, curve: env_curve), gate, doneAction: action_adsr);
+					env_ar = EnvGen.kr(Env.perc(env_a, env_d + env_slop, curve: env_curve), gate, doneAction: action_ar);
+					env_adsr = EnvGen.kr(Env.adsr(env_a, env_d + env_slop, env_s, env_r, curve: env_curve), gate, doneAction: action_adsr);
 					env = Select.kr(env_type > 0, [env_ar, env_adsr]);
 
 					// mod envelope
-					env_mod_ar = EnvGen.kr(Env.new([0, 0, 1, 0], [envmod_h, envmod_a, envmod_r], env_mod_curve), gate);
+					env_mod_ar = EnvGen.kr(Env.new([0, 0, 1, 0], [envmod_h, envmod_a, envmod_d], env_mod_curve), gate);
 					env_mod_adsr = EnvGen.kr(Env.new([0, 0, 1, envmod_s, 0], [envmod_h, envmod_a, envmod_d, envmod_r], env_mod_curve, 3), gate);
 					env_mod = Select.kr(env_type > 0, [env_mod_ar, env_mod_adsr]);
 
@@ -99,14 +98,14 @@ Formantpulse {
 					freq = freq + freq_slop;
 					freq = Vibrato.kr(freq, vibrato_rate, vibrato_depth / 10, vibrato_delay, vibrato_onset);
 
-					// tune oscillators. expected tune range [-24, 24] (semitones).
-					freq_formant = Lag.kr(freq * 2.pow(formant_tune/12));
-					freq_pulse = Lag.kr(freq * 2.pow(pulse_tune/12));
+					// tune oscillators. expected range [-24, 24] semitones.
+					freq_formant = Lag.kr(freq * 2.pow(formant_tune / 12));
+					freq_pulse = Lag.kr(freq * 2.pow(pulse_tune / 12));
 
 					// pulse oscillator
 					pulse_width = (pulse_width + (SinOsc.kr(pulse_mod_freq, Rand(-6pi, 6pi), 0.5) * pulse_mod_depth / 2)).max(0.02).min(0.98);
 					pulse_width = (pulse_width + (pulse_width_mod * env_mod)).max(0.02).min(0.98);
-					osc_pulse = Pulse.ar(freq_pulse, pulse_width) * pulse_amp;
+					osc_pulse = Pulse.ar(freq_pulse, pulse_width);
 
 					// formant oscillator
 					formant_shape = (formant_shape + (formant_shape_mod * env_mod)).max(0).min(1);
@@ -115,14 +114,17 @@ Formantpulse {
 					formant_rise = (formant_time) * formant_shape;
 					formant_fall = (formant_time) * (1 - formant_shape);
 					pulse_train = Trig1.ar(LFPulse.ar(freq_formant), formant_time);
-					osc_formant = EnvGen.ar(Env.perc(formant_rise, formant_fall, 1, formant_curve), pulse_train, 2, -1, 1, 0) * formant_amp;
+					osc_formant = EnvGen.ar(Env.new([0,1,0], [formant_rise, formant_fall], [formant_curve.neg, formant_curve]), pulse_train, 2, -1, 1, 0);
+
+					// osc mix
+					osc_mix = XFade2.ar(osc_formant, osc_pulse, mix_osc_level);
 
 					// noise
-					noise_amp = Select.kr(noise_amp_mod > 0, [noise_amp, noise_amp * noise_amp_mod * env_mod]);
+					noise_amp = Select.kr(noise_amp_mod > 0, [1, noise_amp_mod * env_mod]);
 					osc_noise = WhiteNoise.ar(LFNoise1.kr(freq * 2).range(1 - noise_crackle, 1)) * noise_amp;
 
 					// mix
-					signal = Mix.ar([osc_pulse, osc_formant, osc_noise]) * main_amp;
+					signal = XFade2.ar(osc_mix, osc_noise, mix_noise_level) * main_amp;
 
 					// low pass filter + modulation
 					cut_lin_lpf = cutoff_lpf.explin(20, 18000, 0, cut_lin_scale);
@@ -143,8 +145,13 @@ Formantpulse {
 					// pan
 					signal = Pan2.ar(signal, (pan + pan_slop).max(-1).min(1));
 
+					//output
+					signal = signal * env * -6.dbamp;
+
 					// ouptut stage
-					Out.ar(out, signal * env * -12.dbamp);
+					Out.ar(out, signal);
+					Out.ar(sendABus, sendA * signal);
+					Out.ar(sendBBus, sendB * signal);
 
 				}).add;
 			}
@@ -162,11 +169,13 @@ Formantpulse {
 		voiceGroup = Group.new(s);
 
 		globalParams = Dictionary.newFrom([
+			\freq, 220,
 			\main_amp, 1,
 			\pan, 0,
-			\freq, 220,
+			\sendA, 0,
+			\sendB, 0,
 
-			\formant_amp, 1,
+			\mix_osc_level, 0,
 			\formant_tune, 0,
 			\formant_type, 0,
 			\formant_shape, 0,
@@ -181,7 +190,7 @@ Formantpulse {
 			\pulse_mod_freq, 6,
 			\pulse_mod_depth, 0,
 
-			\noise_amp, 0,
+			\mix_noise_level, -1,
 			\noise_amp_mod, 0,
 			\noise_crackle, 0,
 
@@ -232,7 +241,12 @@ Formantpulse {
 	playVoice { arg voiceKey, freq;
 		singleVoices[voiceKey].set(\gate, -1.05); // -1.05 is 'forced release' with 50ms (0.05s) cutoff time
 		voiceParams[voiceKey][\freq] = freq;
-		Synth.new("Formantpulse", [\freq, freq] ++ voiceParams[voiceKey].getPairs, singleVoices[voiceKey]);
+		Synth.new("Formantpulse",
+		[
+			\freq, freq,
+			\sendABus, ~sendA ? Server.default.outputBus,
+			\sendBBus, ~sendB ? Server.default.outputBus, 
+		] ++ voiceParams[voiceKey].getPairs, singleVoices[voiceKey]);
 	}
 
 	trigger { arg voiceKey, freq;
