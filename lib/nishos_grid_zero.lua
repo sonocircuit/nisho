@@ -459,7 +459,7 @@ function grd_zero.voice_settings(x, y, z)
       if (strum_count_options or strum_mode_options or strum_skew_options) then
         strum_focus = i
       elseif (mod_a or mod_b) then
-        params:set("voice_mute"..i, voice[i].mute and 1 or 2)
+        params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif not voice[i].mute then
         int_focus = i
       end
@@ -470,7 +470,7 @@ function grd_zero.voice_settings(x, y, z)
       if autofocus then pageNum = 2 end
       local i = x < 4 and x or x - 10
       if (mod_a or mod_b) then
-        params:set("voice_mute"..i, voice[i].mute and 1 or 2)
+        params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif (mod_c or mod_d) then
         dont_panic(voice[i].output)
       elseif not voice[i].mute then
@@ -486,15 +486,15 @@ end
 function grd_zero.voice_options(x, y, z)
   if y == 10 and z == 1 then
     if x == 1 then
-      params:set("keys_option"..key_focus, 1) -- set keys to scale
+      params:set("keys_option_"..key_focus, 1) -- set keys to scale
     elseif x == 2 then
-      params:set("keys_option"..key_focus, 2) -- set keys to chromatic
+      params:set("keys_option_"..key_focus, 2) -- set keys to chromatic
     end
   elseif y == 11 and z == 1 then
     if x == 1 then
-      params:set("keys_option"..key_focus , 3) -- set keys to chords
+      params:set("keys_option_"..key_focus , 3) -- set keys to chords
     elseif x == 2 then
-      params:set("keys_option"..key_focus, 4) -- set keys to drums
+      params:set("keys_option_"..key_focus, 4) -- set keys to drums
     end
   end
 end
