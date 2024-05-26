@@ -118,6 +118,15 @@ trigs_focus = 1
 trig_step = 0
 trigs_reset = false
 
+-- midi
+local midi_in_dev = 9
+local midi_in_ch = 1
+local midi_in_dest = 0
+local midi_in_quant = false
+local midi_out_dev = 7
+local midi_out_ch = 1
+local midi_thru = false
+
 -- crow
 local wsyn_amp = 5
 local crw = {}
@@ -136,15 +145,6 @@ for i = 1, 2 do
   crw[i].env_curve = 'linear'
   crw[i].count = 0
 end
-
--- midi
-local midi_in_dev = 9
-local midi_in_ch = 1
-local midi_in_dest = 0
-local midi_in_quant = false
-local midi_out_dev = 7
-local midi_out_ch = 1
-local midi_thru = false
 
 -- chord
 chord_any = false
@@ -299,7 +299,7 @@ for i = 1, 12 do
 end
 
 trigs = {}
-for i = 1, 8 do -- actually only two are in use. --> easier to store with patterns
+for i = 1, 8 do -- with 128 only two are in use
   trigs[i] = {}
   trigs[i].step_max = 16
   trigs[i].pattern = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
@@ -351,17 +351,22 @@ local voice_params = {
   "polyform_lpf_cutoff_1", "lpolyform_pf_resonance_1", "polyform_env_lpf_depth_1", "polyform_hpf_cutoff_1",
   "polyform_env_type_1", "polyform_env_curve_1", "polyform_attack_1", "polyform_decay_1", "polyform_sustain_1", "polyform_release_1", 
   "polyform_vib_freq_1", "polyform_vib_depth_1"}, --polyform [one]
+
   {"polyform_main_amp_2", "polyform_mix_2", "polyform_noise_mix_2", "polyform_noise_crackle_2",
   "polyform_formant_shape_2", "polyform_formant_curve_2", "polyform_formant_type_2", "polyform_formant_width_2",
   "polyform_pulse_tune_2", "polyform_pulse_width_2", "polyform_pwm_rate_2", "polyform_pwm_depth_2",
   "polyform_lpf_cutoff_2", "polyform_lpf_resonance_2", "polyform_env_lpf_depth_2", "polyform_hpf_cutoff_2",
   "polyform_env_type_2", "polyform_env_curve_2", "polyform_attack_2", "polyform_decay_2", "polyform_sustain_2", "polyform_release_2", 
   "polyform_vib_freq_2", "polyform_vib_depth_2"}, --polyform [two]
+
   {"note_length_", "note_velocity_", "midi_device_", "midi_channel_",
   "midi_cc_val_1_", "midi_cc_val_2_", "midi_cc_val_3_", "midi_cc_val_4_"}, --midi
+
   {"crow_env_amp_1", "crow_env_shape_1", "crow_env_attack_1", "crow_env_decay_1", "crow_env_sustain_1", "crow_env_release_1", "crow_legato_1", "crow_v8_slew_1"}, --crow 1+2
   {"crow_env_amp_2", "crow_env_shape_2", "crow_env_attack_2", "crow_env_decay_2", "crow_env_sustain_2", "crow_env_release_2", "crow_legato_2", "crow_v8_slew_2"}, --crow 3+4
+
   {"jf_amp_", "jf_voice_"}, --crow ii jf
+
   {"wysn_mode", "wsyn_amp", "wsyn_curve", "wsyn_ramp", "wsyn_lpg_time",
   "wsyn_lpg_sym", "wsyn_fm_index", "wsyn_fm_env", "wsyn_fm_num", "wsyn_fm_den"} --crow ii wsyn
 }
@@ -373,16 +378,21 @@ local voice_param_names = {
   "lpf   cutoff", "lpf   resonance", "env   depth", "hpf   cutoff",
   "env   type", "env   curve", "attack", "decay", "sustain", "release",
   "vibrato   rate", "vibrato   depth"}, --polyform [one]
+
   {"main   level", "mix", "noise   level", "noise   crackle",
   "formant   shape", "formant   curve", "formant   type", "formant   width",
   "pulse   tune", "pulse   width", "pwm   rate", "pwm   depth",
   "lpf   cutoff", "lpf   resonance", "env   depth", "hpf   cutoff",
   "env   type", "env   curve", "attack", "decay", "sustain", "release",
   "vibrato   rate", "vibrato   depth"}, --polyform [two]
+
   {"note   length", "velocity", "device", "channel", "cc A", "cc B", "cc C", "cc D"}, -- midi
+
   {"amplitude", "env   shape", "attack", "decay", "sustain", "release", "legato", "slew   time"}, --crow 1+2
   {"amplitude", "env   shape", "attack", "decay", "sustain", "release", "legato", "slew   time"}, --crow 3+4
+
   {"level", "voice"}, --crow ii jf
+  
   {"mode", "level", "curve", "ramp", "lpg   time",
   "lpg   sym", "fm   index", "fm   env", "fm   num", "fm   den"} --crow ii wsyn
 }
@@ -460,9 +470,11 @@ function dont_panic(voice)
     local env = voice == 4 and 2 or 4
     crow.output[env].action = string.format("{ to(%f,%f) }", 0, 0)
     crow.output[env]()
+    crw[voice - 3].count = 0
   elseif voice == 6 then
     for n = 1, 6 do
       crow.ii.jf.trigger(n, 0)
+      voice[n].jf_count = 0
     end
   end
 end
@@ -685,7 +697,7 @@ function event_exec(e, n)
       mute_voice(e.i, e.note)
       remove_active_notes(n, e.i, e.note)
     elseif e.action == "note_on" then
-      play_voice(e.i, e.note)
+      play_voice(e.i, e.note, e.vel)
       add_active_notes(n, e.i, e.note)
     end
   elseif e.t == eDRUMS then
@@ -710,9 +722,9 @@ function event_exec(e, n)
     end
   elseif e.t == eKIT then
     if kit_mode == 1 then
-      play_kit(e.note)
+      play_kit(e.note, e.vel)
     elseif drmfm_mute_all == false then
-      drmfm.trig(e.note)
+      drmfm.trig(e.note, e.vel)
     end
     kit_gridviz(e.note)
   end
@@ -1253,13 +1265,12 @@ function midi_events(data)
       if midi_in_quant then
         msg.note = mu.snap_note_to_array(msg.note, note_map)
       end
-      local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
       if midi_in_dest == 0 then
-        local e = {t = eMIDI, p = p, action = msg.type, note = msg.note, vel = msg.vel, ch = midi_out_ch} event(e)
+        local e = {t = eMIDI, action = msg.type, note = msg.note, vel = msg.vel, ch = midi_out_ch} event(e)
       elseif midi_in_dest == 7 and msg.type == "note_on" then
-        local e = {t = eKIT, note = msg.note} event(e)
+        local e = {t = eKIT, note = msg.note, vel = msg.vel} event(e)
       else
-        local e = {t = eKEYS, p = p, i = midi_in_dest, note = msg.note, action = msg.type} event(e)
+        local e = {t = eKEYS, i = midi_in_dest, note = msg.note, vel = msg.vel, action = msg.type} event(e)
       end
     elseif msg.type == "program_change" then -- use program change to load psets
         params:read(msg.val + 1)
@@ -1357,18 +1368,17 @@ function run_seq()
       if seq_notes[seq_step] > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
           local current_note = seq_notes[seq_step]
-          local p = pattern[pattern_focus].rec == 1 and pattern_focus or nil
           if voice[key_focus].keys_option == 1 then
-            local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = current_note, action = "note_on"} event(e)
+            local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, action = "note_on"} event(e)
             clock.run(function()
               clock.sync(seq_rate / 2)
-              local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
+              local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
             end)
           elseif voice[key_focus].keys_option == 2 or voice[key_focus].keys_option == 3 then
-            local e = {t = eKEYS, p = p, i = key_focus, note = current_note, action = "note_on"} event(e)
+            local e = {t = eKEYS, i = key_focus, note = current_note, action = "note_on"} event(e)
             clock.run(function()
               clock.sync(seq_rate / 2)
-              local e = {t = eKEYS, p = p, i = key_focus, note = current_note, action = "note_off"} event(e)
+              local e = {t = eKEYS, i = key_focus, note = current_note, action = "note_off"} event(e)
             end)    
           end
         end
@@ -1389,20 +1399,19 @@ function run_keyrepeat()
       if #notes_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
           for _, v in ipairs(notes_held) do
-            local p = pattern[pattern_focus].rec == 1 and pattern_focus or nil
             if voice[key_focus].keys_option == 1 then
-              local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = v, action = "note_on"} event(e)
+              local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = "note_on"} event(e)
               clock.run(function()
                 clock.sync(rep_rate / 2)
-                local e = {t = eSCALE, p = p, i = key_focus, root = root_oct, note = v, action = "note_off"} event(e)
+                local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = "note_off"} event(e)
               end)
             elseif voice[key_focus].keys_option == 4 then
               local e = {t = eDRUMS, i = key_focus, note = v, vel = drum_vel_last} event(e)
             else
-              local e = {t = eKEYS, p = p, i = key_focus, note = v, action = "note_on"} event(e)
+              local e = {t = eKEYS, i = key_focus, note = v, action = "note_on"} event(e)
               clock.run(function()
                 clock.sync(rep_rate / 2)
-                local e = {t = eKEYS, p = p, i = key_focus, note = v, action = "note_off"} event(e)
+                local e = {t = eKEYS, i = key_focus, note = v, action = "note_off"} event(e)
               end)    
             end
           end
@@ -1441,10 +1450,10 @@ function autostrum()
     end
     if step > 15 then step = 15 end
     local note = chord_arp[step] + (12 * chord_oct_shift)
-    local e = {t = eKEYS, p = pattern_focus, i = strum_focus, note = note, action = "note_on"} event(e)
+    local e = {t = eKEYS, i = strum_focus, note = note, action = "note_on"} event(e)
     clock.run(function()
       clock.sleep(rate)
-      local e = {t = eKEYS, p = pattern_focus, i = strum_focus, note = note, action = "note_off"} event(e)
+      local e = {t = eKEYS, i = strum_focus, note = note, action = "note_off"} event(e)
     end)
     clock.sleep(rate)
     rate = rate - (i * strum_skew * 0.001)
@@ -1616,8 +1625,9 @@ function play_nb(i, note_num, velocity)
   end
 end
 
-function play_kit(note_num)
-  m[kit_midi_dev]:note_on(note_num, kit_velocity, kit_midi_ch)
+function play_kit(note_num, velocity)
+  local velocity = velocity or kit_velocity
+  m[kit_midi_dev]:note_on(note_num, velocity, kit_midi_ch)
   clock.run(function()
     clock.sync(1/4)
     m[kit_midi_dev]:note_off(note_num, 0, kit_midi_ch)
