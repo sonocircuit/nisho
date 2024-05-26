@@ -31,7 +31,7 @@ local param_list = {
   "noise_amp", "noise_decay", "cutoff_lpf", "cutoff_hpf", "phase", "fold", "level", "pan", "sendA", "sendB"
 }
 
-local dest_list = {
+local perf_list = {
   "sendA", "sendB", "sweep_time", "sweep_depth", "decay", "mod_time", "mod_amp", "mod_fb", "mod_dest", 
   "noise_amp", "noise_decay", "fold", "cutoff_lpf", "cutoff_hpf"
 }
@@ -99,7 +99,7 @@ local function build_menu(dest)
   elseif dest == "perf" then
     -- perf params
     for i = 1, NUM_PERF_SLOTS do
-      for _,v in ipairs(dest_list) do
+      for _,v in ipairs(perf_list) do
         local name = "drmfm_"..v.."_perf_"..i
         if i == p_slot then
           params:show(name)
