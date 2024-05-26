@@ -378,14 +378,37 @@ function grd_one.octave_options(x, y, z)
   end
 end
 
+local trig_shortpress = false
 function grd_one.trigs_grid(x, y, z)
   if x > 3 and x < 14 and y > 2 and y < 5 then
-    if x < 12 and z == 1 then
+    if x < 12 then
       local i = (x - 3) + (y - 3) * 8
+      trig_step_focus = i
       if set_trigs_end then
-        trigs[trigs_focus].step_max = i
+        if z == 1 then trigs[trigs_focus].step_max = i end
       else
-        trigs[trigs_focus].pattern[i] = 1 - trigs[trigs_focus].pattern[i]
+        if z == 1 then
+          if t_edit_clock ~= nil then
+            clock.cancel(t_edit_clock)
+          end
+          trig_shortpress = true
+          t_edit_clock = clock.run(function()
+            clock.sleep(0.15)
+            trigs_edit = true
+            trig_shortpress = false
+            dirtyscreen = true
+          end)
+        else
+          if t_edit_clock ~= nil then
+            clock.cancel(t_edit_clock)
+          end
+          if trig_shortpress then
+            trigs[trigs_focus].pattern[i] = 1 - trigs[trigs_focus].pattern[i]
+            trig_shortpress = false
+          end
+          trigs_edit = false
+          dirtyscreen = true
+        end
       end
     elseif x == 12 then
       if y == 3 then
@@ -396,6 +419,7 @@ function grd_one.trigs_grid(x, y, z)
     elseif x == 13 and z == 1 then
       if trigs_reset then
         trigs[y - 2].pattern = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+        trigs[y - 2].prob = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
         trigs[y - 2].step_max = 16
       else
         trigs_focus = y - 2
@@ -596,8 +620,7 @@ function grd_one.int_grid(x, y, z)
     if y == 2 and x > 7 and x < 10 then
       if not kit_view then
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = notes_home, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = notes_home, action = "note_on"} event(e)
           gkey[x][y].note = notes_home
         else
           local e = {t = eTRSP_SCALE, interval = 0} event(e)
@@ -611,8 +634,7 @@ function grd_one.int_grid(x, y, z)
         local interval = x - 8
         local new_note = util.clamp(notes_last + interval, 1, #scale_notes)
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
@@ -624,8 +646,7 @@ function grd_one.int_grid(x, y, z)
         local interval = x - 9
         local new_note = util.clamp(notes_last + interval, 1, #scale_notes)
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
@@ -653,31 +674,30 @@ function grd_one.int_grid(x, y, z)
             table.insert(seq_notes, 0)
             notes_added = true
           else
-            local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-            local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = notes_last, action = "note_on"} event(e)
+            local e = {t = eSCALE, i = int_focus, root = root_oct, note = notes_last, action = "note_on"} event(e)
             gkey[x][y].note = notes_last
           end
         else
           local octave = (#scale_intervals[current_scale] - 1) * (x - 8 == 0 and -1 or 1)
           local e = {t = eTRSP_SCALE, interval = octave} event(e)
+          kill_all_notes()
         end
       end
     end
   elseif z == 0 then
     if not (kit_view or trigs_config_view) then
-      local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
       if y == 2 and x > 7 and x < 10 then
-        local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       elseif y == 3 then
         if x > 3 and x < 8 then
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
         elseif x > 7 and x < 10 then
           if link_clock ~= nil then clock.cancel(link_clock) end
         elseif x > 9 and x < 14 then
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
         end
       elseif y == 4 and x > 7 and x < 10 then
-        local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       end
     end
   end
