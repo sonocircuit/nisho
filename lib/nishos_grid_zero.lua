@@ -624,8 +624,7 @@ function grd_zero.int_grid(x, y, z)
     if y == 9 and x > 7 and x < 10 then
       if not kit_view then
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = notes_home, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = notes_home, action = "note_on"} event(e)
           gkey[x][y].note = notes_home
         else
           local e = {t = eTRSP_SCALE, interval = 0} event(e)
@@ -639,8 +638,7 @@ function grd_zero.int_grid(x, y, z)
         local interval = x - 8
         local new_note = util.clamp(notes_last + interval, 1, #scale_notes)
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
@@ -652,8 +650,7 @@ function grd_zero.int_grid(x, y, z)
         local interval = x - 9
         local new_note = util.clamp(notes_last + interval, 1, #scale_notes)
         if not transposing then
-          local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = new_note, action = "note_on"} event(e)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
@@ -681,8 +678,7 @@ function grd_zero.int_grid(x, y, z)
             table.insert(seq_notes, 0)
             notes_added = true
           else
-            local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
-            local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = notes_last, action = "note_on"} event(e)
+            local e = {t = eSCALE, i = int_focus, root = root_oct, note = notes_last, action = "note_on"} event(e)
             gkey[x][y].note = notes_last
           end
         else
@@ -694,19 +690,18 @@ function grd_zero.int_grid(x, y, z)
     end
   elseif z == 0 then
     if not (kit_view or trigs_config_view) then
-      local p = pattern[pattern_focus].rec_enabled == 1 and pattern_focus or nil
       if y == 9 and x > 7 and x < 10 then
-        local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       elseif y == 10 then
         if x > 3 and x < 8 then
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
         elseif x > 7 and x < 10 then
           if link_clock ~= nil then clock.cancel(link_clock) end
         elseif x > 9 and x < 14 then
-          local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+          local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
         end
       elseif y == 11 and x > 7 and x < 10 then
-        local e = {t = eSCALE, p = p, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       end
     end
   end
