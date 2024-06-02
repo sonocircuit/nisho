@@ -348,7 +348,7 @@ local voice_params = {
   {"polyform_main_amp_1", "polyform_mix_1", "polyform_noise_mix_1", "polyform_noise_crackle_1",
   "polyform_formant_shape_1", "polyform_formant_curve_1", "polyform_formant_type_1", "polyform_formant_width_1",
   "polyform_pulse_tune_1", "polyform_pulse_width_1", "polyform_pwm_rate_1", "polyform_pwm_depth_1",
-  "polyform_lpf_cutoff_1", "lpolyform_pf_resonance_1", "polyform_env_lpf_depth_1", "polyform_hpf_cutoff_1",
+  "polyform_lpf_cutoff_1", "polyform_lpf_resonance_1", "polyform_env_lpf_depth_1", "polyform_hpf_cutoff_1",
   "polyform_env_type_1", "polyform_env_curve_1", "polyform_attack_1", "polyform_decay_1", "polyform_sustain_1", "polyform_release_1", 
   "polyform_vib_freq_1", "polyform_vib_depth_1"}, --polyform [one]
 
@@ -733,7 +733,7 @@ end
 
 function event_record(e)
   for i = 1, 8 do
-    pattern[i]:watch(e)
+    pattern[i]:watch(e) -- TODO: avoid loop as only one pattern is active at a time. see below.
   end
 end
 
@@ -741,7 +741,8 @@ function event(e)
   if key_quantize and not (key_repeat or seq_active) then
     table.insert(quant_event, e)
   else
-    event_record(e)
+    event_record(e) -- remove
+    --pattern[pattern_focus]:watch(e)
     event_exec(e)
   end
 end
@@ -750,8 +751,9 @@ function event_q_clock()
   while true do
     clock.sync(quant_rate)
     if #quant_event > 0 then
-      for k, e in pairs(quant_event) do
-        event_record(e)
+      for _, e in ipairs(quant_event) do
+        event_record(e) -- remove
+        --pattern[pattern_focus]:watch(e)
         event_exec(e)
       end
       quant_event = {}
