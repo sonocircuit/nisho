@@ -1,6 +1,6 @@
 # nisho
 
-nisho is a personal instrument that has been written and redefined over the past year.
+nisho is a personal instrument that has been written and redefined over the past two years.
 it's an interval player, keyboard and pattern sequencer for norns.
 
 **requires:**
