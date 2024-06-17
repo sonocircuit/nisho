@@ -125,7 +125,7 @@ function grd_one.pattern_keys(i)
     -- stop and clear
     if pattern_clear or (mod_a and mod_c) or (mod_b and mod_d) then
       if pattern[i].count > 0 then
-        kill_active_notes(i)
+        clear_active_notes(i)
         pattern[i]:clear()
         save_pattern_bank(i, p[i].bank)
       end
@@ -510,7 +510,7 @@ function grd_one.grid_options(x, y, z)
         end
         dirtyscreen = true
       end
-    elseif x == 16  and z == 1 then
+    elseif x == 16 and z == 1 then
       key_repeat_view = not key_repeat_view
       if key_repeat_view then
         if seq_active then
@@ -624,7 +624,6 @@ function grd_one.int_grid(x, y, z)
           gkey[x][y].note = notes_home
         else
           local e = {t = eTRSP_SCALE, interval = 0} event(e)
-          kill_all_notes()
         end
         notes_last = notes_home
       end
@@ -638,7 +637,6 @@ function grd_one.int_grid(x, y, z)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
-          kill_all_notes()
         end
         notes_last = new_note
       -- interval increase
@@ -650,7 +648,6 @@ function grd_one.int_grid(x, y, z)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
-          kill_all_notes()
         end
         notes_last = new_note
       -- toggle key link
@@ -680,7 +677,6 @@ function grd_one.int_grid(x, y, z)
         else
           local octave = (#scale_intervals[current_scale] - 1) * (x - 8 == 0 and -1 or 1)
           local e = {t = eTRSP_SCALE, interval = octave} event(e)
-          kill_all_notes()
         end
       end
     end
@@ -896,7 +892,7 @@ function grd_one.chord_grid(x, y, z)
       play_chord(i)
     elseif z == 0 then
       if heldkey_key == 0 then
-        kill_chord()
+        clear_chord()
         if not (seq_hold or appending_notes) then
           seq_notes = {}
         end
