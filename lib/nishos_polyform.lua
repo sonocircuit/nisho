@@ -1,10 +1,9 @@
--- Formantpulse (polyform) params for nisho @sonocircuit
-
 local polyForm = {}
 
 local tx = require 'textentry'
 local mu = require 'musicutil'
 local vx = require 'voice'
+local md = require 'core/mods'
 
 local preset_path = norns.state.data.."polyform_patches"
 local default_patch = norns.state.data.."polyform_patches/default.patch"
@@ -24,10 +23,10 @@ local polyform_params = {
   send_B = 0,
   unison_mode = 0,
   unison_detune = 0,
-  formant_tune = 0,
-  formant_type = 0,
-  formant_curve = 0,
-  formant_width = 0,
+  saw_tune = 0,
+  saw_shape = 0,
+  swm_rate = 0,
+  swm_depth = 0,
   pulse_tune = 0,
   pulse_width = 0,
   pwm_rate = 0,
@@ -54,7 +53,7 @@ local polyform_params = {
   mod_release = 0,
   mod_cutoff_lpf = 0,
   mod_cutoff_hpf = 0,
-  mod_formant_shape = 0,
+  mod_saw_shape = 0,
   mod_pulse_width = 0,
   mod_noise_level = 0,
   vib_freq = 0,
@@ -69,21 +68,21 @@ local polyform_params = {
 
 local synthvoice = {}
 for i = 1, 2 do
-  local alloc_num = i == 1 and 2 or 6
+  local alloc_num = i == 1 and 1 or 6
   synthvoice[i] = {}
   synthvoice[i].vox = 1
   synthvoice[i].env = 1
   synthvoice[i].unison = false
-  synthvoice[i].detune = 0
+  synthvoice[i].detune = 1
   synthvoice[i].count = 0
-  synthvoice[i].alloc = vx.new(alloc_num, 1) -- 1 is ROTATE
+  synthvoice[i].alloc = vx.new(alloc_num, 2) -- 2 is LRU
   synthvoice[i].notes = {}
 end
 
 -- JP800 supersaw emulation based on adam szbao's thesis,
--- ported to sc by eric skogan and adapted by zack scholl
--- ported and adapted to lua for nisho
-local function detune_curve(x)
+-- ported to supercollider by eric skogan and adapted by zack scholl
+-- ported to lua and adapted for nisho by @sonocircuit
+local function get_detune_val(x)
   local detune_val = 
   (10028.7312891634 * math.pow(11, x)) -
   (50818.8652045924 * math.pow(10, x)) +
@@ -99,44 +98,29 @@ local function detune_curve(x)
   0.0030115596
   return detune_val
 end
--- don't think it's good to call detune_curve() each time a note is pressed so here's a table of 20 rnd generated values
-local detune_curve = {
-  2.7061247961509,
-  3.9544288667401,
-  3.9544288667401,
-  1.8109328926233,
-  2.7061247961509,
-  3.9544288667401,
-  1.8109328926233,
-  3.9544288667401,
-  1.8109328926233,
-  1.8109328926233,
-  2.7061247961509,
-  2.7061247961509,
-  3.9544288667401,
-  1.8109328926233,
-  1.8109328926233,
-  2.7061247961509,
-  2.7061247961509,
-  3.9544288667401,
-  1.8109328926233,
-  2.7061247961509,
-}
 
+-- don't think it's good to call detune_curve() each time a note is triggered so we'll populate a table at init with 101 values (0 - 1).
+local detune_curve = {}
+local function build_detune_values()
+  for i = 1, 100 do
+    table.insert(detune_curve, get_detune_val(i / 100))
+  end
+end
+
+-- detune array for six voices
 local detune_array = {-0.11002313, -0.06288439, -0.01952356, 0.01991221, 0.06216538, 0.10745242}
 
 local function detune_freq(voice, freq, depth)
-  local detune_factor = freq * detune_curve[math.random(1, 20)] * depth
-  local detuned_freq = freq + (detune_factor * detune_array[voice])
-  return detuned_freq
+  return freq + (freq * detune_curve[depth] * detune_array[voice] * 0.1)
 end
 
+-- display utilities
 local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
 end
 
 local function display_params(i)
-  if params:get("polyform_env_type_"..i) == 1 then
+  if synthvoice[i].env == 1 then
     params:hide("polyform_sustain_"..i)
     params:hide("polyform_release_"..i)
     params:hide("polyform_mod_sustain_"..i)
@@ -147,55 +131,12 @@ local function display_params(i)
     params:show("polyform_mod_sustain_"..i)
     params:show("polyform_mod_release_"..i)
   end
+  if synthvoice[i].unison then
+    params:show("polyform_unison_detune_"..i)
+  else
+    params:hide("polyform_unison_detune_"..i)
+  end
   _menu.rebuild_params()
-end
-
-local function set_value(i, id, val)
-  local min = i == 1 and 1 or 3
-  local max = i == 1 and 2 or 8
-  for voice = min, max do
-    id(voice, val)
-  end
-  page_redraw(2)
-end
-
-local function cut_drift(synth, val)
-  if synth == 1 then
-    engine.cut_slop(1, val)
-    engine.cut_slop(2, val)
-  elseif synth == 2 then
-    engine.cut_slop(3, val)
-    engine.cut_slop(4, val)
-    engine.cut_slop(6, val)
-    engine.cut_slop(7, val)
-    engine.cut_slop(8, val)
-  end
-end
-
-local function env_drift(synth, val)
-  if synth == 1 then
-    engine.env_slop(1, 0.1 * val)
-    engine.env_slop(2, 0.2 * val)
-  elseif synth == 2 then
-    engine.env_slop(3, 1.1 * val)
-    engine.env_slop(4, 0.8 * val)
-    engine.env_slop(6, 0.4 * val)
-    engine.env_slop(7, 1.2 * val)
-    engine.env_slop(8, 1.6 * val)
-  end
-end
-
-local function pan_drift(synth, val)
-  if synth == 1 then
-    engine.pan_slop(2, -0.2 * val)
-    engine.pan_slop(2, 0.2 * val)
-  elseif synth == 2 then
-    engine.pan_slop(3, -0.6 * val)
-    engine.pan_slop(4, 0.4 * val)
-    engine.pan_slop(6, 0.1 * val)
-    engine.pan_slop(7, -0.5 * val)
-    engine.pan_slop(8, 0.4 * val)
-  end
 end
 
 local function pan_display(param)
@@ -245,18 +186,15 @@ local function width_display(param)
 end
 
 local function mix_display(param)
-  local formant = util.round(util.linlin(-1, 1, 100, 0, param), 1)
+  local saw = util.round(util.linlin(-1, 1, 100, 0, param), 1)
   local pulse = util.round(util.linlin(-1, 1, 0, 100, param), 1)
-  return formant.."/"..pulse
+  return saw.."/"..pulse
 end
 
+-- load save and set
 local function load_synth_patch(path, i)
+  polyForm.panic(i)
   if util.file_exists(path) then
-    local min = i == 1 and 1 or 3
-    local max = i == 1 and 2 or 8
-    for voice = min, max do
-      engine.stop(voice)
-    end
     local patch = tab.load(path)
     for k, v in pairs(patch) do
       params:set("polyform_"..k.."_"..i, v)
@@ -283,6 +221,16 @@ local function save_synth_patch(txt)
   end
 end
 
+local function set_value(i, id, val)
+  local min = i == 1 and 1 or 3
+  local max = i == 1 and 2 or 8
+  for voice = min, max do
+    id(voice, val)
+  end
+  page_redraw(2)
+end
+
+-- play and mute
 function polyForm.play(synth, note_num)
   local freq = mu.note_num_to_freq(note_num)
   local offset = synth == 1 and 0 or 2
@@ -318,12 +266,7 @@ function polyForm.mute(synth, note_num)
     if synthvoice[synth].unison then
       synthvoice[synth].count = synthvoice[synth].count - 1
       if synthvoice[synth].count <= 0 then
-        synthvoice[synth].count = 0
-        local min = synth == 1 and 1 or 3
-        local max = synth == 1 and 2 or 8
-        for n = min, max do
-          engine.stop(n)
-        end
+        polyForm.panic(synth)
       end
     else
       local slot = synthvoice[synth].notes[note_num]
@@ -344,17 +287,20 @@ function polyForm.panic(synth)
   synthvoice[synth].count = 0
 end
 
+-- initialize
 function polyForm.init()
   -- make directory and copy files
   if util.file_exists(preset_path) == false then
     util.make_dir(preset_path)
     os.execute('cp '.. norns.state.path .. 'lib/polyform_patches/*.patch '.. preset_path)
   end
+  -- populate detune table
+  build_detune_values()
   -- synth groups one and six (voices 1-2 and 3-8)  
   for i = 1, 2 do
-    local name = i == 1 and "one" or "six"
+    local name = i == 1 and "mono" or "poly"
 
-    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 63)
+    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 62)
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
@@ -374,44 +320,40 @@ function polyForm.init()
     -- send a
     params:add_control("polyform_send_A_"..i, "send a", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_send_A_"..i, function(x) set_value(i, engine.sendA, x) end)
+    if not md.is_loaded("fx") then params:hide("polyform_send_A_"..i) end
     -- send b
     params:add_control("polyform_send_B_"..i, "send b", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_send_B_"..i, function(x) set_value(i, engine.sendB, x) end)
+    if not md.is_loaded("fx") then params:hide("polyform_send_B_"..i) end
 
-    params:add_separator("polyform_unison_"..i, "unison")
+    params:add_separator("polyform_voice_"..i, "voice")
     -- unison mode
     params:add_option("polyform_unison_mode_"..i, "unison", {"off", "on"}, 1)
-    params:set_action("polyform_unison_mode_"..i, function(mode)
-      synthvoice[i].unison = mode == 2 and true or false
-      if mode == 1 then synthvoice[i].count = 0 end
-    end)
+    params:set_action("polyform_unison_mode_"..i, function(mode) synthvoice[i].unison = mode == 2 and true or false display_params(i) polyForm.panic(i) end)
     -- detune amt
-    params:add_control("polyform_unison_detune_"..i, "detune", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_unison_detune_"..i, function(x) synthvoice[i].detune = x / 10 end)
-
-    params:add_separator("polyform_formant_"..i, "formant osc")
+    params:add_number("polyform_unison_detune_"..i, "detune", 1, 100, 1, function(param) return round_form(param:get(), 1, "%") end)
+    params:set_action("polyform_unison_detune_"..i, function(x) synthvoice[i].detune = x end)
     -- osc mix
-    params:add_control("polyform_mix_"..i, "mix [formant/pulse]", controlspec.new(-1, 1, "lin", 0, -0.75), function(param) return mix_display(param:get()) end)
+    params:add_control("polyform_mix_"..i, "mix [saw/pulse]", controlspec.new(-1, 1, "lin", 0, -0.75), function(param) return mix_display(param:get()) end)
     params:set_action("polyform_mix_"..i, function(x) set_value(i, engine.mix_osc_level, x) end)
-    -- formant tune
-    params:add_control("polyform_formant_tune_"..i, "tune", controlspec.new(-12, 12, "lin", 0, 0, "", 1/480), function(param) return (round_form(param:get(), 0.01, "st")) end)
-    params:set_action("polyform_formant_tune_"..i, function(x) set_value(i, engine.formant_tune, x) end)
-    -- formant mode
-    params:add_option("polyform_formant_type_"..i, "type", {"constant", "formant"}, 1)
-    params:set_action("polyform_formant_type_"..i, function(x) set_value(i, engine.formant_type, x - 1) end)
-    -- formant shape
-    params:add_control("polyform_formant_shape_"..i, "wave shape", controlspec.new(-1, 1, "lin", 0, -0.8), function(param) return shape_display(param:get()) end)
-    params:set_action("polyform_formant_shape_"..i, function(x) set_value(i, engine.formant_shape, util.linlin(-1, 1, 0, 1, x)) end)
-    -- formant width
-    params:add_control("polyform_formant_curve_"..i, "wave curve", controlspec.new(-5, 5, "lin", 0, 0), function(param) return curve_display(param:get()) end)
-    params:set_action("polyform_formant_curve_"..i, function(x) set_value(i, engine.formant_curve, x) end)
-    -- formant width
-    params:add_control("polyform_formant_width_"..i, "formant width", controlspec.new(0.01, 10, "lin", 0.01, 1, "", 0.001), function(param) return width_display(param:get()) end)
-    params:set_action("polyform_formant_width_"..i, function(x) set_value(i, engine.formant_width, x + 0.11) end)
+
+    params:add_separator("polyform_saw_"..i, "saw osc")
+    -- saw tune
+    params:add_control("polyform_saw_tune_"..i, "tune", controlspec.new(-24, 24, "lin", 0, 0, "", 1/480), function(param) return (round_form(param:get(), 0.01, "st")) end)
+    params:set_action("polyform_saw_tune_"..i, function(x) set_value(i, engine.saw_tune, x) end)
+    -- saw shape
+    params:add_control("polyform_saw_shape_"..i, "wave shape", controlspec.new(-1, 1, "lin", 0, -0.8), function(param) return shape_display(param:get()) end)
+    params:set_action("polyform_saw_shape_"..i, function(x) set_value(i, engine.saw_shape, util.linlin(-1, 1, 0, 1, x)) end)
+    -- swm speed
+    params:add_control("polyform_swm_rate_"..i, "shape mod rate", controlspec.new(0.2, 20, "exp", 0.01, 2.2), function(param) return round_form(param:get(), 0.01, " hz") end)
+    params:set_action("polyform_swm_rate_"..i, function(x) set_value(i, engine.saw_mod_freq, x) end)
+    -- swm depth
+    params:add_control("polyform_swm_depth_"..i, "shape mod depth", controlspec.new(0, 0.5, "lin", 0, 0), function(param) return round_form(param:get() * 200, 1, "%") end)
+    params:set_action("polyform_swm_depth_"..i, function(x) set_value(i, engine.saw_mod_depth, x) end)
     
     params:add_separator("polyform_polyform_pulse_"..i, "pulse osc")
      -- pulse tune
-    params:add_control("polyform_pulse_tune_"..i, "tune", controlspec.new(-12, 12, "lin", 0, 0, "", 1/480), function(param) return round_form(param:get(), 0.01, "st") end)
+    params:add_control("polyform_pulse_tune_"..i, "tune", controlspec.new(-24, 24, "lin", 0, 0, "", 1/480), function(param) return round_form(param:get(), 0.01, "st") end)
     params:set_action("polyform_pulse_tune_"..i, function(x) set_value(i, engine.pulse_tune, x) end)
     -- pulse width
     params:add_control("polyform_pulse_width_"..i, "pulse width", controlspec.new(0.1, 0.9, "lin", 0, 0.5), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -426,7 +368,7 @@ function polyForm.init()
     params:add_separator("polyform_noise_"..i, "noise")
     -- noise level
     params:add_control("polyform_noise_mix_"..i, "noise level", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_noise_mix_"..i, function(x) set_value(i, engine.mix_noise_level, x - 1) end)
+    params:set_action("polyform_noise_mix_"..i, function(x) set_value(i, engine.mix_noise_level, x) end)
     -- noise crackle
     params:add_control("polyform_noise_crackle_"..i, "noise crackle", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_noise_crackle_"..i, function(x) set_value(i, engine.noise_crackle, x) end)
@@ -456,19 +398,7 @@ function polyForm.init()
     params:add_separator("polyform_envelope_"..i, "envelope")
     -- envelope type
     params:add_option("polyform_env_type_"..i, "env type", {"ad", "adsr"}, 1)
-    params:set_action("polyform_env_type_"..i, function(mode)
-      set_value(i, engine.env_type, mode - 1)
-      synthvoice[i].env = mode
-      display_params(i)
-      if x == 1 then
-        local min = i == 1 and 1 or 3
-        local max = i == 1 and 2 or 8
-        for voice = min, max do
-          engine.stop(voice)
-        end
-      end
-    end)
-
+    params:set_action("polyform_env_type_"..i, function(mode) set_value(i, engine.env_type, mode - 1) synthvoice[i].env = mode display_params(i) polyForm.panic(i) end)
     -- curve
     params:add_control("polyform_env_curve_"..i, "curve", controlspec.new(-5, 5, "lin", 0, -4), function(param) return curve_display(param:get()) end)
     params:set_action("polyform_env_curve_"..i, function(x) set_value(i, engine.env_curve, x) end)
@@ -486,7 +416,6 @@ function polyForm.init()
     params:set_action("polyform_release_"..i, function(x) set_value(i, engine.env_r, x) end)
 
     params:add_separator("polyform_mod_envelope_"..i, "mod envelope")
-
     -- curve
     params:add_control("polyform_env_mod_curve_"..i, "curve", controlspec.new(-5, 5, "lin", 0, 0), function(param) return curve_display(param:get()) end)
     params:set_action("polyform_env_mod_curve_"..i, function(x) set_value(i, engine.env_mod_curve, x) end)
@@ -505,16 +434,15 @@ function polyForm.init()
     -- release
     params:add_control("polyform_mod_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.4), function(param) return (round_form(param:get(), 0.01, " s")) end)
     params:set_action("polyform_mod_release_"..i, function(x) set_value(i, engine.envmod_r, x) end)
-
     -- cutoff lpf mod
     params:add_control("polyform_mod_cutoff_lpf_"..i, "cutoff lpf mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_mod_cutoff_lpf_"..i, function(x) set_value(i, engine.env_lpf_mod, x) end)
     -- cutoff hpf mod
     params:add_control("polyform_mod_cutoff_hpf_"..i, "cutoff hpf mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_mod_cutoff_hpf_"..i, function(x) set_value(i, engine.env_hpf_mod, x) end)
-    -- formant shape mod
-    params:add_control("polyform_mod_formant_shape_"..i, "formant shape mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action("polyform_mod_formant_shape_"..i, function(x) set_value(i, engine.formant_shape_mod, x) end)
+    -- saw shape mod
+    params:add_control("polyform_mod_saw_shape_"..i, "saw shape mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:set_action("polyform_mod_saw_shape_"..i, function(x) set_value(i, engine.saw_shape_mod, x) end)
     -- pulse width mod
     params:add_control("polyform_mod_pulse_width_"..i, "pulse width mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_mod_pulse_width_"..i, function(x) set_value(i, engine.pulse_width_mod, x) end)
