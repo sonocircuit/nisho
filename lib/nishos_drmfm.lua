@@ -2,6 +2,7 @@ drmfm = {}
 
 local tx = require 'textentry'
 local mu = require 'musicutil'
+local md = require 'core/mods'
 
 local NUM_VOICES = 16
 local NUM_PERF_SLOTS = 4
@@ -90,11 +91,16 @@ local function build_menu(dest)
         if i == selected_voice then
           params:show(name)
           params:show("drmfm_decay_mod_"..i)
+          if not md.is_loaded("fx") then
+            params:hide("drmfm_sendA_"..i)
+            params:hide("drmfm_sendB_"..i)
+          end
         else
           params:hide(name)
           params:hide("drmfm_decay_mod_"..i)
         end
       end
+
     end
   elseif dest == "perf" then
     -- perf params
@@ -104,6 +110,10 @@ local function build_menu(dest)
         if i == p_slot then
           params:show(name)
           params:show("drmfm_perf_depth"..i)
+          if not md.is_loaded("fx") then
+            params:hide("drmfm_sendA_perf_"..i)
+            params:hide("drmfm_sendB_perf_"..i)
+          end
         else
           params:hide(name)
           params:hide("drmfm_perf_depth"..i)
@@ -238,7 +248,6 @@ function drmfm.add_params()
     util.make_dir(preset_path)
     os.execute('cp '.. norns.state.path .. 'lib/drmfm_kits/*.kit '.. preset_path)
   end
-
   -- build tables
   build_tables()
 
