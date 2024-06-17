@@ -116,7 +116,7 @@ function grd_zero.pattern_keys(i)
     -- stop and clear
     if pattern_clear or (mod_a and mod_c) or (mod_b and mod_d) then
       if pattern[i].count > 0 then
-        kill_active_notes(i)
+        clear_active_notes(i)
         pattern[i]:clear()
         save_pattern_bank(i, p[i].bank)
       end
@@ -628,7 +628,6 @@ function grd_zero.int_grid(x, y, z)
           gkey[x][y].note = notes_home
         else
           local e = {t = eTRSP_SCALE, interval = 0} event(e)
-          kill_all_notes()
         end
         notes_last = notes_home
       end
@@ -642,7 +641,6 @@ function grd_zero.int_grid(x, y, z)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
-          kill_all_notes()
         end
         notes_last = new_note
       -- interval increase
@@ -654,7 +652,6 @@ function grd_zero.int_grid(x, y, z)
           gkey[x][y].note = new_note
         else
           local e = {t = eTRSP_SCALE, interval = interval} event(e)
-          kill_all_notes()
         end
         notes_last = new_note
       -- toggle key link
@@ -684,12 +681,11 @@ function grd_zero.int_grid(x, y, z)
         else
           local octave = (#scale_intervals[current_scale] - 1) * (x - 8 == 0 and -1 or 1)
           local e = {t = eTRSP_SCALE, interval = octave} event(e)
-          kill_all_notes()
         end
       end
     end
   elseif z == 0 then
-    if not (kit_view or trigs_config_view) then
+    if not (kit_view or trigs_config_view or transposing) then
       if y == 9 and x > 7 and x < 10 then
         local e = {t = eSCALE, i = int_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       elseif y == 10 then
@@ -900,7 +896,7 @@ function grd_zero.chord_grid(x, y, z)
       play_chord(i)
     elseif z == 0 then
       if heldkey_key == 0 then
-        kill_chord()
+        clear_chord()
         if not (seq_hold or appending_notes) then
           seq_notes = {}
         end
