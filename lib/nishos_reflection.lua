@@ -8,7 +8,7 @@ reflection.__index = reflection
 function reflection.new(id)
   local p = {}
   setmetatable(p, reflection)
-  p.id = id or "pattern"
+  p.id = id or 1
   p.rec = 0
   p.rec_enabled = 0
   p.play  = 0
@@ -28,10 +28,10 @@ function reflection.new(id)
   p.position = 1
   p.manual_length = false
   p.start_callback = function() end
+  p.step_callback = function() end
   p.end_of_loop_callback = function() end
   p.end_of_rec_callback = function() end
   p.end_callback = function() end
-  p.step_callback = function() end
   p.process = function(_) end
   return p
 end
@@ -194,13 +194,6 @@ function reflection:begin_playback()
   while self.play == 1 do
     clock.sync(1/PPQN)
     self.step = self.step + 1
-    if self.count > 0 then
-      local prev_pos = self.position
-      self.position = util.round(util.linlin(1, self.endpoint, 1, 16, self.step), 1)
-      if self.position ~= prev_pos then
-        self:step_callback()
-      end
-    end
     local q = math.floor(PPQN * self.quantize)
     if self.endpoint == 0 then
       -- don't process on first pass
@@ -234,6 +227,7 @@ function reflection:begin_playback()
       end
     -- if not first pass then do the quantization math
     else
+      self:step_callback()
       if self.step % q ~= 1 then goto continue end
       for i = q - 1, 0, - 1 do
         if self.event[self.step - i] and next(self.event[self.step - i]) then
