@@ -1,7 +1,7 @@
 // Engine template written by dan derks & ezra buchla for monome.org
-// adapted by sacha di piazza for polyForm engine
+// adapted by sacha di piazza for polyform engine
 
-Engine_Formantpulse : CroneEngine {
+Engine_Polyform : CroneEngine {
 
 	var kernel;
 
@@ -11,7 +11,7 @@ Engine_Formantpulse : CroneEngine {
 
 	alloc {
 
-		kernel = Formantpulse.new(Crone.server);
+		kernel = Polyform.new(Crone.server);
 
 		this.addCommand(\trig, "sf", { arg msg;
 			var voiceKey = msg[1].asSymbol;
