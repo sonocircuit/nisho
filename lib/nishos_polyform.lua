@@ -231,7 +231,7 @@ local function set_value(i, id, val)
 end
 
 -- play and mute
-function polyForm.play(synth, note_num)
+function polyForm.note_on(synth, note_num)
   local freq = mu.note_num_to_freq(note_num)
   local offset = synth == 1 and 0 or 2
   if synthvoice[synth].unison then
@@ -261,7 +261,7 @@ function polyForm.play(synth, note_num)
   end
 end
 
-function polyForm.mute(synth, note_num)
+function polyForm.note_off(synth, note_num)
   if synthvoice[synth].env == 2 then
     if synthvoice[synth].unison then
       synthvoice[synth].count = synthvoice[synth].count - 1
