@@ -274,48 +274,29 @@ function grd_one.pattern_trigs(x, z)
         held[pattern_focus].second = x
       end
       if pattern_clear then
-        clear_pattern_loops()
+        for i = 1, 8 do
+          if p[i].looping then
+            clock.run(clear_pattern_loop, i, 4)
+            p[i].looping = false
+          end
+        end
       end
     end
   else
     if held[pattern_focus].num == 1 and held[pattern_focus].max == 2 then
-      local pf = pattern_focus
       if pattern_overdub then
         for i = 1, 8 do
           if pattern[i].play == 1 then
-            clock.run(function()
-              clock.sync(1)
-              local segment = math.floor(pattern[pf].endpoint / 16)
-              pattern[i].step_min = segment * (math.min(held[pf].first, held[pf].second) - 1)
-              pattern[i].step_max = segment * math.max(held[pf].first, held[pf].second)
-              pattern[i].step = pattern[i].step_min
-              p[i].step_min_viz[p[i].bank] = math.min(held[pf].first, held[pf].second)
-              p[i].step_max_viz[p[i].bank] = math.max(held[pf].first, held[pf].second)
-              p[i].looping = true
-            end)
+            clock.run(set_pattern_loop, i, pattern_focus)
           end
         end
       else
-        clock.run(function()
-          clock.sync(1)
-          local segment = math.floor(pattern[pf].endpoint / 16)
-          pattern[pf].step_min = segment * (math.min(held[pf].first, held[pf].second) - 1)
-          pattern[pf].step_max = segment * math.max(held[pf].first, held[pf].second)
-          pattern[pf].step = pattern[pf].step_min
-          p[pf].step_min_viz[p[pf].bank] = math.min(held[pf].first, held[pf].second)
-          p[pf].step_max_viz[p[pf].bank] = math.max(held[pf].first, held[pf].second)
-          p[pf].looping = true
-        end)
+        clock.run(set_pattern_loop, pattern_focus, pattern_focus)
       end
     elseif p[pattern_focus].looping and held[pattern_focus].max < 2 then
+      local dur = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and 4 or pattern[pattern_focus].quantize)
+      clock.run(clear_pattern_loop, pattern_focus, dur)
       p[pattern_focus].looping = false
-      clock.run(function()
-        local wait = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and 4 or pattern[pattern_focus].quantize)
-        clock.sync(wait)
-        pattern[pattern_focus].step = 0
-        pattern[pattern_focus].step_min = 0
-        pattern[pattern_focus].step_max = pattern[pattern_focus].endpoint
-      end)
     elseif not (p[pattern_focus].looping or pattern_reset) and held[pattern_focus].max < 2 then
       clock.run(function()
         clock.sync(quant_rate)
@@ -448,6 +429,9 @@ function grd_one.voice_settings(x, y, z)
       elseif (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif not voice[i].mute then
+        if heldkey_int > 0 then
+          dont_panic(voice[int_focus].output)
+        end
         int_focus = i
       end
     end
@@ -461,6 +445,9 @@ function grd_one.voice_settings(x, y, z)
       elseif (mod_c or mod_d) then
         dont_panic(voice[i].output)
       elseif not voice[i].mute then
+        if heldkey_key > 0 then
+          dont_panic(voice[key_focus].output)
+        end
         key_focus = i
         voice_focus = i
         notes_held = {}
