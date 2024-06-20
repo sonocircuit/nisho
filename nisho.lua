@@ -1,4 +1,4 @@
--- nisho v1.6.8 @sonocircuit
+-- nisho v1.6.9 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --   six voices & eight patterns
@@ -15,6 +15,7 @@ engine.name = "Polyform"
 
 local mu = require 'musicutil'
 local lt = require 'lattice'
+local vx = require 'voice'
 local md = require 'core/mods'
 
 local polyform = include 'lib/nishos_polyform'
@@ -143,6 +144,15 @@ for i = 1, 2 do
   crw[i].env_curve = 'linear'
   crw[i].count = 0
 end
+
+-- jf
+jf_num_mono = 0
+jf_poly_alloc = vx.new(6, 2)
+jf_poly_notes = {}
+
+-- wsyn
+wsyn_alloc = vx.new(4, 2)
+wsyn_notes = {}
 
 -- chord
 chord_any = false
@@ -368,7 +378,7 @@ local voice_params = {
   {"crow_env_amp_2", "crow_env_shape_2", "crow_env_attack_2", "crow_env_decay_2",
   "crow_env_sustain_2", "crow_env_release_2", "crow_legato_2", "crow_v8_slew_2"}, --crow 3+4
 
-  {"jf_amp_", "jf_voice_"}, --crow ii jf
+  {"jf_amp_", "jf_mode_"}, --crow ii jf
 
   {"wysn_mode", "wsyn_amp", "wsyn_curve", "wsyn_ramp", "wsyn_lpg_time",
   "wsyn_lpg_sym", "wsyn_fm_index", "wsyn_fm_env", "wsyn_fm_num", "wsyn_fm_den"} --crow ii wsyn
@@ -394,7 +404,7 @@ local voice_param_names = {
   {"amplitude", "env   shape", "attack", "decay", "sustain", "release", "legato", "slew   time"}, --crow 1+2
   {"amplitude", "env   shape", "attack", "decay", "sustain", "release", "legato", "slew   time"}, --crow 3+4
 
-  {"level", "voice"}, --crow ii jf
+  {"level", "mode"}, --crow ii jf
   
   {"mode", "level", "curve", "ramp", "lpg   time",
   "lpg   sym", "fm   index", "fm   env", "fm   num", "fm   den"} --crow ii wsyn
@@ -452,7 +462,7 @@ end
 function clear_held_notes(focus)
   if #notes_held > 0 then
     for _, note in ipairs(notes_held) do
-      mute_voice(voice[focus].output, note)
+      voice_note_off(voice[focus].output, note)
     end
     notes_held = {}
   end
@@ -461,19 +471,15 @@ end
 function dont_panic(voice)
   if voice < 3 then
     polyform.panic(voice)
-  elseif (voice == 3 or voice > 6) then
-    notes_off(i)
+  elseif (voice == 3 or voice > 7) then
+    notes_off(voice)
   elseif (voice == 4 or voice == 5) then
-    local env = voice == 4 and 2 or 4
-    crow.output[env].action = string.format("{ to(%f,%f) }", 0, 0)
-    crow.output[env]()
-    crw[voice - 3].count = 0
+    crow_panic(voice)
   elseif voice == 6 then
-    for n = 1, 6 do
-      crow.ii.jf.trigger(n, 0)
-      voice[n].jf_count = 0
-    end
-  elseif voice > 6 then
+    jf_panic()
+  elseif voice == 7 then
+    wsyn_panic()
+  elseif voice > 7 then
     -- clear all nb voices
   end
 end
@@ -651,6 +657,13 @@ function set_scale()
 end
 
 ------- voice settings --------
+function set_voice_output(i, val)
+  voice[i].output = val
+  alloc_jf_voices()
+  manage_ii()
+  build_menu()
+end
+
 function manage_ii()
   local num_ii = 0
   for i = 1, NUM_VOICES do
@@ -668,6 +681,65 @@ function manage_ii()
   end
 end
 
+function get_jf_mono_voices()
+  local num = 0
+  for i = 1, 6 do
+    if voice[i].jf_mode == 1 and voice[i].output == 6 then
+      num = num + 1
+    end
+  end
+  return num
+end
+
+function alloc_jf_voices()
+  jf_num_mono = get_jf_mono_voices()
+  -- set mono voice channel
+  for i = 1, 6 do
+    if voice[i].output == 6 and voice[i].jf_mode == 1 then
+      if jf_num_mono > 0 and voice[i].jf_ch > jf_num_mono then
+        params:set("jf_voice_"..i, jf_num_mono)
+      end
+    end
+  end
+  -- re-allocate poly voices
+  local alloc_num = 6 - jf_num_mono
+  jf_poly_alloc = nil
+  jf_poly_alloc = vx.new(alloc_num, 2)
+end
+
+function set_jf_levels(i, level)
+  if voice[i].jf_mode == 2 then
+    for i = 1, 6 do
+      if voice[i].output == 6 and voice[i].jf_mode == 2 then
+        voice[i].jf_amp = level
+      end
+    end
+  else
+    voice[i].jf_amp = level
+  end
+end
+
+function jf_panic()
+  for i = 1, 6 do
+    crow.ii.jf.trigger(i, 0)
+    voice[i].jf_count = 0
+  end
+end
+
+function wsyn_panic()
+  for i = 1, 4 do
+    crow.ii.wsyn.velocity(i, 0)
+  end
+end
+
+function crow_panic(i)
+  local env = i == 4 and 2 or 4
+  crow.output[env].action = string.format("{ to(%f,%f) }", 0, 0)
+  crow.output[env]()
+  crw[i - 3].count = 0
+end
+
+
 function set_defaults()
   params:set("voice_out_1", 1)
   params:set("voice_out_2", 2)
@@ -682,6 +754,7 @@ end
 
 -------- pattern recording --------
 function event_exec(e, n)
+  local ptn = n ~= nil and n or 0
   if e.t == eSCALE then
     if not voice[e.i].mute then
       local octave = (root_oct - e.root) * (#scale_intervals[current_scale] - 1)
@@ -689,36 +762,34 @@ function event_exec(e, n)
       local note_num = scale_notes[util.clamp(e.note + transpose_value + octave, 1, #scale_notes)]
       if e.action == "note_off" and voice[e.i].length == 0 then
         if voice[e.i].note_id[id] ~= nil then
-          mute_voice(e.i, voice[e.i].note_id[id])
+          voice_note_off(e.i, voice[e.i].note_id[id])
           remove_active_notes(n, e.i, voice[e.i].note_id[id])
+          --print("exec note off " ..voice[e.i].note_id[id].. " pattern "..ptn.." voice "..e.i)
           voice[e.i].note_id[id] = nil
         end
       elseif e.action == "note_on" then
-        if voice[e.i].note_id[id] ~= nil then
-          mute_voice(e.i, voice[e.i].note_id[id])
-          remove_active_notes(n, e.i, voice[e.i].note_id[id])
-        end
-        play_voice(e.i, note_num)
+        voice_note_on(e.i, note_num)
         add_active_notes(n, e.i, note_num)
         voice[e.i].note_id[id] = note_num
+        --print("exec note on " ..voice[e.i].note_id[id].." pattern "..ptn.." voice "..e.i)
       end
     end
   elseif e.t == eKEYS then
     if not voice[e.i].mute then
       if e.action == "note_off" and voice[e.i].length == 0 then
-        mute_voice(e.i, e.note)
+        voice_note_off(e.i, e.note)
         remove_active_notes(n, e.i, e.note)
       elseif e.action == "note_on" then
-        play_voice(e.i, e.note, e.vel)
+        voice_note_on(e.i, e.note, e.vel)
         add_active_notes(n, e.i, e.note)
       end
     end
   elseif e.t == eDRUMS then
     if not voice[e.i].mute then
-      play_voice(e.i, e.note, e.vel)
+      voice_note_on(e.i, e.note, e.vel)
       clock.run(function()
         clock.sync(1/8)
-        mute_voice(e.i, e.note)
+        voice_note_off(e.i, e.note)
       end)
     end
   elseif e.t == eTRSP_SCALE then
@@ -834,12 +905,16 @@ end
 function add_active_notes(i, voice, note_num)
   if i ~= nil then
     table.insert(pattern[i].active_notes[voice], note_num)
+    --print("added "..note_num.." to pattern ".. i .." voice ".. voice)
+    --tab.print(pattern[i].active_notes[voice])
   end
 end
 
 function remove_active_notes(i, voice, note_num)
   if i ~= nil then
     table.remove(pattern[i].active_notes[voice], tab.key(pattern[i].active_notes[voice], note_num))
+    --print("removed "..note_num.." to pattern ".. i .." voice ".. voice)
+    --tab.print(pattern[i].active_notes[voice])
   end
 end
 
@@ -847,8 +922,10 @@ function clear_active_notes(i)
   for voice = 1, NUM_VOICES do
     if #pattern[i].active_notes[voice] > 0 and pattern[i].endpoint > 0 then
       for _, note in ipairs(pattern[i].active_notes[voice]) do
-        mute_voice(voice, note)
+        voice_note_off(voice, note)
       end
+      --print("cleared notes")
+      --tab.print(pattern[i].active_notes[voice])
       pattern[i].active_notes[voice] = {}
     end
   end
@@ -921,20 +998,6 @@ function reset_pattern_length(i, bank)
   end
   if bank == p[i].bank then
     load_pattern_bank(i, bank)
-  end
-end
-
-function clear_pattern_loops()
-  for i = 1, 8 do
-    if p[i].looping then
-      p[i].looping = false
-      clock.run(function()
-        clock.sync(4)
-        pattern[i].step = 0
-        pattern[i].step_min = 0
-        pattern[i].step_max = pattern[i].endpoint
-      end)
-    end
   end
 end
 
@@ -1225,7 +1288,6 @@ function load_pattern_slot(from, to)
   end
 end
 
-
 -------- midi --------
 function build_midi_device_list()
   midi_devices = {}
@@ -1479,6 +1541,27 @@ function autostrum()
   end
 end
 
+function set_pattern_loop(i, focus)
+  clock.sync(1)
+  local segment = math.floor(pattern[focus].endpoint / 16)
+  pattern[i].step_min = segment * (math.min(held[focus].first, held[focus].second) - 1)
+  pattern[i].step_max = segment * math.max(held[focus].first, held[focus].second)
+  pattern[i].step = pattern[i].step_min
+  p[i].step_min_viz[p[i].bank] = math.min(held[focus].first, held[focus].second)
+  p[i].step_max_viz[p[i].bank] = math.max(held[focus].first, held[focus].second)
+  p[i].looping = true
+  clear_active_notes(i)
+end
+
+function clear_pattern_loop(i, dur)
+  clock.sync(dur)
+  pattern[i].step = 0
+  pattern[i].step_min = 0
+  pattern[i].step_max = pattern[i].endpoint
+end
+
+
+-------- misc, other and diverse --------
 function set_repeat_rate()
   local off = GRIDSIZE == 128 and 0 or 8
   -- get key state
@@ -1551,54 +1634,66 @@ function run_drmf_perf()
 end
 
 function cancel_drmf_perf()
-  if perfclock ~= nil then
-    clock.cancel(perfclock)
+  if not (mod_c or mod_d) then
+    if perfclock ~= nil then
+      clock.cancel(perfclock)
+    end
+    params:set("drmfm_perf_amt", 0)
   end
-  params:set("drmfm_perf_amt", 0)
 end
 
 -------- playback --------
-function play_voice(i, note_num, vel)
+function voice_note_on(i, note_num, vel)
   local velocity = vel or voice[i].velocity
+  if (voice[i].output == 1 or voice[i].output == 2) then
+    polyform.note_on(voice[i].output, note_num)
+  elseif voice[i].output == 3 then
+    m[i]:note_on(note_num, velocity, voice[i].midi_ch)
+    if voice[i].length > 0 then
+      clock.run(function()
+        clock.sleep(voice[i].length)
+        m[i]:note_off(note_num, 0, voice[i].midi_ch)
+        if pageNum == 1 then set_note_viz(note_num, false) end
+      end)
+    end
+  elseif (voice[i].output == 4 or voice[i].output == 5) then
+    crow_note_on(voice[i].output - 3, note_num)
+  elseif voice[i].output == 6 then
+    jf_note_on(i, note_num)
+  elseif voice[i].output == 7 then
+    wsyn_note_on(note_num)
+  elseif voice[i].output > 7 then
+    nb_note_on(voice[i].output - 7, note_num, util.linlin(1, 127, 0, 1, velocity))
+  end
   if midi_thru then
     local channel = midi_out_ch + i - 1
     m[midi_out_dev]:note_on(note_num, velocity, channel)
   end
-  -- polyform 1 and 2
-  if (voice[i].output == 1 or voice[i].output == 2) then
-    polyform.play(voice[i].output, note_num)
-  -- midi
-  elseif voice[i].output == 3 then
-    play_midi(i, note_num, velocity, voice[i].midi_ch)
-  -- crow output 1+2 / 3+4
-  elseif (voice[i].output == 4 or voice[i].output == 5) then
-    play_crow(voice[i].output - 3, note_num)
-  -- crow ii jf
-  elseif voice[i].output == 6 then
-    play_jf(i, note_num)
-  -- crow ii wsyn
-  elseif voice[i].output == 7 then
-    play_wsyn(note_num)
-  -- nb players
-  elseif voice[i].output > 7 then
-    play_nb(voice[i].output - 7, note_num, util.linlin(1, 127, 0, 1, velocity))
-  end
   if pageNum == 1 then set_note_viz(note_num, true) end
 end
 
-function play_midi(i, note_num, velocity, channel, duration)
-  local duration = duration or voice[i].length
-  m[i]:note_on(note_num, velocity, channel)
-  if duration > 0 then
-    clock.run(function()
-      clock.sleep(duration)
-      m[i]:note_off(note_num, 0, channel)
-      if pageNum == 1 then set_note_viz(note_num, false) end
-    end)
+function voice_note_off(i, note_num)
+  if (voice[i].output == 1 or voice[i].output == 2) then
+    polyform.note_off(voice[i].output, note_num)
+  elseif voice[i].output == 3 then
+    m[i]:note_off(note_num, 0, voice[i].midi_ch)
+  elseif (voice[i].output == 4 or voice[i].output == 5) then
+    crow_note_off(i)
+  elseif voice[i].output == 6 then
+    jf_note_off(i, note_num)
+  elseif voice[i].output == 7 then
+    wsyn_note_off(note_num)
+  elseif voice[i].output > 7 then
+    nb_note_off(i, note_num)
   end
+  if midi_thru then
+    local channel = midi_out_ch + i - 1
+    m[midi_out_dev]:note_off(note_num, 0, channel)
+  end
+  if pageNum == 1 then set_note_viz(note_num, false) end
 end
 
-function play_crow(i, note_num)
+function crow_note_on(i, note_num)
   local cv = i == 1 and 1 or 3
   local env = i == 1 and 2 or 4
   local v8 = ((note_num - 60) / crw[i].v8_std)
@@ -1617,20 +1712,76 @@ function play_crow(i, note_num)
   crw[i].count = crw[i].count + 1
 end
 
-function play_jf(i, note_num)
-  if voice[i].jf_mode == 1 then
-    crow.ii.jf.play_voice(voice[i].jf_ch, ((note_num - 60) / 12), voice[i].jf_amp)
-    voice[i].jf_count = voice[i].jf_count + 1
-  else
-    crow.ii.jf.play_note(((note_num - 60) / 12), voice[i].jf_amp)
+function crow_note_off(i)
+  local n = voice[i].output - 3
+  local env = n == 1 and 2 or 4
+  crw[n].count = crw[n].count - 1
+  if crw[n].count <= 0 then
+    crw[n].count = 0
+    crow.output[env].action = string.format("{ to(%f,%f,'%s') }", 0, crw[n].env_r, crw[n].env_curve)
+    crow.output[env]()
   end
 end
 
-function play_wsyn(note_num)
-  crow.ii.wsyn.play_note(((note_num - 60) / 12), wsyn_amp)
+function jf_note_on(i, note_num)
+  local note = (note_num - 60) / 12
+  if voice[i].jf_mode == 1 then
+    crow.ii.jf.play_voice(voice[i].jf_ch, note, voice[i].jf_amp)
+    voice[i].jf_count = voice[i].jf_count + 1
+  else
+    local slot = jf_poly_notes[note_num]
+    if slot == nil then
+      slot = jf_poly_alloc:get()
+      slot.count = 1
+    end
+    slot.on_release = function()
+      crow.ii.jf.trigger(slot.id + jf_num_mono, 0)
+    end
+    jf_poly_notes[note_num] = slot
+    crow.ii.jf.play_voice(slot.id + jf_num_mono, note, voice[i].jf_amp)
+  end
 end
 
-function play_nb(i, note_num, velocity)
+function jf_note_off(i, note_num)
+  local note = (note_num - 60) / 12
+  if voice[i].jf_mode == 1 then
+    voice[i].jf_count = voice[i].jf_count - 1
+    if voice[i].jf_count < 0 then voice[i].jf_count = 0 end
+    if voice[i].jf_count == 0 then
+      crow.ii.jf.trigger(voice[i].jf_ch, 0)
+    end
+  else
+    local slot = jf_poly_notes[note_num]
+    if slot ~= nil then
+      jf_poly_alloc:release(slot)
+    end
+    jf_poly_notes[note_num] = nil
+  end
+end
+
+function wsyn_note_on(note_num)
+  local note = (note_num - 60) / 12
+  local slot = wsyn_notes[note_num]
+  if slot == nil then
+    slot = wsyn_alloc:get()
+    slot.count = 1
+  end
+  slot.on_release = function()
+    crow.ii.wsyn.velocity(slot.id, 0)
+  end
+  wsyn_notes[note_num] = slot
+  crow.ii.wsyn.play_voice(slot.id, note, wsyn_amp)  
+end
+
+function wsyn_note_off(note_num)
+  local slot = wsyn_notes[note_num]
+  if slot ~= nil then
+    wsyn_alloc:release(slot)
+  end
+  wsyn_notes[note_num] = nil
+end
+
+function nb_note_on(i, note_num, velocity)
   local player = params:lookup_param("nb_"..i):get_player()
   player:note_on(note_num, velocity)
   if voice[i].length > 0 then
@@ -1642,6 +1793,11 @@ function play_nb(i, note_num, velocity)
   end
 end
 
+function nb_note_off(i, note_num)
+  local player = params:lookup_param("nb_"..(voice[i].output - 7)):get_player()
+  player:note_off(note_num)
+end
+
 function play_kit(note_num, velocity)
   local velocity = velocity or kit_velocity
   m[kit_midi_dev]:note_on(note_num, velocity, kit_midi_ch)
@@ -1651,40 +1807,6 @@ function play_kit(note_num, velocity)
   end)
 end
 
-function mute_voice(i, note_num)
-  if (voice[i].output == 1 or voice[i].output == 2) then
-    polyform.mute(voice[i].output, note_num)
-  elseif voice[i].output == 3 then
-    m[i]:note_off(note_num, 0, voice[i].midi_ch)
-  elseif (voice[i].output == 4 or voice[i].output == 5) then
-    local n = voice[i].output - 3
-    local env = n == 1 and 2 or 4
-    crw[n].count = crw[n].count - 1
-    if crw[n].count <= 0 then
-      crw[n].count = 0
-      crow.output[env].action = string.format("{ to(%f,%f,'%s') }", 0, crw[n].env_r, crw[n].env_curve)
-      crow.output[env]()
-    end
-  elseif voice[i].output == 6 then
-    if voice[i].jf_mode == 1 then
-      voice[i].jf_count = voice[i].jf_count - 1
-      if voice[i].jf_count < 0 then voice[i].jf_count = 0 end
-      if voice[i].jf_count == 0 then
-        crow.ii.jf.trigger(voice[i].jf_ch, 0)
-      end
-    else
-      crow.ii.jf.play_note(((note_num - 60) / 12), 0)
-    end
-  elseif voice[i].output > 7 then
-    local player = params:lookup_param("nb_"..(voice[i].output - 7)):get_player()
-    player:note_off(note_num)
-  end
-  if midi_thru then
-    local channel = midi_out_ch + i - 1
-    m[midi_out_dev]:note_off(note_num, 0, channel)
-  end
-  if pageNum == 1 then set_note_viz(note_num, false) end
-end
 
 --------------------- PSET MANAGEMENT -----------------------
 
@@ -1947,7 +2069,7 @@ function init()
     params:add_group("voice_"..i, "voice "..i, 24)
     -- output
     params:add_option("voice_out_"..i, "output", options.output, 1)
-    params:set_action("voice_out_"..i, function(val) voice[i].output = val manage_ii() build_menu() end)
+    params:set_action("voice_out_"..i, function(val) set_voice_output(i, val) end)
     -- mute
     params:add_option("voice_mute_"..i, "mute", {"off", "on"}, 1)
     params:set_action("voice_mute_"..i, function(mode)
@@ -1987,31 +2109,21 @@ function init()
       params:add_number("midi_cc_val_"..n.."_"..i, "cc "..name[n].." value", 0, 127, 0)
       params:set_action("midi_cc_val_"..n.."_"..i, function(val) if voice[i].midi_cc[n] > 0 then m[i]:cc(voice[i].midi_cc[n], val, voice[i].midi_ch) end end)
     end
-
+    
     -- jf params
-    params:add_option("jf_mode_"..i, "jf mode", {"mono", "poly"}, 2)
-    params:set_action("jf_mode_"..i, function(mode) voice[i].jf_mode = mode build_menu() end)
+    params:add_option("jf_mode_"..i, "jf mode", {"mono", "poly"}, 1)
+    params:set_action("jf_mode_"..i, function(mode) voice[i].jf_mode = mode build_menu() alloc_jf_voices() jf_panic() end)
 
     params:add_number("jf_voice_"..i, "jf voice", 1, 6, i)
-    params:set_action("jf_voice_"..i, function(vox) voice[i].jf_ch = vox end)
+    params:set_action("jf_voice_"..i, function(vox) voice[i].jf_ch = vox alloc_jf_voices() end)
 
     params:add_control("jf_amp_"..i, "jf level", controlspec.new(0.1, 10, "lin", 0.1, 8.0, "vpp"))
-    params:set_action("jf_amp_"..i, function(level)
-      if voice[i].jf_mode == 2 then
-        for i = 1, 6 do
-          if voice[i].output == 6 and voice[i].jf_mode == 2 then
-            voice[i].jf_amp = level
-          end
-        end
-      else
-        voice[i].jf_amp = level
-      end
-    end)
+    params:set_action("jf_amp_"..i, function(level) set_jf_levels(i, level) end)
 
   end
 
   params:add_separator("sound_params", "synthesis & cv")
-  -- engine params
+  -- polyform params
   polyform.init()
 
   -- crow params
@@ -2047,7 +2159,7 @@ function init()
     params:set_action("crow_env_release_"..i, function(value) crw[i].env_r = value end)
   end
 
-  -- jf
+  -- jf params
   params:add_group("jf_params", "crow [jf]", 2)
   params:add_option("jf_run_mode", "jf run mode", {"off", "on"}, 1)
   params:set_action("jf_run_mode", function(mode) crow.ii.jf.run_mode(mode - 1) end)
@@ -2055,7 +2167,7 @@ function init()
   params:add_control("jf_run", "jf run", controlspec.new(-5, 5, "lin", 0, 0, "v"))
   params:set_action("jf_run", function(volts) crow.ii.jf.run(volts) end)
 
-  -- wsyn
+  -- wsyn params
   params:add_group("wsyn_params", "crow [wsyn]", 10)
 
   params:add_option("wysn_mode", "wsyn mode", {"hold", "lpg"}, 2)
@@ -2905,6 +3017,7 @@ function build_menu()
       params:show("midi_panic_"..i)
       params:show("voice_midi_cc_"..i)
       for n = 1, 4 do
+        params:show("midi_cc_name_"..n.."_"..i)
         params:show("midi_cc_dest_"..n.."_"..i)
         params:show("midi_cc_val_"..n.."_"..i)
       end
@@ -2914,6 +3027,7 @@ function build_menu()
       params:hide("midi_panic_"..i)
       params:hide("voice_midi_cc_"..i)
       for n = 1, 4 do
+        params:hide("midi_cc_name_"..n.."_"..i)
         params:hide("midi_cc_dest_"..n.."_"..i)
         params:hide("midi_cc_val_"..n.."_"..i)
       end
