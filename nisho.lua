@@ -1,4 +1,4 @@
--- nisho v1.6.9 @sonocircuit
+-- nisho v1.7.0 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --   six voices & eight patterns
@@ -8,7 +8,9 @@
 --
  
 ---------------------------------------------------------------------------
--- KNOWN BUG: patterns not catching more than 1 note at step_one (onset pattern rec)
+-- TODO: check for hanging notes -> when do they occur and why.
+-- TODO: add hold-notes key -> below voice select on grid zero
+--       when keys held and pressed then notes are held until pressed again.
 ---------------------------------------------------------------------------
 
 engine.name = "Polyform" 
@@ -16,6 +18,7 @@ engine.name = "Polyform"
 local mu = require 'musicutil'
 local lt = require 'lattice'
 local vx = require 'voice'
+local lo = require 'lfo'
 local md = require 'core/mods'
 
 local polyform = include 'lib/nishos_polyform'
@@ -34,6 +37,9 @@ local rotate_grid = false
 -- constants
 local GRIDSIZE = 0
 local NUM_VOICES = 6
+
+-- user modes
+rytm_mode = false
 
 -- ui variables
 pageNum = 1
@@ -64,14 +70,28 @@ drum_vel_mid = 64
 drum_vel_lo = 32
 drum_vel_last = 100
 
+drm_mute = {}
+drm_mute.key = {}
+drm_mute.group = {}
+for i = 1, 12 do
+  drm_mute.key[i] = false
+end
+for n = 1, 6 do
+  drm_mute.group[n] = {}
+  for i = 1, 12 do
+    drm_mute.group[n][i] = false
+  end
+end
+
 -- keep track of the number of pressed keys
 heldkey_int = 0
 heldkey_key = 0 
-heldkey_kit = 0 
+heldkey_kit = 0
 
 -- kit
 kit_view = false
 kit_mode = 1
+kit_mod_keys = 1
 kit_root_note = 60
 kit_midi_dev = 7
 kit_midi_ch = 1
@@ -81,10 +101,25 @@ kit_held = {}
 held_bank = 0
 midi_bank = 0
 
+kit_edit_mutes = false
+kit_mute_all = false
+kit_mute = {}
+kit_mute.focus = 1
+kit_mute.active = false
+kit_mute.key = {}
+kit_mute.group = {}
+for i = 1, 16 do
+  kit_mute.key[i] = false
+end
+for n = 1, 6 do
+  kit_mute.group[n] = {}
+  for i = 1, 16 do
+    kit_mute.group[n][i] = false
+  end
+end
+
 -- drmfm
 drmfm_copying = false
-drmfm_muting = false
-drmfm_mute_all = false
 drmfm_voice_focus = 1
 drmfm_clipboard_contains = false
 perfclock = nil
@@ -118,17 +153,20 @@ trig_step = 0
 trigs_reset = false
 
 -- midi
-local midi_in_dev = 9
-local midi_in_ch = 1
-local midi_in_dest = 0
-local midi_in_quant = false
-local midi_out_dev = 7
-local midi_out_ch = 1
-local midi_thru = false
+midi_in_dev = 9
+midi_in_ch = 1
+midi_in_dest = 0
+midi_in_quant = false
+midi_out_dev = 8
+midi_out_ch = 1
+midi_thru = false
+midi_rytm_dev = 10
+midi_rytm_ch = 1
 
 -- crow
-local wsyn_amp = 5
-local crw = {}
+crow_is_here = false
+wsyn_amp = 5
+crw = {}
 crw.wsyn_amp = 5
 crw.env_shapes = {'logarithmic', 'linear', 'exponential'}
 for i = 1, 2 do
@@ -154,13 +192,33 @@ jf_poly_notes = {}
 wsyn_alloc = vx.new(4, 2)
 wsyn_notes = {}
 
+-- ansible
+ansi_view = false
+ansi_held = {}
+ansi_trig = {}
+for i = 1, 4 do
+  ansi_trig[i] = false
+end
+
+ansi_cv = {}
+for i = 1, 4 do
+  ansi_cv[i] = {}
+  ansi_cv[i].lvl = 0
+  ansi_cv[i].min = 0
+  ansi_cv[i].max = 10
+  ansi_cv[i].lfo = {}
+end
+
 -- chord
 chord_any = false
 chord_play = true
 chord_strum = false
+chord_preview = false
+prev_chord_inversion = 1
 chord_inversion = 1
 chord_oct_shift = 0
 last_chord_root = 0
+chordkeys_options = false
 strum_count_options = false
 strum_mode_options = false
 strum_skew_options = false
@@ -242,6 +300,7 @@ pattern_focus = 1
 bank_focus = 1
 keyquant_edit = false
 pattern_bank_page = 0
+pattern_voicemap = false
 
 stop_all = false
 stop_all_timer = nil
@@ -253,6 +312,7 @@ eDRUMS = 3
 eMIDI = 4
 eTRSP_SCALE = 5
 eKIT = 6
+eANSI = 7
 
 -------- tables --------
 local options = {}
@@ -318,7 +378,7 @@ for i = 1, 8 do -- with 128 only two are in use
 end
 
 m = {}
-for i = 1, 9 do -- 6 voices + kit(7) + midi out(8) + midi in(9)
+for i = 1, 10 do -- 6 voices + kit(7) + midi out(8) + midi in(9) + rytm out(10)
   m[i] = midi.connect()
 end
 
@@ -480,7 +540,7 @@ function dont_panic(voice)
   elseif voice == 7 then
     wsyn_panic()
   elseif voice > 7 then
-    -- clear all nb voices
+    -- clear all nb voices. does this exist yet?
   end
 end
 
@@ -754,7 +814,6 @@ end
 
 -------- pattern recording --------
 function event_exec(e, n)
-  local ptn = n ~= nil and n or 0
   if e.t == eSCALE then
     if not voice[e.i].mute then
       local octave = (root_oct - e.root) * (#scale_intervals[current_scale] - 1)
@@ -764,14 +823,12 @@ function event_exec(e, n)
         if voice[e.i].note_id[id] ~= nil then
           voice_note_off(e.i, voice[e.i].note_id[id])
           remove_active_notes(n, e.i, voice[e.i].note_id[id])
-          --print("exec note off " ..voice[e.i].note_id[id].. " pattern "..ptn.." voice "..e.i)
           voice[e.i].note_id[id] = nil
         end
       elseif e.action == "note_on" then
         voice_note_on(e.i, note_num)
         add_active_notes(n, e.i, note_num)
         voice[e.i].note_id[id] = note_num
-        --print("exec note on " ..voice[e.i].note_id[id].." pattern "..ptn.." voice "..e.i)
       end
     end
   elseif e.t == eKEYS then
@@ -785,7 +842,8 @@ function event_exec(e, n)
       end
     end
   elseif e.t == eDRUMS then
-    if not voice[e.i].mute then
+    local drm_voice = (e.note % 12) + 1 -- TODO: take drum root note in account!
+    if not (voice[e.i].mute or drm_mute.key[drm_voice]) then
       voice_note_on(e.i, e.note, e.vel)
       clock.run(function()
         clock.sync(1/8)
@@ -807,21 +865,35 @@ function event_exec(e, n)
       add_active_notes(n, midi_out_dev, e.note)
     end
   elseif e.t == eKIT then
-    if kit_mode == 1 then
-      play_kit(e.note, e.vel)
-    elseif drmfm_mute_all == false then
-      drmfm.trig(e.note, e.vel)
+    local kit_voice = (e.note % 16) + 1
+    if not (kit_mute_all or kit_mute.key[kit_voice]) then
+      if kit_mode == 1 then
+        drmfm.trig(e.note, e.vel)
+      else
+        play_kit(e.note, e.vel)
+      end
     end
     kit_gridviz(e.note)
+  elseif e.t == eANSI then
+    crow.ii.ansible.trigger_pulse(e.i)
+    ansi_gridviz(e.i)
   end
   dirtyscreen = true
 end
 
+function event_rec(e)
+  if not pattern_voicemap then
+    pattern[pattern_focus]:watch(e)
+  elseif e.i == pattern_focus then
+    pattern[pattern_focus]:watch(e)
+  end
+end
+
 function event(e)
-  if key_quantize and not (key_repeat or seq_active) then
+  if (e.t == eKIT and not key_repeat) or (key_quantize and not (key_repeat or seq_active)) then
     table.insert(quant_event, e)
   else
-    pattern[pattern_focus]:watch(e)
+    event_rec(e)
     event_exec(e)
   end
 end
@@ -831,7 +903,7 @@ function event_q_clock()
     clock.sync(quant_rate)
     if #quant_event > 0 then
       for _, e in ipairs(quant_event) do
-        pattern[pattern_focus]:watch(e)
+        event_rec(e)
         event_exec(e)
       end
       quant_event = {}
@@ -898,7 +970,7 @@ for i = 1, 8 do
     p[i].length[j] = 16
     p[i].manual_length[j] = false
     p[i].prc_num[j] = 0
-    p[i].prc_option[j] = 1
+    p[i].prc_option[j] = 2
   end
 end
 
@@ -1068,27 +1140,24 @@ function paste_seq_pattern(i)
   if #seq_notes > 0 then
     for n = 1, #seq_notes do
       local s = math.floor((n - 1) * (seq_rate * 64) + 1)
-      local t = math.floor(s + ((seq_rate / 2) * 64) - 1)
+      local e = math.floor(s + ((seq_rate / 2) * 64))
       if seq_notes[n] > 0 then
         if not p[i].event[bank][s] then
           p[i].event[bank][s] = {}
         end
-        if voice[key_focus].keys_option == 1 then
-          local e = {t = eSCALE, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_on"}
-          table.insert(p[i].event[bank][s], e)
-        else
-          local e = {t = eKEYS, i = key_focus, note = seq_notes[n], action = "note_on"}
-          table.insert(p[i].event[bank][s], e)
-        end
-        if not p[i].event[bank][t] then
-          p[i].event[bank][t] = {}
+        if not p[i].event[bank][e] then
+          p[i].event[bank][e] = {}
         end
         if voice[key_focus].keys_option == 1 then
-          local e = {t = eSCALE, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_off"}
-          table.insert(p[i].event[bank][t], e)
+          local on = {t = eSCALE, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_on"}
+          local off = {t = eSCALE, i = key_focus, root = root_oct, note = seq_notes[n], action = "note_off"}
+          table.insert(p[i].event[bank][s], on)
+          table.insert(p[i].event[bank][e], off)
         else
-          local e = {t = eKEYS, i = key_focus, note = seq_notes[n], action = "note_off"}
-          table.insert(p[i].event[bank][t], e)
+          local on = {t = eKEYS, i = key_focus, note = seq_notes[n], action = "note_on"}
+          local off = {t = eKEYS, i = key_focus, note = seq_notes[n], action = "note_off"}
+          table.insert(p[i].event[bank][s], on)
+          table.insert(p[i].event[bank][e], off)
         end
         p[i].count[bank] = p[i].count[bank] + 2
       end
@@ -1098,7 +1167,7 @@ function paste_seq_pattern(i)
     p[i].manual_length[bank] = true
     load_pattern_bank(i, bank)
   else
-    print("seq pattern empty")
+    show_message("sequence    empty")
   end
 end
 
@@ -1119,6 +1188,7 @@ end
 
 function load_pattern_bank(i, bank)
   p[i].looping = false
+  pattern[i].manual_length = p[i].manual_length[bank]
   pattern[i].count = p[i].count[bank]
   pattern[i].loop = p[i].loop[bank]
   pattern[i].launch = p[i].launch[bank]
@@ -1131,7 +1201,6 @@ function load_pattern_bank(i, bank)
   pattern[i].barnum = p[i].barnum[bank]
   pattern[i].meter = p[i].meter[bank]
   pattern[i].length = p[i].length[bank]
-  pattern[i].manual_length = p[i].manual_length[bank]
   params:set("patterns_playback_"..i, pattern[i].loop == 1 and 1 or 2)
   params:set("patterns_quantize_"..i, tab.key(options.pattern_quantize_value, pattern[i].quantize))
   params:set("patterns_launch_"..i, pattern[i].launch)
@@ -1140,9 +1209,10 @@ function load_pattern_bank(i, bank)
     params:set("patterns_meter_"..i, tab.key(options.meter_val, pattern[i].meter))
   end
   if pattern[i].play == 1 and pattern[i].count == 0 then
-    pattern[i].play = 0
+    pattern[i]:end_playback()
   end
   dirtyscreen = true
+  --print("loaded values", pattern[i].meter, pattern[i].barnum, pattern[i].manual_length)
 end
 
 function clear_pattern_bank(i, bank)
@@ -1216,8 +1286,9 @@ function stop_all_patterns()
       stop_all = false
     end)
   end
-  if pattern_overdub then
-    m[6]:program_change(127, p[6].prc_ch) -- send prg change to Analog Rytm
+  -- rytm mode
+  if pattern_overdub and rytm_mode then
+    m[midi_rytm_dev]:program_change(127, midi_rytm_ch) -- send prg change to Analog Rytm -> pattern h16 is blank
   end
 end
 
@@ -1288,6 +1359,7 @@ function load_pattern_slot(from, to)
   end
 end
 
+
 -------- midi --------
 function build_midi_device_list()
   midi_devices = {}
@@ -1342,30 +1414,33 @@ function all_notes_off() -- all voices
   end
 end
 
-function midi_events(data)
-  local msg = midi.to_msg(data)
-  if msg.ch == midi_in_ch then
-    if msg.type == "note_on" or msg.type == "note_off" then
-      if midi_in_quant then
-        msg.note = mu.snap_note_to_array(msg.note, note_map)
-      end
-      if midi_in_dest == 0 then
-        local e = {t = eMIDI, action = msg.type, note = msg.note, vel = msg.vel, ch = midi_out_ch} event(e)
-      elseif midi_in_dest == 7 and msg.type == "note_on" then
-        local e = {t = eKIT, note = msg.note, vel = msg.vel} event(e)
-      else
-        local e = {t = eKEYS, i = midi_in_dest, note = msg.note, vel = msg.vel, action = msg.type} event(e)
-      end
-    end
-  end
-end
-
 function set_midi_event_callback()
   for i = 1, 16 do
     midi.vports[i].event = nil
   end
   m[midi_in_dev].event = midi_events
 end
+
+function midi_events(data)
+  local msg = midi.to_msg(data)
+  if msg.type == "note_on" or msg.type == "note_off" then
+    local destination = midi_in_dest == 0 and msg.ch or midi_in_dest
+    local channel = midi_in_dest == 0 and (util.wrap(destination, 1, 8)) or midi_in_ch
+    if msg.ch == channel then
+      if midi_in_quant then
+        msg.note = mu.snap_note_to_array(msg.note, note_map)
+      end
+      if destination == 8 then
+        local e = {t = eMIDI, i = 8, note = msg.note, vel = msg.vel, ch = midi_out_ch, action = msg.type} event(e)
+      elseif destination == 7 and msg.type == "note_on" then
+        local e = {t = eKIT, i = 7, note = msg.note, vel = msg.vel} event(e)
+      else
+        local e = {t = eKEYS, i = destination, note = msg.note, vel = msg.vel, action = msg.type} event(e)
+      end
+    end
+  end
+end
+
 
 -------- clock coroutines --------
 function ledpulse_fast()
@@ -1501,7 +1576,14 @@ function run_keyrepeat()
       if #kit_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
           for _, v in ipairs(kit_held) do
-            local e = {t = eKIT, note = v} event(e)
+            local e = {t = eKIT, i = 7, note = v} event(e)
+          end
+        end
+      end
+      if #ansi_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
+        if trigs[trigs_focus].prob[trig_step] >= math.random() then
+          for _, v in ipairs(ansi_held) do
+            local e = {t = eANSI, i = v} event(e)
           end
         end
       end
@@ -1561,7 +1643,7 @@ function clear_pattern_loop(i, dur)
 end
 
 
--------- misc, other and diverse --------
+-------- misc, other and them --------
 function set_repeat_rate()
   local off = GRIDSIZE == 128 and 0 or 8
   -- get key state
@@ -1603,7 +1685,7 @@ function set_repeat_rate()
 end
 
 function kit_gridviz(note_num)
-  local n = note_num - (kit_oct * 16) - 47
+  local n = note_num - (kit_oct * 16) - 47 - kit_root_note
   local x = (n > 8 and n - 5 or n + 3)
   local y = (n > 8 and 1 or 2) + (GRIDSIZE == 128 and 2 or 9)
   if x > 3 and x < 12 then
@@ -1614,6 +1696,39 @@ function kit_gridviz(note_num)
       gkey[x][y].active = false
       dirtygrid = true
     end)
+  end
+end
+
+function set_kit_mutes(group)
+  kit_mute.active = true
+  for i = 1, 16 do
+    kit_mute.key[i] = kit_mute.group[group][i]
+  end
+  for i = 1, 12 do
+    drm_mute.key[i] = drm_mute.group[group][i]
+    if rytm_mode then
+      local state = drm_mute.group[group][i] and 127 or 0
+      m[midi_rytm_dev]:cc(94, state, i)
+    end
+  end
+end
+
+function clear_kit_mutes()
+  kit_mute.active = false
+  for i = 1, 16 do
+    kit_mute.key[i] = false
+  end
+  for i = 1, 12 do
+    drm_mute.key[i] = false
+    if rytm_mode then
+      m[midi_rytm_dev]:cc(94, 0, i)
+    end
+  end
+end
+
+function rytm_mute_all()
+  for i = 1, 12 do
+    m[midi_rytm_dev]:cc(94, 127, i)
   end
 end
 
@@ -1640,6 +1755,37 @@ function cancel_drmf_perf()
     end
     params:set("drmfm_perf_amt", 0)
   end
+end
+
+function ansi_gridviz(i)
+  if ansi_view then
+    clock.run(function()
+      ansi_trig[i] = true
+      dirtygrid = true
+      clock.sleep(1/30)
+      ansi_trig[i] = false
+      dirtygrid = true
+    end)
+  end
+end
+
+function display_output_volt(i)
+  local volts = util.linlin(0, 1, ansi_cv[i].min, ansi_cv[i].max, ansi_cv[i].lvl)
+  return round_form(volts, 0.1, "v")
+end
+
+function clamp_range(i)
+  if ansi_cv[i].min >= ansi_cv[i].max then
+    params:set("ansible_cv_"..i.."_min", ansi_cv[i].max - 0.1)
+  end
+  if ansi_cv[i].max <= ansi_cv[i].min then
+    params:set("ansible_cv_"..i.."_max", ansi_cv[i].min + 0.1)
+  end
+end
+
+function set_output_volt(i)
+  local volts = util.linlin(0, 1, ansi_cv[i].min, ansi_cv[i].max, ansi_cv[i].lvl)
+  crow.ii.ansible.cv(i, volts)
 end
 
 -------- playback --------
@@ -1858,6 +2004,11 @@ function init()
   -- nb
   nb:init()
 
+  -- check for crow
+  if norns.crow.connected() then
+    crow_is_here = true
+  end
+  
   -- populate scale_names table
   scale_names = {}
   for i = 1, #mu.SCALES - 1 do
@@ -1890,6 +2041,9 @@ function init()
 
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
   params:set_action("metronome_viz", function(mode) set_metronome(mode) end)
+
+  params:add_option("pattern_mapping", "pattern alloc", {"free", "voices"}, 1)
+  params:set_action("pattern_mapping", function(mode) pattern_voicemap = mode == 2 and true or false end)
         
   params:add_option("key_quant_value", "key quantization", options.key_quant, 7)
   params:set_action("key_quant_value", function(idx) quant_rate = options.quant_value[idx] * 4 end)
@@ -1899,22 +2053,29 @@ function init()
   params:set_action("key_seq_rate", function(idx) seq_rate = options.quant_value[idx] * 4 end)
   params:hide("key_seq_rate")
 
-  params:add_group("kit_group", "kit settings", 33)
+  -- kit settings
+  params:add_group("kit_group", "kit settings", 35)
 
-  params:add_option("kit_dest", "kit mode", {"midi", "drmFM"}, 2)
+  params:add_option("kit_dest", "kit mode", {"drmFM", "midi"}, 1)
   params:set_action("kit_dest", function(mode) kit_mode = mode build_menu() end)
+
+  params:add_number("kit_root_note", "kit base note", 0, 24, 12, function(param) return mu.note_num_to_name(param:get(), true) end)
+  params:set_action("kit_root_note", function(val) kit_root_note = val - 12 dirtygrid = true end)
 
   params:add_option("kit_out_device", "kit out device", midi_devices, 1)
   params:set_action("kit_out_device", function(val) m[kit_midi_dev] = midi.connect(val) end)
 
-  params:add_number("kit_midi_channel", "kit midi channel", 1, 16, 7)
+  params:add_number("kit_midi_channel", "kit midi channel", 1, 16, 1)
   params:set_action("kit_midi_channel", function(val) kit_midi_ch = val end)
-
-  params:add_number("kit_root_note", "kit root note", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
-  params:set_action("kit_root_note", function(val) kit_root_note = val dirtygrid = true end)
 
   params:add_number("kit_note_velocity", "kit velocity", 1, 127, 100)
   params:set_action("kit_note_velocity", function(val) kit_velocity = val end)
+
+  params:add_option("kit_mod_key_mode", "kit mod keys", {"mutes", "midi cc"}, 1)
+  params:set_action("kit_mod_key_mode", function(mode) kit_mod_keys = mode build_menu() end)
+
+  params:add_binary("kit_clear_mutes", "clear mutes", "trigger", 0)
+  params:set_action("kit_clear_mutes", function() clear_kit_mutes() end)
 
   for i = 1, 4 do
     params:add_separator("kit_cc_bank_"..i, "kit midi cc bank "..i)
@@ -1923,14 +2084,34 @@ function init()
       params:add_number("kit_cc_num_"..name[n].."_"..i, "cc "..name[n].." number", 0, 127, 19 + n + (i - 1) * 2)
       params:set_action("kit_cc_num_"..name[n].."_"..i, function(num) mcc[(i - 1) * 2 + n].num = num end)
 
-      params:add_number("kit_cc_min_"..name[n].."_"..i, "cc "..name[n].." min", 0, 127, 0)
-      params:set_action("kit_cc_min_"..name[n].."_"..i, function(num) mcc[(i - 1) * 2 + n].min = num end)
-
-      params:add_number("kit_cc_max_"..name[n].."_"..i, "cc "..name[n].." max", 0, 127, 127)
+      params:add_number("kit_cc_max_"..name[n].."_"..i, "cc "..name[n].." hold val", 0, 127, 127)
       params:set_action("kit_cc_max_"..name[n].."_"..i, function(num) mcc[(i - 1) * 2 + n].max = num end)
+
+      params:add_number("kit_cc_min_"..name[n].."_"..i, "cc "..name[n].." release val", 0, 127, 0)
+      params:set_action("kit_cc_min_"..name[n].."_"..i, function(num) mcc[(i - 1) * 2 + n].min = num end)
     end
   end
 
+  -- kit and drm mute groups
+  params:add_group("kit_mute_groups", "kit mute groups", 96)
+  for i = 1, 16 do
+    for n = 1, 6 do
+      params:add_option("kit_mute_key_"..i.."_group_"..n, "kit mute key "..i.." group "..n, {"off", "on"}, 1)
+      params:set_action("kit_mute_key_"..i.."_group_"..n, function(option) kit_mute.group[n][i] = option == 2 and true or false end)
+    end
+  end
+  params:hide("kit_mute_groups")
+
+  params:add_group("drm_mute_groups", "drm mute groups", 72)
+  for i = 1, 12 do
+    for n = 1, 6 do
+      params:add_option("drm_mute_key_"..i.."_group_"..n, "drm mute key "..i.." group "..n, {"off", "on"}, 1)
+      params:set_action("drm_mute_key_"..i.."_group_"..n, function(option) drm_mute.group[n][i] = option == 2 and true or false end)
+    end
+  end
+  params:hide("drm_mute_groups")
+
+  -- midi i/o params
   params:add_group("global_midi_group", "midi settings", 10)
 
   params:add_separator("glb_midi_in_params", "midi in")
@@ -1938,14 +2119,14 @@ function init()
   params:add_option("glb_midi_in_device", "midi in device", midi_devices, 1)
   params:set_action("glb_midi_in_device", function(val) m[midi_in_dev] = midi.connect(val) set_midi_event_callback() end)
 
+  params:add_option("glb_midi_in_destination", "send midi to..", {"multichannel", "voice 1", "voice 2", "voice 3", "voice 4", "voice 5", "voice 6", "kit", "midi out"}, 1)
+  params:set_action("glb_midi_in_destination", function(dest) midi_in_dest = dest - 1 build_menu() all_notes_off() end)
+
   params:add_number("glb_midi_in_channel", "midi in channel", 1, 16, 1)
   params:set_action("glb_midi_in_channel", function(val) notes_off(midi_in_dev) midi_in_ch = val end)
 
   params:add_option("glb_midi_in_quantization", "map to scale", {"no", "yes"}, 1)
   params:set_action("glb_midi_in_quantization", function(mode) midi_in_quant = mode == 2 and true or false end)
-
-  params:add_option("glb_midi_in_destination", "send midi to..", {"midi out", "voice 1", "voice 2", "voice 3", "voice 4", "voice 5", "voice 6", "kit"})
-  params:set_action("glb_midi_in_destination", function(dest) midi_in_dest = dest - 1 end)
 
   params:add_separator("glb_midi_out_params", "midi out")
 
@@ -1961,6 +2142,7 @@ function init()
   params:add_binary("glb_midi_panic", "don't panic", "trigger", 0)
   params:set_action("glb_midi_panic", function() all_notes_off() end)
 
+  -- keyboard settings
   params:add_group("keyboard_group", "keyboard settings", 16)
 
   params:add_separator("scale_keys", "scale keys")
@@ -2007,6 +2189,19 @@ function init()
   params:add_number("drum_vel_lo", "lo velocity", 1, 127, 32)
   params:set_action("drum_vel_lo", function(val) drum_vel_lo = val end)
 
+
+  -- rytm params
+  params:add_group("rytm_params", "rytm settings", 2)
+  if not rytm_mode then params:hide("rytm_params") end
+
+  params:add_option("rytm_out_device", "rytm out device", midi_devices, 1)
+  params:set_action("rytm_out_device", function(val) m[midi_rytm_dev] = midi.connect(val) end)
+
+  params:add_number("rytm_out_channel", "rytm out channel", 1, 16, 14)
+  params:set_action("rytm_out_channel", function(val) midi_rytm_ch = val end)
+
+
+  -- octave params
   params:add_group("octave_params", "octaves", 14)
   params:hide("octave_params")
 
@@ -2024,11 +2219,12 @@ function init()
   params:add_number("kit_octaves", "kit octaves", -3, 3, 0)
   params:set_action("kit_octaves", function(val) kit_oct = val end)
 
+
   -- patterns params
   params:add_group("pattern_parameters", "pattern parameters", 40)
   params:hide("pattern_parameters")
   for i = 1, 8 do
-
+  
     params:add_option("patterns_playback_"..i, "playback", options.pattern_play, 1)
     params:set_action("patterns_playback_"..i, function(mode)
       pattern[i].loop = mode == 1 and 1 or 0
@@ -2130,6 +2326,7 @@ function init()
   local crow_options = {"crow [out 1+2]", "crow [out 3+4]"}
   for i = 1, 2 do
     params:add_group("crow_out_"..i, crow_options[i], 9)
+    if not crow_is_here then params:hide("crow_out_"..i) end
 
     params:add_option("crow_v8_type_"..i, "v/oct type", {"1 v/oct", "1.2 v/oct"}, 1)
     params:set_action("crow_v8_type_"..i, function(mode) crw[i].v8_std = mode == 1 and 12 or 10 end)
@@ -2161,6 +2358,8 @@ function init()
 
   -- jf params
   params:add_group("jf_params", "crow [jf]", 2)
+  if not crow_is_here then params:hide("jf_params") end
+
   params:add_option("jf_run_mode", "jf run mode", {"off", "on"}, 1)
   params:set_action("jf_run_mode", function(mode) crow.ii.jf.run_mode(mode - 1) end)
 
@@ -2169,6 +2368,7 @@ function init()
 
   -- wsyn params
   params:add_group("wsyn_params", "crow [wsyn]", 10)
+  if not crow_is_here then params:hide("wsyn_params") end
 
   params:add_option("wysn_mode", "wsyn mode", {"hold", "lpg"}, 2)
   params:set_action("wysn_mode", function(mode) crow.ii.wsyn.ar_mode(mode - 1) end)
@@ -2200,6 +2400,27 @@ function init()
   params:add_number("wsyn_fm_den", "fm ratio denom", 1, 16, 2)
   params:set_action("wsyn_fm_den", function(denom) crow.ii.wsyn.fm_ratio(params:get("wsyn_fm_num"), denom) end)
   
+  -- ansible cv params
+  params:add_group("ansible_params", "ansible [ctrl]", (4 + 15) * 4)
+  if not crow_is_here then params:hide("ansible_params") end
+
+  for i = 1, 4 do
+    params:add_separator("ansible_cv_"..i, "ansible cv "..i)
+
+    params:add_control("ansible_cv_"..i.."_level", "level", controlspec.new(0, 1, "lin", 0, 0), function() return display_output_volt(i) end)
+    params:set_action("ansible_cv_"..i.."_level", function(val) ansi_cv[i].lvl = val set_output_volt(i) end)
+
+    params:add_control("ansible_cv_"..i.."_min", "min", controlspec.new(0, 10, "lin", 0, 0), function(param) return round_form(param:get(), 0.1, "v") end)
+    params:set_action("ansible_cv_"..i.."_min", function(val) ansi_cv[i].min = val clamp_range(i) set_output_volt(i) end)
+    
+    params:add_control("ansible_cv_"..i.."_max", "max", controlspec.new(0, 10, "lin", 0, 10), function(param) return round_form(param:get(), 0.1, "v") end)
+    params:set_action("ansible_cv_"..i.."_max", function(val) ansi_cv[i].max = val clamp_range(i) set_output_volt(i) end)
+
+    ansi_cv[i].lfo = lo:add{min = 0, max = 1, baseline = 'min'}
+    ansi_cv[i].lfo:add_params("ansi_cv_lfo_"..i, "cv out "..i.." lfo")
+    ansi_cv[i].lfo:set("action", function(scaled, raw) params:set("ansible_cv_"..i.."_level", scaled) end) 
+  end
+
   -- drmFM params
   drmfm.add_params()
 
@@ -2352,7 +2573,7 @@ function init()
   vizclock = lt:new()
 
   fastpulse = vizclock:new_sprocket{
-    action = function(t) ledpulse_fast() end,
+    action = function() ledpulse_fast() end,
     division = 1/32,
     enabled = true
   }
@@ -3057,11 +3278,17 @@ function build_menu()
     end
   end
 
-  if kit_mode == 1 then
+  if kit_mode == 2 then
     params:show("kit_out_device")
     params:show("kit_midi_channel")
-    params:show("kit_root_note")
     params:show("kit_note_velocity")
+  else
+    params:hide("kit_out_device")
+    params:hide("kit_midi_channel")
+    params:hide("kit_note_velocity")
+  end
+  if kit_mod_keys == 2 then
+    params:hide("kit_clear_mutes")
     for i = 1, 4 do
       params:show("kit_cc_bank_"..i)
       for n = 1, 2 do
@@ -3072,10 +3299,7 @@ function build_menu()
       end
     end
   else
-    params:hide("kit_out_device")
-    params:hide("kit_midi_channel")
-    params:hide("kit_root_note")
-    params:hide("kit_note_velocity")
+    params:show("kit_clear_mutes")
     for i = 1, 4 do
       params:hide("kit_cc_bank_"..i)
       for n = 1, 2 do
@@ -3085,6 +3309,12 @@ function build_menu()
         params:hide("kit_cc_max_"..name[n].."_"..i)
       end
     end
+  end
+
+  if midi_in_dest == 0 then
+    params:hide("glb_midi_in_channel")
+  else
+    params:show("glb_midi_in_channel")
   end
   _menu.rebuild_params()
   dirtyscreen = true
