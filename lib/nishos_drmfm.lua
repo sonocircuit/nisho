@@ -41,7 +41,6 @@ local d_prm = {}
 for i = 1, NUM_VOICES do
   d_prm[i] = {}
   d_prm[i].d_mod = 0
-  d_prm[i].mute = false
   for j = 1, #param_list do
     d_prm[i][j] = 0
   end
@@ -213,14 +212,6 @@ function drmfm.paste_voice(voice)
   for _,v in ipairs(param_list) do 
     params:set("drmfm_"..v.."_"..voice , clipboard[v])
   end
-end
-
-function drmfm.toggle_mute(i)
-  d_prm[i].mute = not d_prm[i].mute
-end
-
-function drmfm.is_mute(i)
-  return d_prm[i].mute
 end
 
 function drmfm.trig(note, vel)
