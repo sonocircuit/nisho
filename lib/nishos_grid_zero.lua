@@ -24,7 +24,11 @@ function grd_zero.keys(x, y, z)
   elseif (x < 4 or x > 13) and y > 6 and y < 9 then
     grd_zero.voice_settings(x, y, z)
   elseif x > 3 and x < 14 and y > 8 and y < 12 then
-    grd_zero.center_grid(x, y, z)
+    if kit_view then
+      grd_zero.kit_grid(x, y, z)
+    else
+      grd_zero.int_grid(x, y, z)
+    end
   elseif x < 3 and y > 9 and y < 12 then
     grd_zero.voice_options(x, y, z)
   elseif x > 14 and y > 9 and y < 12 then
@@ -36,7 +40,15 @@ function grd_zero.keys(x, y, z)
   elseif x > 14 and y > 12 then
     grd_zero.event_options(x, y, z)
   elseif x > 2 and x < 15 and y > 12 then
-    grd_zero.keyboard_grid(x, y, z)
+    if voice[key_focus].keys_option == 1 then
+      grd_zero.scale_grid(x, y, z)
+    elseif voice[key_focus].keys_option == 2 then
+      grd_zero.chrom_grid(x, y, z)
+    elseif voice[key_focus].keys_option == 3 then
+      grd_zero.chord_grid(x, y, z)
+    elseif voice[key_focus].keys_option == 4 then
+      grd_zero.drum_grid(x, y, z)
+    end
   end
   dirtygrid = true
 end
@@ -346,37 +358,66 @@ function grd_zero.modifier_keys(x, y, z)
   end
 end
 
+local ansi_longpress = nil
 function grd_zero.octave_options(x, y, z)
-  if y == 13 and z == 1 then
-    if x == 1 then
-      if kit_view then
-        params:delta("kit_octaves", 1)
-      else
-        params:delta("interval_octaves_"..int_focus, 1)
+  if y == 16 and x == 2 then
+    if z == 1 then
+      if ansi_longpress ~= nil then
+        clock.cancel(ansi_longpress)
+      end
+      ansi_longpress = clock.run(function()
+        clock.sleep(0.5)
+        ansi_view = not ansi_view
+      end)
+    else
+      if ansi_longpress ~= nil then
+        clock.cancel(ansi_longpress)
       end
     end
-  elseif y == 14 and z == 1 then
+  end
+  if ansi_view then
+    local i = y - 12
     if x == 1 then
-      if kit_view then
-        params:delta("kit_octaves", -1)
+      gkey[x][y].active = z == 1 and true or false
+      if z == 1 then
+        table.insert(ansi_held, i)
+        if key_repeat then
+          if #ansi_held == 1 then
+            trig_step = 0
+          end
+        else
+          local e = {t = eANSI, i = i} event(e)
+        end
       else
-        params:delta("interval_octaves_"..int_focus, -1)
+        table.remove(ansi_held, tab.key(ansi_held, i))
       end
     end
-  elseif y == 15 and z == 1 then
+  else
     if x == 1 then
-      if (strum_count_options or strum_mode_options or strum_skew_options) then
-        params:delta("strum_octaves", 1)
-      else
-        params:delta("keys_octaves_"..key_focus, 1)
-      end
-    end
-  elseif y == 16 and z == 1 then
-    if x == 1 then
-      if (strum_count_options or strum_mode_options or strum_skew_options) then
-        params:delta("strum_octaves", -1)
-      else
-        params:delta("keys_octaves_"..key_focus, -1)
+      if y == 13 and z == 1 then
+        if kit_view then
+          params:delta("kit_octaves", 1)
+        else
+          params:delta("interval_octaves_"..int_focus, 1)
+        end
+      elseif y == 14 and z == 1 then
+        if kit_view then
+          params:delta("kit_octaves", -1)
+        else
+          params:delta("interval_octaves_"..int_focus, -1)
+        end
+      elseif y == 15 and z == 1 then
+        if chordkeys_options then
+          params:delta("strum_octaves", 1)
+        else
+          params:delta("keys_octaves_"..key_focus, 1)
+        end
+      elseif y == 16 and z == 1 then
+        if chordkeys_options then
+          params:delta("strum_octaves", -1)
+        else
+          params:delta("keys_octaves_"..key_focus, -1)
+        end
       end
     end
   end
@@ -424,20 +465,12 @@ function grd_zero.seq_settings(x, y, z)
   end
 end
 
-function grd_zero.center_grid(x, y, z)
-  if kit_view then
-    grd_zero.kit_grid(x, y, z)
-  else
-    grd_zero.int_grid(x, y, z)
-  end
-end
-
 function grd_zero.voice_settings(x, y, z)
   if y == 7 and z == 1 then
     -- set interval_focus
     if x < 4 or x > 13 then
       local i = x < 4 and x or x - 10
-      if (strum_count_options or strum_mode_options or strum_skew_options) then
+      if chordkeys_options then
         strum_focus = i
       elseif (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
@@ -508,7 +541,7 @@ function grd_zero.grid_options(x, y, z)
         if kitmode_clock ~= nil then
           clock.cancel(kitmode_clock)
         end
-        if kit_view and kit_mode == 2 and autofocus then
+        if kit_view and kit_mode == 1 and autofocus then
           pageNum = 4
         end
         dirtyscreen = true
@@ -582,18 +615,6 @@ function grd_zero.event_options(x, y, z)
         seq_notes = {table.unpack(notes_held)}
       end
     end
-  end
-end
-
-function grd_zero.keyboard_grid(x, y, z)
-  if voice[key_focus].keys_option == 1 then
-    grd_zero.scale_grid(x, y, z)
-  elseif voice[key_focus].keys_option == 2 then
-    grd_zero.chrom_grid(x, y, z)
-  elseif voice[key_focus].keys_option == 3 then
-    grd_zero.chord_grid(x, y, z)
-  elseif voice[key_focus].keys_option == 4 then
-    grd_zero.drum_grid(x, y, z)
   end
 end
 
@@ -692,67 +713,82 @@ end
 
 function grd_zero.kit_grid(x, y, z)
   if x > 3 and x < 12 then
-    local note = ((x - 3) + (11 - y) * 8) + (kit_oct * 16) + 47
-    heldkey_kit = heldkey_kit + (z * 2 - 1)
-    if z == 1 then
-      if key_repeat then
-        if heldkey_kit == 1 then
-          trig_step = 0
-        end
-      elseif (kit_mode == 1 or not(drmfm_copying or drmfm_muting)) then
-        local e = {t = eKIT, note = note} event(e)
-      end
-      gkey[x][y].note = note
-      table.insert(kit_held, note)
-      if kit_mode == 2 then
-        drmfm_voice_focus = (note % 16 + 1)
-        if drmfm_copying then
+    if y > 9 and y < 12 then
+      local note = ((x - 3) + (11 - y) * 8) + (kit_oct * 16) + 47 + kit_root_note
+      local kit_voice = (note % 16) + 1
+      drmfm_voice_focus = kit_voice
+      heldkey_kit = heldkey_kit + (z * 2 - 1)
+      if z == 1 then
+        gkey[x][y].note = note
+        table.insert(kit_held, note)
+        if kit_edit_mutes then
+          kit_mute.key[kit_voice] = not kit_mute.key[kit_voice]
+          if kit_mute.active then
+            local state = kit_mute.key[kit_voice] and 2 or 1
+            params:set("kit_mute_key_"..kit_voice.."_group_"..kit_mute.focus, state)
+          end
+        elseif drmfm_copying then
           if drmfm_clipboard_contains then
-            drmfm.paste_voice(drmfm_voice_focus)
+            drmfm.paste_voice(kit_voice)
             show_message("pasted   drmFM   voice")
             drmfm_clipboard_contains = false
           else
-            drmfm.copy_voice(drmfm_voice_focus)
-            show_message("copied   drmFM   voice   "..drmfm_voice_focus)
+            drmfm.copy_voice(kit_voice)
+            show_message("copied   drmFM   voice   "..kit_voice)
             drmfm_clipboard_contains = true
           end
-        elseif drmfm_muting then
-          drmfm.toggle_mute(drmfm_voice_focus)
+        elseif key_repeat then
+          if heldkey_kit == 1 then
+            trig_step = 0
+          end
+        else
+          local e = {t = eKIT, i = 7, note = note} event(e)
+        end
+      else
+        table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
+      end
+    elseif y == 9 and kit_edit_mutes then
+      if x > 5 and x < 12 then
+        if z == 1 then
+          local group = x - 5
+          if kit_mute.focus == group and kit_mute.active then
+            clear_kit_mutes()
+          else
+            set_kit_mutes(group)
+          end
+          kit_mute.focus = group
         end
       end
-    else
-      table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
     end
   elseif x == 12 then
     if y > 9 and y < 12 then
       gkey[x][y].active = z == 1 and true or false
-      if kit_mode == 1 then
-        held_bank = held_bank + (z * 2 - 1)
-        if held_bank < 1 then
-          midi_bank = 0
-        elseif held_bank == 1 then
-          if y == 10 then
-            midi_bank = z == 1 and 2 or 4
-          elseif y == 11 then
-            midi_bank = z == 1 and 4 or 2
-          end
-        elseif held_bank == 2 then
-          midi_bank = 6
-        end
-      else
+      held_bank = held_bank + (z * 2 - 1)
+      if held_bank < 1 then
+        midi_bank = 0
+        kit_edit_mutes = false
+        drmfm_copying = false
+        drmfm_clipboard_contains = false
+      elseif held_bank == 1 then
         if y == 10 then
-          drmfm_copying = z == 1 and true or false
-          if not drmfm_copying then
-            drmfm_clipboard_contains = false
+          midi_bank = z == 1 and 2 or 4
+          if kit_mode == 1 then
+            drmfm_copying = true
           end
         elseif y == 11 then
-          drmfm_muting = z == 1 and true or false
+          midi_bank = z == 1 and 4 or 2
+          kit_edit_mutes = true
+          if kit_mute_all and z == 1 then
+            clear_kit_mutes()
+          end
         end
+      elseif held_bank == 2 then
+        midi_bank = 6
       end
     end
   elseif x == 13 then
-    if kit_mode == 1 then
-      gkey[x][y].active = z == 1 and true or false
+    gkey[x][y].active = z == 1 and true or false
+    if kit_mod_keys == 2 then
       local n = y - 9 + midi_bank
       m[kit_midi_dev]:cc(mcc[n].num, z == 1 and mcc[n].max or mcc[n].min, kit_midi_ch)
     else
@@ -763,115 +799,126 @@ function grd_zero.kit_grid(x, y, z)
           cancel_drmf_perf()
         end
       elseif y == 11 then
-        drmfm_mute_all = z == 1 and true or false
+        if kit_edit_mutes then
+          clear_kit_mutes()
+        else
+          local state = z == 1 and true or false
+          kit_mute_all = state
+          if state then
+            rytm_mute_all()
+          else
+            if kit_mute.active then
+              set_kit_mutes(kit_mute.focus)
+            else
+              clear_kit_mutes()
+            end
+          end
+        end
       end
     end
   end
 end
 
 function grd_zero.scale_grid(x, y, z)
-  if y > 12 and x > 2 and x < 15 then
-    heldkey_key = heldkey_key + (z * 2 - 1)
-    gkey[x][y].active = z == 1 and true or false
-    if z == 1 then
-      local octave = #scale_intervals[current_scale] - 1
-      local note = (x - 2) + ((16 - y) * scalekeys_y) + (notes_oct_key[key_focus] + 3) * octave
-      -- keep track of held notes
-      gkey[x][y].note = note
-      table.insert(notes_held, note)
-      -- collect or append notes
-      if collecting_notes and not appending_notes then
-        table.insert(collected_notes, note)
-      elseif appending_notes and not collecting_notes then
-        table.insert(seq_notes, note)
-        notes_added = true
+  heldkey_key = heldkey_key + (z * 2 - 1)
+  gkey[x][y].active = z == 1 and true or false
+  if z == 1 then
+    local octave = #scale_intervals[current_scale] - 1
+    local note = (x - 2) + ((16 - y) * scalekeys_y) + (notes_oct_key[key_focus] + 3) * octave
+    -- keep track of held notes
+    gkey[x][y].note = note
+    table.insert(notes_held, note)
+    -- collect or append notes
+    if collecting_notes and not appending_notes then
+      table.insert(collected_notes, note)
+    elseif appending_notes and not collecting_notes then
+      table.insert(seq_notes, note)
+      notes_added = true
+    end
+    -- insert notes
+    if seq_active and not (collecting_notes or appending_notes) then
+      if heldkey_key == 1 then
+        trig_step = 0
+        if seq_hold then seq_notes = {} end
       end
-      -- insert notes
-      if seq_active and not (collecting_notes or appending_notes) then
+      table.insert(seq_notes, note)
+      prev_seq_notes = {table.unpack(seq_notes)}
+    end
+    -- play notes
+    if (not seq_active or #seq_notes == 0) then
+      if key_repeat then
         if heldkey_key == 1 then
           trig_step = 0
-          if seq_hold then seq_notes = {} end
         end
-        table.insert(seq_notes, note)
-        prev_seq_notes = {table.unpack(seq_notes)}
+      else
+        local e = {t = eSCALE, i = key_focus, root = root_oct, note = note, action = "note_on"} event(e)
       end
-      -- play notes
-      if (not seq_active or #seq_notes == 0) then
-        if key_repeat then
-          if heldkey_key == 1 then
-            trig_step = 0
-          end
-        else
-          local e = {t = eSCALE, i = key_focus, root = root_oct, note = note, action = "note_on"} event(e)
-        end
-      end
-      -- set last note
-      if key_link and not transposing then
-        notes_last = note + octave * notes_oct_int[int_focus]
-      end
-    elseif z == 0 then
-      -- remove notes
-      if seq_active and not (collecting_notes or appending_notes or seq_hold) then
-        table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
-      end
-      if (not seq_active or #seq_notes == 0 or not key_repeat) then
-        local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
-      end
-      table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
     end
+    -- set last note
+    if key_link and not transposing then
+      notes_last = note + octave * notes_oct_int[int_focus]
+    end
+  elseif z == 0 then
+    -- remove notes
+    if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+      table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+    end
+    if (not seq_active or #seq_notes == 0 or not key_repeat) then
+      local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+    end
+    table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
   end
 end
 
 function grd_zero.chrom_grid(x, y, z)
-  if y > 12 and x > 2 and x < 15 then
-    heldkey_key = heldkey_key + (z * 2 - 1)
-    local root = (60 - 3) + 12 * notes_oct_key[key_focus]
-    local note = (root + x * chromakeys_x) + chromakeys_y * (16 - y)
-    gkey[x][y].active = z == 1 and true or false
-    if z == 1 then
-      -- keep track of held notes
-      gkey[x][y].note = note
-      table.insert(notes_held, note)
-      -- collec or append notes
-      if collecting_notes and not appending_notes then
-        table.insert(collected_notes, note)
-      elseif appending_notes and not collecting_notes then
-        table.insert(seq_notes, note)
-        notes_added = true
+  heldkey_key = heldkey_key + (z * 2 - 1)
+  local root = (60 - 3) + 12 * notes_oct_key[key_focus]
+  local note = (root + x * chromakeys_x) + chromakeys_y * (16 - y)
+  gkey[x][y].active = z == 1 and true or false
+  if z == 1 then
+    -- keep track of held notes
+    gkey[x][y].note = note
+    table.insert(notes_held, note)
+    -- collec or append notes
+    if collecting_notes and not appending_notes then
+      table.insert(collected_notes, note)
+    elseif appending_notes and not collecting_notes then
+      table.insert(seq_notes, note)
+      notes_added = true
+    end
+    -- insert notes
+    if seq_active and not (collecting_notes or appending_notes) then
+      if heldkey_key == 1 then
+        trig_step = 0
+        if seq_hold then seq_notes = {} end
       end
-      -- insert notes
-      if seq_active and not (collecting_notes or appending_notes) then
+      table.insert(seq_notes, note)
+      prev_seq_notes = {table.unpack(seq_notes)}
+    end
+    -- play notes
+    if (not seq_active or #seq_notes == 0) then
+      if key_repeat then
         if heldkey_key == 1 then
           trig_step = 0
-          if seq_hold then seq_notes = {} end
         end
-        table.insert(seq_notes, note)
-        prev_seq_notes = {table.unpack(seq_notes)}
+      else
+        local e = {t = eKEYS, i = key_focus, note = note, action = "note_on"} event(e)
       end
-      -- play notes
-      if (not seq_active or #seq_notes == 0) then
-        if key_repeat then
-          if heldkey_key == 1 then
-            trig_step = 0
-          end
-        else
-          local e = {t = eKEYS, i = key_focus, note = note, action = "note_on"} event(e)
-        end
-      end
-    elseif z == 0 then
-      if seq_active and not (collecting_notes or appending_notes or seq_hold) then
-        table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
-      end
-      if (not seq_active or #seq_notes == 0) then
-        local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
-      end
-      table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
     end
+  elseif z == 0 then
+    if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+      table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+    end
+    if (not seq_active or #seq_notes == 0) then
+      local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
+    end
+    table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
   end
 end
 
+local held_chord_edit = 0
 function grd_zero.chord_grid(x, y, z)
-  if y > 12 and y < 16 and x > 2 and x < 15 then
+  if y < 16 then
     heldkey_key = heldkey_key + (z * 2 - 1)
     gkey[x][y].active = z == 1 and true or false
     local i = x - 2
@@ -899,11 +946,15 @@ function grd_zero.chord_grid(x, y, z)
       end
     elseif x == 5 then
       strum_count_options = z == 1 and true or false
+      chordkeys_options = z == 1 and true or false
     elseif x == 6 then
       strum_mode_options = z == 1 and true or false
+      chordkeys_options = z == 1 and true or false
     elseif x == 7 then
       strum_skew_options = z == 1 and true or false
+      chordkeys_options = z == 1 and true or false
     end
+
     if strum_count_options and z == 1 then
       if x > 5 and x < 15 then
         params:set("strm_length", x - 2)
@@ -915,24 +966,56 @@ function grd_zero.chord_grid(x, y, z)
       if x > 9 and x < 15 then
         params:set("strm_mode", x - 9)
       end
-    elseif strum_skew_options and z == 1 then
-      if x == 11 then
-        params:delta("strm_skew", -1)
-      elseif x == 12 then
-        params:set("strm_skew", 0)
-      elseif x == 13 then
-        params:delta("strm_skew", 1)
-      end
-    else
-      if (x == 8 or x == 9) then
+    elseif strum_skew_options then
+      if (x == 9 or x == 10) then
         gkey[x][y].active = z == 1 and true or false
         if z == 1 then
           params:delta("strm_rate", x == 8 and 1 or -1)
         end
-      elseif x > 10 and x < 15 and z == 1 then
-        chord_inversion = x - 10
-        if heldkey_key > 0 then
+      elseif x == 12 and z == 1 then
+        params:delta("strm_skew", -1)
+      elseif x == 13 and z == 1 then
+        params:set("strm_skew", 0)
+      elseif x == 14 and z == 1 then
+        params:delta("strm_skew", 1)
+      end
+    else
+      if (x == 8 or x == 9) then
+        local s = x == 8 and 1 or - 1
+        local d = z == 1 and (-1 * s) or (1 * s)
+        gkey[x][y].active = z == 1 and true or false
+        params:delta("keys_octaves_"..key_focus, d)
+        if heldkey_key > 0 and chord_preview and z == 1 then
           play_chord()
+        end
+      elseif x == 10 then
+        if z == 1 then
+          if chord_preview_clock ~= nil then
+            clock.cancel(chord_preview_clock)
+          end
+          chord_preview_clock = clock.run(function()
+            clock.sleep(0.5)
+            chord_preview = not chord_preview
+          end)
+        else
+          if chord_preview_clock ~= nil then
+            clock.cancel(chord_preview_clock)
+          end
+        end
+      elseif x > 10 and x < 15 then
+        held_chord_edit = held_chord_edit + (z * 2 - 1)
+        if z == 1 then
+          if (mod_c or mod_d) then
+            prev_chord_inversion = x - 10
+          end
+          chord_inversion = x - 10
+          if heldkey_key > 0 and chord_preview then
+            play_chord()
+          end
+        else
+          if held_chord_edit == 0 then
+            chord_inversion = prev_chord_inversion
+          end
         end
       end
     end
@@ -958,6 +1041,19 @@ function grd_zero.drum_grid(x, y, z)
       table.insert(notes_held, note)
     elseif z == 0 then
       table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
+    end
+  elseif y == 13 and z == 1 then
+    if kit_edit_mutes then
+      local drm_voice = x - 2
+      drm_mute.key[drm_voice] = not drm_mute.key[drm_voice]
+      if kit_mute.active then
+        local state = drm_mute.key[drm_voice] and 2 or 1
+        params:set("drm_mute_key_"..drm_voice.."_group_"..kit_mute.focus, state)
+      end
+      if rytm_mode then
+        local state = drm_mute.key[drm_voice] and 127 or 0
+        m[midi_rytm_dev]:cc(94, state, drm_voice)
+      end
     end
   end
 end
@@ -1074,7 +1170,7 @@ function grd_zero.draw()
 
   -- focus
   for i = 1, 3 do
-    if (strum_count_options or strum_mode_options or strum_skew_options) then
+    if chordkeys_options then
       g:led(i, 7, strum_focus == i and 12 or 1)
       g:led(i + 13, 7, strum_focus == i + 3 and 12 or 1)
     else
@@ -1098,16 +1194,21 @@ function grd_zero.draw()
   if kit_view then
     for x = 1, 2 do
       for y = 10, 11 do
-        local i = x + (11 - y) * 8
-        g:led(x + 3, y, gkey[x + 3][y].active and 15 or (drmfm.is_mute(i) and 0 or 2))
-        g:led(x + 5, y, gkey[x + 5][y].active and 15 or (drmfm.is_mute(i + 2) and 0 or 4))
-        g:led(x + 7, y, gkey[x + 7][y].active and 15 or (drmfm.is_mute(i + 4) and 0 or 2))
-        g:led(x + 9, y, gkey[x + 9][y].active and 15 or (drmfm.is_mute(i + 6) and 0 or 4))
+        local i = (x + (11 - y) * 8) % 16
+        g:led(x + 3, y, gkey[x + 3][y].active and 15 or (kit_mute.key[i] and 0 or 2))
+        g:led(x + 5, y, gkey[x + 5][y].active and 15 or (kit_mute.key[i + 2] and 0 or 4))
+        g:led(x + 7, y, gkey[x + 7][y].active and 15 or (kit_mute.key[i + 4] and 0 or 2))
+        g:led(x + 9, y, gkey[x + 9][y].active and 15 or (kit_mute.key[i + 6] and 0 or 4))
       end
       g:led(13, x + 9, gkey[13][x + 9].active and 15 or 8)
     end
     g:led(12, 10, drmfm_clipboard_contains and pulse_key_mid or (gkey[12][10].active and 15 or 1))
-    g:led(12, 11, gkey[12][11].active and 15 or 1)
+    g:led(12, 11, gkey[12][11].active and 15 or (kit_mute.active and pulse_key_mid or 1))
+    if kit_edit_mutes then
+      for i = 1, 6 do
+        g:led(i + 5, 9, (kit_mute.active and kit_mute.focus == i) and 15 or 6)
+      end
+    end
   else
   -- interval
     for i = 8, 9 do
@@ -1121,24 +1222,30 @@ function grd_zero.draw()
     end
   end
 
-  -- int/key octave
-  if kit_view then
-    g:led(1, 13, 8 + kit_oct * 2)
-    g:led(1, 14, 8 - kit_oct * 2)
+  if ansi_view then
+    for i = 1, 4 do
+      g:led(1, i + 12, ansi_trig[i] and 15 or 4)
+    end
+    g:led(2, 16, pulse_key_slow)
   else
-    g:led(1, 13, 8 + notes_oct_int[int_focus] * 2)
-    g:led(1, 14, 8 - notes_oct_int[int_focus] * 2)
+    -- int/key octave
+    if kit_view then
+      g:led(1, 13, 8 + kit_oct * 2)
+      g:led(1, 14, 8 - kit_oct * 2)
+    else
+      g:led(1, 13, 8 + notes_oct_int[int_focus] * 2)
+      g:led(1, 14, 8 - notes_oct_int[int_focus] * 2)
+    end
+    -- key octave
+    if chordkeys_options then
+      g:led(1, 15, 8 + chord_oct_shift * 2)
+      g:led(1, 16, 8 - chord_oct_shift * 2)
+    else
+      g:led(1, 15, 8 + notes_oct_key[key_focus] * 2)
+      g:led(1, 16, 8 - notes_oct_key[key_focus] * 2)
+    end
   end
-
-  -- key octave
-  if (strum_count_options or strum_mode_options or strum_skew_options) then
-    g:led(1, 15, 8 + chord_oct_shift * 2)
-    g:led(1, 16, 8 - chord_oct_shift * 2)
-  else
-    g:led(1, 15, 8 + notes_oct_key[key_focus] * 2)
-    g:led(1, 16, 8 - notes_oct_key[key_focus] * 2)
-  end
-
+    
   -- sequencer
   if key_repeat_view then
     for i = 1, 4 do
@@ -1199,15 +1306,18 @@ function grd_zero.draw()
         g:led(i + 9, 16, strum_mode == i and 10 or 2)
       end
     elseif strum_skew_options then
+      g:led(9, 16, gkey[9][16].active and 15 or (strum_rate == 0.5 and 10 or 4))
+      g:led(10, 16, gkey[10][16].active and 15 or (strum_rate == 0.02 and 10 or 4))
       local val = math.floor(math.abs(strum_skew / 2)) + 2
-      g:led(11, 16, strum_skew < 0 and val or 2)
-      g:led(12, 16, strum_skew == 0 and 10 or 2)
-      g:led(13, 16, strum_skew > 0 and val or 2)
+      g:led(12, 16, strum_skew < 0 and val or 2)
+      g:led(13, 16, strum_skew == 0 and 10 or 2)
+      g:led(14, 16, strum_skew > 0 and val or 2)
     else
-      g:led(8, 16, gkey[8][16].active and 15 or (strum_rate == 0.5 and 8 or 2))
-      g:led(9, 16, gkey[9][16].active and 15 or (strum_rate == 0.02 and 8 or 2))
+      g:led(8, 16, gkey[8][16].active and 15 or 2)
+      g:led(9, 16, gkey[9][16].active and 15 or 2)
+      g:led(10, 16, chord_preview and 4 or 0)
       for i = 1, 4 do
-        g:led(i + 10, 16, chord_inversion == i and 6 or 2)
+        g:led(i + 10, 16, chord_inversion == i and 8 or 2)
       end
     end
   elseif voice[key_focus].keys_option == 4 then
@@ -1216,7 +1326,14 @@ function grd_zero.draw()
         g:led(x, y, gkey[x][y].active and 15 or 2 * (y - 14) + 2)
       end
     end
-  end
+    for i = 1, 12 do
+      if kit_edit_mutes then
+        g:led(i + 2, 13, drm_mute.key[i] and 0 or 6)
+      else
+        g:led(i + 2, 13, drm_mute.key[i] and pulse_key_mid - 4 or 0)
+      end
+    end
+  end 
   g:refresh()
 end
 
