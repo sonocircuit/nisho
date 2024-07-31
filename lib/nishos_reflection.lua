@@ -93,7 +93,6 @@ end
 function reflection:set_rec(rec, dur, beat_sync)
   self.rec = rec == 1 and 1 or 0
   self.rec_enabled = rec > 0 and 1 or 0
-  self.queued_rec = nil
   if rec == 1 and self.play == 0 then
     self:start(beat_sync)
   end
@@ -113,10 +112,11 @@ function reflection:set_rec(rec, dur, beat_sync)
         self.start_callback = fn
       end
     else
-      self.queued_rec = {state = true, duration = dur}
+      self.queued_rec = {queued = true, active = true, duration = dur}
     end
   end
   if rec == 0 then
+    self.queued_rec = nil
     self:_clear_flags()
     self.end_of_rec_callback()
   end
@@ -171,14 +171,20 @@ end
 --- watch
 function reflection:watch(event)
   local step_one = false
+  local offset = 1
   if self.queued_rec ~= nil then
-    self:set_rec(1, self.queued_rec.duration, 1/64)
-    self.queued_rec = nil
-    step_one = true
+    if self.queued_rec.queued then
+      self:set_rec(1, self.queued_rec.duration, 1/64)
+      self.queued_rec.queued = false
+    end
+    if self.queued_rec.active then
+      step_one = true
+    end
+    offset = 2
   end
   if (self.rec == 1 and self.play == 1) or step_one then
     event._flag = true
-    local s = math.floor(step_one == true and 1 or self.step + 1)
+    local s = step_one and 1 or math.floor(self.step + offset)
     if not self.event[s] then
       self.event[s] = {}
     end
@@ -191,6 +197,9 @@ function reflection:begin_playback()
   self.step = self.step_min
   self.play = 1
   self.start_callback()
+  if self.queued_rec ~= nil then
+    self.queued_rec.active = false
+  end
   while self.play == 1 do
     clock.sync(1/PPQN)
     self.step = self.step + 1
