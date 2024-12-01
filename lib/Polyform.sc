@@ -20,6 +20,9 @@ Polyform {
 					arg out, gate = 1, freq = 110,
 					main_amp = 0.2, pan = 0, mix_osc_level = 1, mix_noise_level = 0,
 					sendA = 0, sendB = 0, sendABus = 0, sendBBus = 0,
+					// ptichbend
+					pb_range = 0,
+					pb_depth = 0,
 					// saw output args
 					saw_tune = 0,
 					saw_shape = 0.5,
@@ -39,6 +42,7 @@ Polyform {
 					env_type = 0,
 					env_curve = -2,
 					env_a = 0, env_d = 2, env_s = 0.5, env_r = 5,
+					mod_source = 0, at_mod = 0,
 					env_mod_curve = -4,
 					envmod_h = 0, envmod_a = 0, envmod_d = 0.8, envmod_s = 0, envmod_r = 2,
 					// filter args
@@ -56,7 +60,7 @@ Polyform {
 					var signal, osc_mix, osc_saw, osc_pulse, osc_noise,
 					freq_saw, freq_pulse, lfo_saw, lfo_pulse,
 					cut_lin_scale = 1, cut_lin_lpf, cut_lpf_mod, cut_lin_hpf, cut_hpf_mod, rq_lpf, rq_hpf,
-					env, env_ar, env_adsr, action_ar, action_adsr, env_mod, env_mod_ar, env_mod_adsr;
+					env, env_ar, env_adsr, action_ar, action_adsr, mod_val, env_mod, env_mod_ar, env_mod_adsr;
 
 					// smooth args
 					main_amp = Lag.kr(main_amp);
@@ -71,6 +75,8 @@ Polyform {
 					res_lpf = Lag.kr(res_lpf);
 					cutoff_hpf = Lag.kr(cutoff_hpf);
 					res_hpf = Lag.kr(res_hpf);
+					at_mod = Lag.kr(at_mod);
+					pb_depth = Lag.kr(pb_depth);
 
 					// randomize slop
 					freq_slop = freq_slop * Rand(-2, 2);
@@ -91,8 +97,12 @@ Polyform {
 					env_mod_adsr = EnvGen.kr(Env.new([0, 0, 1, envmod_s, 0], [envmod_h, envmod_a, envmod_d, envmod_r], env_mod_curve, 3), gate);
 					env_mod = Select.kr(env_type > 0, [env_mod_ar, env_mod_adsr]);
 
-					// freq slop + vibrato
+					// mod source
+					mod_val = Select.kr(mod_source > 0, [env_mod, at_mod]);
+
+					// freq slop, ptichbend  vibrato
 					freq = freq + freq_slop;
+					freq = Lag.kr(freq * 2.pow((pb_depth * pb_range) / 12));
 					freq = Vibrato.kr(freq, vibrato_rate, vibrato_depth / 10, vibrato_delay, vibrato_onset);
 
 					// tune oscillators. expected range [-24, 24] semitones.
@@ -101,12 +111,12 @@ Polyform {
 
 					// pulse oscillator
 					lfo_pulse = SinOsc.kr(pulse_mod_freq, Rand(-6pi, 6pi), 0.46) * pulse_mod_depth;
-					pulse_width = (pulse_width + lfo_pulse + (pulse_width_mod * env_mod)).max(0.02).min(0.98);
+					pulse_width = (pulse_width + lfo_pulse + (pulse_width_mod * mod_val)).max(0.02).min(0.98);
 					osc_pulse = Pulse.ar(freq_pulse, pulse_width);
 
 					// variable sawtooth oscillator
 					lfo_saw = SinOsc.kr(saw_mod_freq, Rand(-6pi, 6pi), 0.5) * saw_mod_depth;
-					saw_shape = (saw_shape + lfo_saw + (saw_shape_mod * env_mod)).max(0).min(1);
+					saw_shape = (saw_shape + lfo_saw + (saw_shape_mod * mod_val)).max(0).min(1);
 					osc_saw = VarSaw.ar(freq_saw, 0, saw_shape);
 
 					// osc mix
@@ -114,14 +124,14 @@ Polyform {
 
 					// noise
 					osc_noise = WhiteNoise.ar(LFNoise1.kr(freq * 2).range(1 - noise_crackle, 1));
-					mix_noise_level = Select.kr(noise_amp_mod > 0, [mix_noise_level, mix_noise_level + (noise_amp_mod * env_mod)]).max(-1).min(0);
+					mix_noise_level = Select.kr(noise_amp_mod > 0, [mix_noise_level, mix_noise_level + (noise_amp_mod * mod_val)]).max(-1).min(0);
 
 					// mix
 					signal = XFade2.ar(osc_mix, osc_noise, mix_noise_level) * -6.dbamp;
 
 					// low pass filter + modulation
 					cut_lin_lpf = cutoff_lpf.explin(20, 18000, 0, cut_lin_scale);
-					cut_lpf_mod = cut_lin_lpf + (env * cut_lin_scale * env_lpf_depth) + (env_mod * cut_lin_scale * env_lpf_mod) + cut_slop;
+					cut_lpf_mod = cut_lin_lpf + (env * cut_lin_scale * env_lpf_depth) + (mod_val * cut_lin_scale * env_lpf_mod) + cut_slop;
 					cutoff_lpf = cut_lpf_mod.linexp(0, cut_lin_scale, 20, 18000).max(20).min(18000);
 
 					rq_lpf = res_lpf.linlin(0, 1, 0, 4);
@@ -129,7 +139,7 @@ Polyform {
 
 					// high pass filter + modulation
 					cut_lin_hpf = cutoff_hpf.explin(20, 8000, 0, cut_lin_scale);
-					cut_hpf_mod = cut_lin_hpf + (env * cut_lin_scale * env_hpf_depth) + (env_mod * cut_lin_scale * env_hpf_mod);
+					cut_hpf_mod = cut_lin_hpf + (env * cut_lin_scale * env_hpf_depth) + (mod_val * cut_lin_scale * env_hpf_mod);
 					cutoff_hpf = cut_hpf_mod.linexp(0, cut_lin_scale, 20, 8000).max(20).min(8000);
 
 					rq_hpf = res_hpf.linlin(0, 1, 1, 0.01);
@@ -169,6 +179,9 @@ Polyform {
 			\sendB, 0,
 			\mix_osc_level, 0,
 
+			\pb_range, 0,
+			\pb_depth, 0,
+
 			\saw_tune, 0,
 			\saw_shape, 0,
 			\saw_shape_mod, 0,
@@ -202,6 +215,9 @@ Polyform {
 			\env_s, 0.6,
 			\env_r, 1,
 			\gate, 1,
+
+			\mod_source, 0,
+			\at_mod, 0,
 
 			\env_mod_curve, -1,
 			\envmod_h, 0,
