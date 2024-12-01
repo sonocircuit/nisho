@@ -21,7 +21,7 @@ function grd_zero.keys(x, y, z)
     pattern_bank_page = x - 5
   elseif (x == 4 or x == 13) and (y == 7 or y == 8) then
     grd_zero.modifier_keys(x, y, z)
-  elseif (x < 4 or x > 13) and y > 6 and y < 9 then
+  elseif (x < 4 or x > 13) and y > 6 and y < 10 then
     grd_zero.voice_settings(x, y, z)
   elseif x > 3 and x < 14 and y > 8 and y < 12 then
     if kit_view then
@@ -51,6 +51,7 @@ function grd_zero.keys(x, y, z)
     end
   end
   dirtygrid = true
+  screen.ping()
 end
 
 function grd_zero.pattern_options(x, y, z)
@@ -108,13 +109,13 @@ function grd_zero.pattern_options(x, y, z)
         update_pattern_bank(i)
       else
         clock.run(function()
-          clock.sync(4)
+          clock.sync(bar_val)
           update_pattern_bank(i)
           pattern[i].step = 0
         end)
       end
       if pattern_overdub and pattern[i].play == 0 and p[i].count[bank] > 0 then
-        pattern[i]:start(4)
+        pattern[i]:start(bar_val)
       end
     end
   end
@@ -134,7 +135,7 @@ function grd_zero.pattern_keys(i)
       end
     else
       if pattern[i].play == 0 then -- if pattern is not playing
-        local count_in = pattern[i].launch == 2 and 1 or (pattern[i].launch == 3 and 4 or nil)
+        local beat_sync = pattern[i].launch == 2 and 1 or (pattern[i].launch == 3 and bar_val or nil)
         -- if pattern is empty
         if pattern[i].count == 0 then
           -- if rec not enabled press key to enable recording
@@ -144,16 +145,18 @@ function grd_zero.pattern_keys(i)
             if num_rec_enabled() == 0 then
               local mode = pattern_rec_mode == "synced" and 1 or 2
               local dur = pattern_rec_mode ~= "free" and pattern[i].length or nil
-              pattern[i]:set_rec(mode, dur, 4)
+              pattern[i]:set_rec(mode, dur, beat_sync)
+              rec_enabled = true
             -- if recording and no data then press key to abort
             else
               pattern[i]:set_rec(0)
               pattern[i]:stop()
+              rec_enabled = false
             end
           end
         -- if a pattern contains data then
         else
-          pattern[i]:start(count_in)
+          pattern[i]:start(beat_sync)
         end
       else -- if pattern is playing
         if (pattern_overdub or mod_a or mod_b) then -- if holding overdub key
@@ -161,13 +164,16 @@ function grd_zero.pattern_keys(i)
           if pattern[i].rec == 1 then
             pattern[i]:set_rec(0)
             pattern[i]:undo()
+            rec_enabled = false
           -- if not recording start recording
           else
-            pattern[i]:set_rec(1)               
+            pattern[i]:set_rec(1)     
+            rec_enabled = true          
           end
         else
           if pattern[i].rec == 1 then
             pattern[i]:set_rec(0)
+            rec_enabled = false
             if pattern[i].count == 0 then
               pattern[i]:stop()
             end
@@ -310,7 +316,7 @@ function grd_zero.pattern_trigs(x, y, z)
         if pattern_clear then
           for i = 1, 8 do
             if p[i].looping then
-              clock.run(clear_pattern_loop, i, 4)
+              clock.run(clear_pattern_loop, i, bar_val)
               p[i].looping = false
             end
           end
@@ -328,7 +334,7 @@ function grd_zero.pattern_trigs(x, y, z)
           clock.run(set_pattern_loop, pattern_focus, pattern_focus)
         end
       elseif p[pattern_focus].looping and held[pattern_focus].max < 2 then
-        local dur = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and 4 or pattern[pattern_focus].quantize)
+        local dur = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and bar_val or pattern[pattern_focus].quantize)
         clock.run(clear_pattern_loop, pattern_focus, dur)
         p[pattern_focus].looping = false
       elseif not (p[pattern_focus].looping or pattern_reset) and held[pattern_focus].max < 2 then
@@ -360,7 +366,7 @@ end
 
 local ansi_longpress = nil
 function grd_zero.octave_options(x, y, z)
-  if y == 16 and x == 2 then
+  if y == 13 and x == 2 then
     if z == 1 then
       if ansi_longpress ~= nil then
         clock.cancel(ansi_longpress)
@@ -374,6 +380,21 @@ function grd_zero.octave_options(x, y, z)
         clock.cancel(ansi_longpress)
       end
     end
+  elseif y == 14 and x == 2 then
+    -- channel aftertouch
+    local at_coro = z == 1 and at_ramp_up or at_ramp_down
+    if at[key_focus].timer ~= nil then
+      clock.cancel(at[key_focus].timer)
+    end
+    at[key_focus].timer = clock.run(at_coro, key_focus)
+  elseif (y == 15 or y == 16) and x == 2 then
+    -- pitchbend
+    local pb_coro = z == 1 and pb_ramp_up or pb_ramp_down
+    pb[key_focus].dir = y == 15 and 1 or -1
+    if pb[key_focus].timer ~= nil then
+      clock.cancel(pb[key_focus].timer)
+    end
+    pb[key_focus].timer = clock.run(pb_coro, key_focus, pb[key_focus].dir)
   end
   if ansi_view then
     local i = y - 12
@@ -466,38 +487,57 @@ function grd_zero.seq_settings(x, y, z)
 end
 
 function grd_zero.voice_settings(x, y, z)
-  if y == 7 and z == 1 then
-    -- set interval_focus
-    if x < 4 or x > 13 then
-      local i = x < 4 and x or x - 10
+  if x < 4 or x > 13 then
+    local i = x < 4 and x or x - 10
+    if y == 7 and z == 1 then
+      -- set interval_focus
       if chordkeys_options then
         strum_focus = i
       elseif (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif not voice[i].mute then
-        if heldkey_int > 0 then
+        if heldkey_int > 0 and i ~= int_focus then
           dont_panic(voice[int_focus].output)
         end
         int_focus = i
       end
-    end
-  elseif y == 8 and z == 1 then
-    -- set key focus
-    if x < 4 or x > 13 then
-      if autofocus then pageNum = 2 end
-      local i = x < 4 and x or x - 10
+    elseif y == 8 and z == 1 then
+      -- set key focus
       if (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif (mod_c or mod_d) then
         dont_panic(voice[i].output)
       elseif not voice[i].mute then
-        if heldkey_key > 0 then
+        if heldkey_key > 0 and i ~= key_focus then
           dont_panic(voice[key_focus].output)
         end
         key_focus = i
         voice_focus = i
         notes_held = {}
         dirtyscreen = true
+      end
+      if autofocus then pageNum = 2 end
+    elseif y == 9 and z == 1 then
+      if voice[i].keys_option < 3 then
+        -- sustain notes
+        if voice[i].sustain then
+          for _, note in ipairs(voice[i].held_notes) do
+            if voice[i].keys_option == 1 then
+              local e = {t = eSCALE, i = i, root = root_oct, note = note, action = "note_off"} event(e)
+            else
+              local e = {t = eKEYS, i = i, note = note, action = "note_off"} event(e)
+            end
+          end
+          voice[i].held_notes = {}
+          voice[i].sustain = false
+        else
+          if i == key_focus and #notes_held > 0 then
+            for idx, note in ipairs(notes_held) do
+              voice[i].held_notes[idx] = note
+            end
+            voice[i].sustain = true
+          end
+        end
       end
     end
   end
@@ -756,7 +796,6 @@ function grd_zero.kit_grid(x, y, z)
           else
             set_kit_mutes(group)
           end
-          kit_mute.focus = group
         end
       end
     end
@@ -859,12 +898,24 @@ function grd_zero.scale_grid(x, y, z)
       notes_last = note + octave * notes_oct_int[int_focus]
     end
   elseif z == 0 then
-    -- remove notes
-    if seq_active and not (collecting_notes or appending_notes or seq_hold) then
-      table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
-    end
-    if (not seq_active or #seq_notes == 0 or not key_repeat) then
-      local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+    if voice[key_focus].sustain then
+      if not tab.contains(voice[key_focus].held_notes, gkey[x][y].note) then
+        -- remove notes
+        if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+          table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+        end
+        if not (seq_active or key_repeat) or #seq_notes == 0 then
+          local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+        end
+      end
+    else
+      -- remove notes
+      if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+        table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+      end
+      if not (seq_active or key_repeat) or #seq_notes == 0 then
+        local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
+      end
     end
     table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
   end
@@ -906,11 +957,24 @@ function grd_zero.chrom_grid(x, y, z)
       end
     end
   elseif z == 0 then
-    if seq_active and not (collecting_notes or appending_notes or seq_hold) then
-      table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
-    end
-    if (not seq_active or #seq_notes == 0) then
-      local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
+    if voice[key_focus].sustain then
+      if not tab.contains(voice[key_focus].held_notes, gkey[x][y].note) then
+        -- remove notes
+        if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+          table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+        end
+        if not (seq_active or key_repeat) or #seq_notes == 0 then
+          local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
+        end
+      end
+    else
+      -- remove notes
+      if seq_active and not (collecting_notes or appending_notes or seq_hold) then
+        table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
+      end
+      if not (seq_active or key_repeat) or #seq_notes == 0 then
+        local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
+      end
     end
     table.remove(notes_held, tab.key(notes_held, gkey[x][y].note))
   end
@@ -1177,8 +1241,12 @@ function grd_zero.draw()
       g:led(i, 7, voice[i].mute and 2 or (int_focus == i and 10 or 4))
       g:led(i + 13, 7, voice[i + 3].mute and 2 or (int_focus == i + 3 and 10 or 4))
     end
+
     g:led(i, 8, voice[i].mute and 2 or (key_focus == i and 10 or 4))
     g:led(i + 13, 8, voice[i + 3].mute and 2 or (key_focus == i + 3 and 10 or 4))
+
+    g:led(i, 9, voice[i].sustain and pulse_key_slow or 0)
+    g:led(i + 13, 9, voice[i + 3].sustain and pulse_key_slow or 0)
   end
   
   -- keyboard options
@@ -1226,7 +1294,7 @@ function grd_zero.draw()
     for i = 1, 4 do
       g:led(1, i + 12, ansi_trig[i] and 15 or 4)
     end
-    g:led(2, 16, pulse_key_slow)
+    g:led(2, 13, pulse_key_slow)
   else
     -- int/key octave
     if kit_view then
@@ -1244,6 +1312,10 @@ function grd_zero.draw()
       g:led(1, 15, 8 + notes_oct_key[key_focus] * 2)
       g:led(1, 16, 8 - notes_oct_key[key_focus] * 2)
     end
+    -- afterfouch / pitchbend
+    g:led(2, 14, math.floor(at[key_focus].value * 15))
+    g:led(2, 15, pb[key_focus].dir == 1 and math.floor(pb[key_focus].value * 15) or 0) -- pitchbend up
+    g:led(2, 16, pb[key_focus].dir == -1 and math.floor(pb[key_focus].value * 15) or 0) -- ptichbend down
   end
     
   -- sequencer
