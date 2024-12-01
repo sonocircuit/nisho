@@ -45,6 +45,7 @@ local polyform_params = {
   decay = 0,
   sustain = 0,
   release = 0,
+  mod_source = 0,
   env_mod_curve = 0,
   mod_delay = 0,
   mod_attack = 0,
@@ -123,13 +124,29 @@ local function display_params(i)
   if synthvoice[i].env == 1 then
     params:hide("polyform_sustain_"..i)
     params:hide("polyform_release_"..i)
-    params:hide("polyform_mod_sustain_"..i)
-    params:hide("polyform_mod_release_"..i)
   else
     params:show("polyform_sustain_"..i)
     params:show("polyform_release_"..i)
-    params:show("polyform_mod_sustain_"..i)
-    params:show("polyform_mod_release_"..i)
+  end
+  if params:get("polyform_mod_source_"..i) == 1 then -- mod env
+    params:show("polyform_env_mod_curve_"..i)
+    params:show("polyform_mod_delay_"..i)
+    params:show("polyform_mod_attack_"..i)
+    params:show("polyform_mod_decay_"..i)
+    if synthvoice[i].env == 1 then
+      params:hide("polyform_mod_sustain_"..i)
+      params:hide("polyform_mod_release_"..i)
+    else
+      params:show("polyform_mod_sustain_"..i)
+      params:show("polyform_mod_release_"..i)
+    end
+  else
+    params:hide("polyform_env_mod_curve_"..i)
+    params:hide("polyform_mod_delay_"..i)
+    params:hide("polyform_mod_attack_"..i)
+    params:hide("polyform_mod_decay_"..i)
+    params:hide("polyform_mod_sustain_"..i)
+    params:hide("polyform_mod_release_"..i)
   end
   if synthvoice[i].unison then
     params:show("polyform_unison_detune_"..i)
@@ -300,7 +317,7 @@ function polyForm.init()
   for i = 1, 2 do
     local name = i == 1 and "mono" or "poly"
 
-    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 62)
+    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 65)
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
@@ -333,6 +350,9 @@ function polyForm.init()
     -- detune amt
     params:add_number("polyform_unison_detune_"..i, "detune", 1, 100, 1, function(param) return round_form(param:get(), 1, "%") end)
     params:set_action("polyform_unison_detune_"..i, function(x) synthvoice[i].detune = x end)
+    -- pitchbend range
+    params:add_number("polyform_ptichbend_range_"..i, "pitchbend", 0, 24, 7, function(param) return param:get().."st" end)
+    params:set_action("polyform_ptichbend_range_"..i, function(x) set_value(i, engine.pb_range, x) end)
     -- osc mix
     params:add_control("polyform_mix_"..i, "mix [saw/pulse]", controlspec.new(-1, 1, "lin", 0, -0.75), function(param) return mix_display(param:get()) end)
     params:set_action("polyform_mix_"..i, function(x) set_value(i, engine.mix_osc_level, x) end)
@@ -415,7 +435,10 @@ function polyForm.init()
     params:add_control("polyform_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.8), function(param) return (round_form(param:get(), 0.01, " s")) end)
     params:set_action("polyform_release_"..i, function(x) set_value(i, engine.env_r, x) end)
 
-    params:add_separator("polyform_mod_envelope_"..i, "mod envelope")
+    params:add_separator("polyform_mod_src_"..i, "mod source")
+    -- source
+    params:add_option("polyform_mod_source_"..i, "mod src", {"mod env", "aftertouch"}, 1)
+    params:set_action("polyform_mod_source_"..i, function(x) set_value(i, engine.mod_source, x - 1) display_params(i) end)
     -- curve
     params:add_control("polyform_env_mod_curve_"..i, "curve", controlspec.new(-5, 5, "lin", 0, 0), function(param) return curve_display(param:get()) end)
     params:set_action("polyform_env_mod_curve_"..i, function(x) set_value(i, engine.env_mod_curve, x) end)
@@ -434,6 +457,8 @@ function polyForm.init()
     -- release
     params:add_control("polyform_mod_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.4), function(param) return (round_form(param:get(), 0.01, " s")) end)
     params:set_action("polyform_mod_release_"..i, function(x) set_value(i, engine.envmod_r, x) end)
+
+    params:add_separator("polyform_mod_dst_"..i, "mod destination")
     -- cutoff lpf mod
     params:add_control("polyform_mod_cutoff_lpf_"..i, "cutoff lpf mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_mod_cutoff_lpf_"..i, function(x) set_value(i, engine.env_lpf_mod, x) end)
