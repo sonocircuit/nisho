@@ -26,7 +26,7 @@ local grd_one = include 'lib/nishos_grid_one'
 local mirror = include 'lib/nishos_reflection'
 local midim = include 'lib/nishos_midiimport'
 local drmfm = include 'lib/nishos_drmfm'
-local nb = include 'nb/lib/nb'
+local nb = include 'lib/nb/lib/nb'
 
 g = grid.connect()
 
