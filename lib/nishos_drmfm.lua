@@ -6,11 +6,13 @@ local md = require 'core/mods'
 
 local NUM_VOICES = 16
 local NUM_PERF_SLOTS = 4
+local MAX_VOICES = 6
 
 local preset_path = norns.state.data.."drmfm_kits"
 local default_kit = norns.state.data.."drmfm_kits/default.kit"
 
 local selected_voice = 1
+local active_voice = 1
 local current_kit = ""
 local glb_level = 1
 local perf_amt = 0
@@ -99,7 +101,6 @@ local function build_menu(dest)
           params:hide("drmfm_decay_mod_"..i)
         end
       end
-
     end
   elseif dest == "perf" then
     -- perf params
@@ -217,7 +218,7 @@ end
 function drmfm.trig(note, vel)
   local voice = note and (note % 16 + 1) or selected_voice
   if not d_prm[voice].mute then
-    local vel = vel and util.linlin(0, 127, 0, 1) or 1
+    local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
     local msg = {}
     for k, v in ipairs(d_prm[voice]) do
       msg[k] = v
@@ -228,6 +229,12 @@ function drmfm.trig(note, vel)
       end
       msg[k] = util.clamp(msg[k] + (dv.mod[p_slot][k] * perf_amt), dv.min[k], dv.max[k])
     end
+    -- TODO: roundrobin voice index (modulo or wrap). insert idx instead of 1
+    -- adapt sc file to limit voices to max voice count.
+    --[[
+    active_voice = util.wrap(active_voice + 1, 1, MAX_VOICES)
+    table.insert(msg, active_voice, 1)
+    --]]
     table.insert(msg, 1, 1)
     osc.send({'localhost',57120}, '/drmfm/trig', msg)
   end
