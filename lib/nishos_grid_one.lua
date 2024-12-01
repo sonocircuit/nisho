@@ -62,6 +62,7 @@ function grd_one.keys(x, y, z)
     end
   end
   dirtygrid = true
+  screen.ping()
 end
 
 function grd_one.pattern_options(x, y, z)
@@ -119,13 +120,13 @@ function grd_one.pattern_options(x, y, z)
         update_pattern_bank(i)
       else
         clock.run(function()
-          clock.sync(4)
+          clock.sync(bar_val)
           update_pattern_bank(i)
           pattern[i].step = 0
         end)
       end
       if pattern_overdub and pattern[i].play == 0 and p[i].count[bank] > 0 then
-        pattern[i]:start(4)
+        pattern[i]:start(bar_val)
       end
     end
   end
@@ -145,7 +146,7 @@ function grd_one.pattern_keys(i)
       end
     else
       if pattern[i].play == 0 then -- if pattern is not playing
-        local count_in = pattern[i].launch == 2 and 1 or (pattern[i].launch == 3 and 4 or nil)
+        local beat_sync = pattern[i].launch == 2 and 1 or (pattern[i].launch == 3 and bar_val or nil)
         -- if pattern is empty
         if pattern[i].count == 0 then
           -- if rec not enabled press key to enable recording
@@ -155,16 +156,18 @@ function grd_one.pattern_keys(i)
             if num_rec_enabled() == 0 then
               local mode = pattern_rec_mode == "synced" and 1 or 2
               local dur = pattern_rec_mode ~= "free" and pattern[i].length or nil
-              pattern[i]:set_rec(mode, dur, 4)
+              pattern[i]:set_rec(mode, dur, beat_sync)
+              rec_enabled = true
             -- if recording and no data then press key to abort
             else
               pattern[i]:set_rec(0)
               pattern[i]:stop()
+              rec_enabled = false
             end
           end
         -- if a pattern contains data then
         else
-          pattern[i]:start(count_in)
+          pattern[i]:start(beat_sync)
         end
       else -- if pattern is playing
         if (pattern_overdub or mod_a or mod_b) then -- if holding overdub key
@@ -172,13 +175,16 @@ function grd_one.pattern_keys(i)
           if pattern[i].rec == 1 then
             pattern[i]:set_rec(0)
             pattern[i]:undo()
+            rec_enabled = false
           -- if not recording start recording
           else
-            pattern[i]:set_rec(1)               
+            pattern[i]:set_rec(1)     
+            rec_enabled = true          
           end
         else
           if pattern[i].rec == 1 then
             pattern[i]:set_rec(0)
+            rec_enabled = false
             if pattern[i].count == 0 then
               pattern[i]:stop()
             end
@@ -290,7 +296,7 @@ function grd_one.pattern_trigs(x, z)
       if pattern_clear then
         for i = 1, 8 do
           if p[i].looping then
-            clock.run(clear_pattern_loop, i, 4)
+            clock.run(clear_pattern_loop, i, bar_val)
             p[i].looping = false
           end
         end
@@ -308,7 +314,7 @@ function grd_one.pattern_trigs(x, z)
         clock.run(set_pattern_loop, pattern_focus, pattern_focus)
       end
     elseif p[pattern_focus].looping and held[pattern_focus].max < 2 then
-      local dur = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and 4 or pattern[pattern_focus].quantize)
+      local dur = pattern[pattern_focus].launch == 2 and 1 or (pattern[pattern_focus].launch == 3 and bar_val or pattern[pattern_focus].quantize)
       clock.run(clear_pattern_loop, pattern_focus, dur)
       p[pattern_focus].looping = false
     elseif not (p[pattern_focus].looping or pattern_reset) and held[pattern_focus].max < 2 then
@@ -339,7 +345,7 @@ end
 
 local ansi_longpress = nil
 function grd_one.octave_options(x, y, z)
-  if y == 8 and x == 2 then
+  if y == 5 and x == 2 then
     if z == 1 then
       if ansi_longpress ~= nil then
         clock.cancel(ansi_longpress)
@@ -353,6 +359,21 @@ function grd_one.octave_options(x, y, z)
         clock.cancel(ansi_longpress)
       end
     end
+  elseif y == 6 and x == 2 then
+    -- channel aftertouch
+    local at_coro = z == 1 and at_ramp_up or at_ramp_down
+    if at[key_focus].timer ~= nil then
+      clock.cancel(at[key_focus].timer)
+    end
+    at[key_focus].timer = clock.run(at_coro, key_focus)
+  elseif (y == 7 or y == 8) and x == 2 then
+    -- pitchbend
+    local pb_coro = z == 1 and pb_ramp_up or pb_ramp_down
+    pb[key_focus].dir = y == 7 and 1 or -1
+    if pb[key_focus].timer ~= nil then
+      clock.cancel(pb[key_focus].timer)
+    end
+    pb[key_focus].timer = clock.run(pb_coro, key_focus, pb[key_focus].dir)
   end
   if ansi_view then
     local i = y - 4
@@ -462,7 +483,7 @@ function grd_one.voice_settings(x, y, z)
       elseif (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif not voice[i].mute then
-        if heldkey_int > 0 then
+        if heldkey_int > 0 and i ~= int_focus then
           dont_panic(voice[int_focus].output)
         end
         int_focus = i
@@ -471,14 +492,13 @@ function grd_one.voice_settings(x, y, z)
   elseif y == 2 and z == 1 then
     -- set key focus
     if x < 4 or x > 13 then
-      if autofocus then pageNum = 2 end
       local i = x < 4 and x or x - 10
       if (mod_a or mod_b) then
         params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
       elseif (mod_c or mod_d) then
         dont_panic(voice[i].output)
       elseif not voice[i].mute then
-        if heldkey_key > 0 then
+        if heldkey_key > 0 and i ~= key_focus then
           dont_panic(voice[key_focus].output)
         end
         key_focus = i
@@ -486,6 +506,7 @@ function grd_one.voice_settings(x, y, z)
         notes_held = {}
         dirtyscreen = true
       end
+      if autofocus then pageNum = 2 end
     end
   end
 end
@@ -752,7 +773,6 @@ function grd_one.kit_grid(x, y, z)
           else
             set_kit_mutes(group)
           end
-          kit_mute.focus = group
         end
       end
     end
@@ -1226,7 +1246,7 @@ function grd_one.draw()
       for i = 1, 4 do
         g:led(1, i + 4, ansi_trig[i] and 15 or 4)
       end
-      g:led(2, 8, pulse_key_slow)
+      g:led(2, 5, pulse_key_slow)
     else
       -- int/key octave
       if kit_view then
@@ -1244,7 +1264,11 @@ function grd_one.draw()
         g:led(1, 7, 8 + notes_oct_key[key_focus] * 2)
         g:led(1, 8, 8 - notes_oct_key[key_focus] * 2)
       end
-    end
+      -- afterfouch / pitchbend
+    g:led(2, 6, math.floor(at[key_focus].value * 15))
+    g:led(2, 7, pb[key_focus].dir == 1 and math.floor(pb[key_focus].value * 15) or 0) -- pitchbend up
+    g:led(2, 8, pb[key_focus].dir == -1 and math.floor(pb[key_focus].value * 15) or 0) -- ptichbend down
+  end
     
     -- sequencer
     if key_repeat_view then
