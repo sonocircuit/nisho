@@ -67,13 +67,13 @@ function grd_zero.pattern_options(x, y, z)
       appending_pattern = z == 1 and true or false
     elseif y == 1 and x == 14 and z == 1 then
       pattern_rec_mode = "queued"
-      dirtyscreen = true
+      page_redraw(3)
     elseif y == 1 and x == 15 and z == 1  then
       pattern_rec_mode = "synced"
-      dirtyscreen = true
+      page_redraw(3)
     elseif y == 1 and x == 16 and z == 1  then
       pattern_rec_mode = "free"
-      dirtyscreen = true
+      page_redraw(3)
     elseif y == 2 and x == 1 then
       pattern_clear = z == 1 and true or false
     elseif y == 2 and x == 2 then
@@ -364,29 +364,23 @@ function grd_zero.modifier_keys(x, y, z)
   end
 end
 
-local ansi_longpress = nil
 function grd_zero.octave_options(x, y, z)
-  if y == 13 and x == 2 then
-    if z == 1 then
-      if ansi_longpress ~= nil then
-        clock.cancel(ansi_longpress)
-      end
-      ansi_longpress = clock.run(function()
-        clock.sleep(0.5)
-        ansi_view = not ansi_view
-      end)
-    else
-      if ansi_longpress ~= nil then
-        clock.cancel(ansi_longpress)
-      end
-    end
-  elseif y == 14 and x == 2 then
+  if (mod_a or mod_b or mod_c or mod_d) and x == 1 and z == 1 then
+    ansi_view = not ansi_view
+  elseif y == 13 and x == 2 then
     -- channel aftertouch
     local at_coro = z == 1 and at_ramp_up or at_ramp_down
     if at[key_focus].timer ~= nil then
       clock.cancel(at[key_focus].timer)
     end
     at[key_focus].timer = clock.run(at_coro, key_focus)
+  elseif y == 14 and x == 2 then
+    -- modwheel aftertouch
+    local mw_coro = z == 1 and mw_ramp_up or mw_ramp_down
+    if mw[key_focus].timer ~= nil then
+      clock.cancel(mw[key_focus].timer)
+    end
+    mw[key_focus].timer = clock.run(mw_coro, key_focus)
   elseif (y == 15 or y == 16) and x == 2 then
     -- pitchbend
     local pb_coro = z == 1 and pb_ramp_up or pb_ramp_down
@@ -706,6 +700,7 @@ function grd_zero.int_grid(x, y, z)
       elseif x > 7 and x < 10 then
         if (mod_a or mod_b or mod_c or mod_d) then
           transposing = not transposing
+          page_redraw(1)
         else
           link_clock = clock.run(function()
             clock.sleep(1)
@@ -718,7 +713,7 @@ function grd_zero.int_grid(x, y, z)
         if not transposing then
           if collecting_notes and not appending_notes then
             table.insert(collected_notes, 0)
-            dirtyscreen = true
+            page_redraw(1)
           elseif appending_notes and not collecting_notes then
             table.insert(seq_notes, 0)
             notes_added = true
@@ -784,6 +779,7 @@ function grd_zero.kit_grid(x, y, z)
         else
           local e = {t = eKIT, i = 7, note = note} event(e)
         end
+        page_redraw(4)
       else
         table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
       end
@@ -816,9 +812,8 @@ function grd_zero.kit_grid(x, y, z)
           end
         elseif y == 11 then
           midi_bank = z == 1 and 4 or 2
-          kit_edit_mutes = true
-          if kit_mute_all and z == 1 then
-            clear_kit_mutes()
+          if kit_mod_keys == 1 then
+            kit_edit_mutes = true
           end
         end
       elseif held_bank == 2 then
@@ -1034,7 +1029,7 @@ function grd_zero.chord_grid(x, y, z)
       if (x == 9 or x == 10) then
         gkey[x][y].active = z == 1 and true or false
         if z == 1 then
-          params:delta("strm_rate", x == 8 and 1 or -1)
+          params:delta("strm_rate", x == 9 and 1 or -1)
         end
       elseif x == 12 and z == 1 then
         params:delta("strm_skew", -1)
@@ -1270,7 +1265,7 @@ function grd_zero.draw()
       end
       g:led(13, x + 9, gkey[13][x + 9].active and 15 or 8)
     end
-    g:led(12, 10, drmfm_clipboard_contains and pulse_key_mid or (gkey[12][10].active and 15 or 1))
+    g:led(12, 10, drmfm_clipboard_contains and pulse_key_mid or ((kit_mod_keys == 2 and gkey[12][10].active) and 15 or 1))
     g:led(12, 11, gkey[12][11].active and 15 or (kit_mute.active and pulse_key_mid or 1))
     if kit_edit_mutes then
       for i = 1, 6 do
@@ -1292,9 +1287,8 @@ function grd_zero.draw()
 
   if ansi_view then
     for i = 1, 4 do
-      g:led(1, i + 12, ansi_trig[i] and 15 or 4)
+      g:led(1, i + 12, ansi_trig[i] and 15 or 2)
     end
-    g:led(2, 13, pulse_key_slow)
   else
     -- int/key octave
     if kit_view then
@@ -1312,8 +1306,9 @@ function grd_zero.draw()
       g:led(1, 15, 8 + notes_oct_key[key_focus] * 2)
       g:led(1, 16, 8 - notes_oct_key[key_focus] * 2)
     end
-    -- afterfouch / pitchbend
-    g:led(2, 14, math.floor(at[key_focus].value * 15))
+    -- afterfouch, modwheel, pitchbend
+    g:led(2, 13, math.floor(at[key_focus].value * 15))
+    g:led(2, 14, math.floor(mw[key_focus].value * 15))
     g:led(2, 15, pb[key_focus].dir == 1 and math.floor(pb[key_focus].value * 15) or 0) -- pitchbend up
     g:led(2, 16, pb[key_focus].dir == -1 and math.floor(pb[key_focus].value * 15) or 0) -- ptichbend down
   end
