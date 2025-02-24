@@ -7,9 +7,10 @@ local md = require 'core/mods'
 
 local preset_path = norns.state.data.."polyform_patches"
 local default_patch = norns.state.data.."polyform_patches/default.patch"
+local failsafe_patch = norns.state.lib.."polyform_patches/default.patch"
 
 local active_ch = 1
-
+local patch_list = {}
 local current_patch = {}
 for i = 1, 2 do
   current_patch[i] = ""
@@ -82,7 +83,7 @@ end
 
 -- JP800 supersaw emulation based on adam szbao's thesis,
 -- ported to supercollider by eric skogan and adapted by zack scholl
--- ported to lua and adapted for nisho by @sonocircuit
+-- ported to lua and adapted for nisho by sonocircuit
 local function get_detune_val(x)
   local detune_val = 
   (10028.7312891634 * math.pow(11, x)) -
@@ -208,20 +209,26 @@ local function mix_display(param)
   return saw.."/"..pulse
 end
 
--- load save and set
-local function load_synth_patch(path, i)
-  polyForm.panic(i)
-  if util.file_exists(path) then
-    local patch = tab.load(path)
-    for k, v in pairs(patch) do
-      params:set("polyform_"..k.."_"..i, v)
+local function set_value(i, id, val)
+  local min = i == 1 and 1 or 3
+  local max = i == 1 and 2 or 8
+  for voice = min, max do
+    id(voice, val)
+  end
+  page_redraw(2)
+end
+
+-- load, save and set
+local function build_patch_list()
+  local files = util.scandir(preset_path)
+  patch_list = {}
+  for i = 1, #files do
+    if files[i]:match("^.+(%..+)$") == ".patch" then
+      local num = tonumber(files[i]:match(".-%d+"))
+      if num ~= nil then
+        patch_list[num] = files[i]
+      end
     end
-    display_params(i)
-    local name = path:match("[^/]*$")
-    current_patch[active_ch] = name:gsub(".patch", "")
-    print("loaded patch: "..path)
-  else
-    print("patch file "..path.." does not exist yet")
   end
 end
 
@@ -234,17 +241,54 @@ local function save_synth_patch(txt)
     tab.save(patch, preset_path.."/"..txt..".patch")
     current_patch[active_ch] = txt
     params:set("polyform_load_patch_"..active_ch, preset_path.."/"..txt..".patch", true)
+    build_patch_list()
     print("saved patch "..preset_path.."/"..txt..".patch")
   end
 end
 
-local function set_value(i, id, val)
-  local min = i == 1 and 1 or 3
-  local max = i == 1 and 2 or 8
-  for voice = min, max do
-    id(voice, val)
+local function load_synth_patch(path, i)
+  if path ~= "cancel" and path ~= "" then
+    polyForm.panic(i)
+    if path:match("^.+(%..+)$") == ".patch" then
+      local patch = tab.load(path)
+      if patch ~= nil then
+        for k, v in pairs(patch) do
+          params:set("polyform_"..k.."_"..i, v)
+        end
+        display_params(i)
+        local name = path:match("[^/]*$")
+        current_patch[active_ch] = name:gsub(".patch", "")
+        print("loaded patch: "..path)
+      else
+        print("error: could not load patch", path)
+        load_default_patch(i)
+      end
+    else
+      print("error: not a polyform patch file")
+    end
   end
-  page_redraw(2)
+end
+
+function load_default_patch(i)
+  load_synth_patch(failsafe_patch, i)
+end
+
+-- load patch via program change
+function polyForm.prc_load(num, i)
+  if patch_list[num] ~= nil then
+    params:set("polyform_load_patch_"..i, preset_path.."/"..patch_list[num])
+  else
+    print("error: unvalid patch number: "..num)
+  end
+end
+
+-- return number of files for program change
+function polyForm.prc_list()
+  local num = 0
+  if #patch_list > 0 then
+    num = #patch_list
+  end
+  return num
 end
 
 -- play and mute
@@ -313,6 +357,8 @@ function polyForm.init()
   end
   -- populate detune table
   build_detune_values()
+  -- populate patch list
+  build_patch_list()
   -- synth groups one and six (voices 1-2 and 3-8)  
   for i = 1, 2 do
     local name = i == 1 and "mono" or "poly"
@@ -437,7 +483,7 @@ function polyForm.init()
 
     params:add_separator("polyform_mod_src_"..i, "mod source")
     -- source
-    params:add_option("polyform_mod_source_"..i, "mod src", {"mod env", "aftertouch"}, 1)
+    params:add_option("polyform_mod_source_"..i, "mod src", {"mod env", "modwheel"}, 1)
     params:set_action("polyform_mod_source_"..i, function(x) set_value(i, engine.mod_source, x - 1) display_params(i) end)
     -- curve
     params:add_control("polyform_env_mod_curve_"..i, "curve", controlspec.new(-5, 5, "lin", 0, 0), function(param) return curve_display(param:get()) end)
