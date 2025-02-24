@@ -2,10 +2,11 @@
 // based on the amazing Oilcan @zbs and @sixolet
 
 Drmfm {
-
+	classvar <voxs;
 	*initClass {
 
 		StartUp.add {
+			voxs = 8.collect {nil};
 
 		  SynthDef(\Drmfm,{
 
@@ -88,12 +89,25 @@ Drmfm {
 				\noise_amp, \noise_decay, \cutoff_lpf, \cutoff_hpf, \phase, \fold, \level, \pan, \sendA, \sendB],
 				msg[2..]].lace;
 
-				Synth.new(
+				if (voxs[idx] != nil) {
+					voxs[idx].free;
+				};
+
+				syn = Synth.new(
 					\Drmfm,
 					args
 					++ [
 					\sendABus, (~sendA ? Server.default.outputBus),
-					\sendBBus, (~sendB ? Server.default.outputBus)]);
+					\sendBBus, (~sendB ? Server.default.outputBus)]
+				);
+
+				syn.onFree {
+					if (voxs[idx] != nil && voxs[idx] === syn) {
+						voxs.put(idx, nil);
+					};
+				};
+
+				voxs.put(idx, syn);
 
 			}, "/drmfm/trig");
 
