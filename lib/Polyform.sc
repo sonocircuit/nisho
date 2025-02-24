@@ -42,7 +42,7 @@ Polyform {
 					env_type = 0,
 					env_curve = -2,
 					env_a = 0, env_d = 2, env_s = 0.5, env_r = 5,
-					mod_source = 0, at_mod = 0,
+					mod_source = 0, mod_wheel = 0,
 					env_mod_curve = -4,
 					envmod_h = 0, envmod_a = 0, envmod_d = 0.8, envmod_s = 0, envmod_r = 2,
 					// filter args
@@ -75,7 +75,7 @@ Polyform {
 					res_lpf = Lag.kr(res_lpf);
 					cutoff_hpf = Lag.kr(cutoff_hpf);
 					res_hpf = Lag.kr(res_hpf);
-					at_mod = Lag.kr(at_mod);
+					mod_wheel = Lag.kr(mod_wheel);
 					pb_depth = Lag.kr(pb_depth);
 
 					// randomize slop
@@ -98,8 +98,8 @@ Polyform {
 					env_mod = Select.kr(env_type > 0, [env_mod_ar, env_mod_adsr]);
 
 					// mod source
-					mod_val = Select.kr(mod_source > 0, [env_mod, at_mod]);
-
+					mod_val = Select.kr(mod_source > 0, [env_mod, mod_wheel]);
+					
 					// freq slop, ptichbend  vibrato
 					freq = freq + freq_slop;
 					freq = Lag.kr(freq * 2.pow((pb_depth * pb_range) / 12));
@@ -217,7 +217,7 @@ Polyform {
 			\gate, 1,
 
 			\mod_source, 0,
-			\at_mod, 0,
+			\mod_wheel, 0,
 
 			\env_mod_curve, -1,
 			\envmod_h, 0,
