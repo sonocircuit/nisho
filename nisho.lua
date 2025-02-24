@@ -1,4 +1,4 @@
--- nisho v1.7.2 @sonocircuit
+-- nisho v1.7.4 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --   six voices & eight patterns
@@ -8,10 +8,10 @@
 --
  
 ---------------------------------------------------------------------------
--- TODO: add nb lib to /lib
+-- TODO: revert to og polyform and kit prgchg num selection
 ---------------------------------------------------------------------------
 
-engine.name = "Polyform" 
+engine.name = "Polyform"
 
 local fs = require 'fileselect'
 local mu = require 'musicutil'
@@ -57,12 +57,12 @@ int_focus = 1
 key_focus = 1
 voice_focus = 1
 strum_focus = 1
-key_link = true -- link keyboard to interval keys
-transposing = false -- activate transpose_mode
+key_link = true
+transposing = false
 transpose_value = 0
-scalekeys_y = 4 -- scale keys
-chromakeys_x = 5 -- chromatic keys x
-chromakeys_y = 1 -- chromatic keys y
+scalekeys_y = 4
+chromakeys_x = 5
+chromakeys_y = 1
 
 drum_root_note = 0
 drum_vel_hi = 100
@@ -332,18 +332,7 @@ for i = 1, NUM_VOICES + 1 do -- 6 voices + 1 midi out
   voice[i].jf_mode = 1
 end
 
--- aftertouch
-at = {}
-at_res = 0.01
-at_timer = nil
-for i = 1, NUM_VOICES do
-  at[i] = {}
-  at[i].rise = 0.1
-  at[i].fall = 0.1
-  at[i].value = 0
-  at[i].timer = nil
-end
-
+-- pitchbend
 pb = {}
 pb_res = 0.01
 pb_timer = nil
@@ -354,6 +343,30 @@ for i = 1, NUM_VOICES do
   pb[i].fall = 0.1
   pb[i].value = 0
   pb[i].timer = nil
+end
+
+-- modwheel
+mw = {}
+mw_res = 0.01
+mw_timer = nil
+for i = 1, NUM_VOICES do
+  mw[i] = {}
+  mw[i].rise = 0.1
+  mw[i].fall = 0.1
+  mw[i].value = 0
+  mw[i].timer = nil
+end
+
+-- aftertouch
+at = {}
+at_res = 0.01
+at_timer = nil
+for i = 1, NUM_VOICES do
+  at[i] = {}
+  at[i].rise = 0.1
+  at[i].fall = 0.1
+  at[i].value = 0
+  at[i].timer = nil
 end
 
 -- chords
@@ -530,6 +543,7 @@ function build_scale()
   scale_notes = mu.generate_scale_of_length(root_base, current_scale, 50)
   note_map = mu.generate_scale_of_length(root_note % 12, current_scale, 100)
   notes_home = tab.key(scale_notes, root_note)
+  notes_last = notes_home
   -- set note viz
   nv.is = {}
   nv.root = {}
@@ -556,7 +570,7 @@ end
 
 function set_note_viz(note_num, state)
   nv.viz[tab.key(nv.notes, note_num % 12)] = state
-  dirtyscreen = true
+  page_redraw(1)
 end
 
 -- chord stuff
@@ -729,7 +743,7 @@ end
 function set_scale()
   build_scale()
   build_chord_map()
-  dirtyscreen = true
+  page_redraw(1)
 end
 
 ------- voice management --------
@@ -738,6 +752,7 @@ function set_voice_output(i, val)
   alloc_jf_voices()
   manage_ii()
   build_menu()
+  p[i].prc_type = val < 3 and val or 3
 end
 
 function manage_ii()
@@ -892,7 +907,6 @@ function event_exec(e, n)
     crow.ii.ansible.trigger_pulse(e.i)
     ansi_gridviz(e.i)
   end
-  dirtyscreen = true
 end
 
 function event_rec(e)
@@ -967,6 +981,7 @@ for i = 1, 8 do
   p[i].manual_length = {}
   p[i].prc_enabled = false
   p[i].prc_pulse = false
+  p[i].prc_type = 5
   p[i].prc_ch = i
   p[i].prc_num = {}
   p[i].prc_option = {}
@@ -1130,7 +1145,7 @@ function load_pattern_bank(i, bank)
   if pattern[i].play == 1 and pattern[i].count == 0 then
     pattern[i]:stop()
   end
-  dirtyscreen = true
+  page_redraw(3)
   --print("loaded values", pattern[i].meter, pattern[i].barnum, pattern[i].manual_length)
 end
 
@@ -1162,31 +1177,7 @@ function update_pattern_bank(i)
     p[i].bank = p[i].load
     clear_active_notes(i)
     load_pattern_bank(i, p[i].bank)
-    -- send prg change
-    if p[i].prc_enabled and p[i].prc_num[p[i].bank] ~= 0 then
-      if (p[i].prc_option[p[i].bank] == 2 or pattern[i].play == 1) then
-        if i == 8 then
-          local group = p[i].prc_num[p[i].bank]
-          clock.run(function()
-            clock.sync(bar_val, -1/4) -- TODO: test values 
-            if group < 0 then
-              clear_kit_mutes()
-            else
-              set_kit_mutes(group)
-            end
-          end)
-        else
-          m[i]:program_change(p[i].prc_num[p[i].bank] - 1, p[i].prc_ch)
-        end
-        p[i].prc_pulse = true
-        dirtygrid = true
-        clock.run(function()
-          clock.sleep(1/30)
-          p[i].prc_pulse = false
-          dirtygrid = true
-        end)
-      end
-    end
+    send_program_change(i, p[i].bank)
     p[i].load = nil
   end
 end
@@ -1354,7 +1345,7 @@ function load_patterns(pset_id)
       update_pattern_bank(i)
     end
   end
-  dirtyscreen = true
+  page_redraw(3)
   dirtygrid = true
 end
 
@@ -1414,6 +1405,41 @@ function clear_all_patterns()
     end
     load_pattern_bank(i, 1)
     show_message("all   patterns   cleared")
+  end
+end
+
+function send_program_change(i, bank)
+  -- send prg change
+  if p[i].prc_enabled and p[i].prc_num[bank] ~= 0 then
+    if p[i].prc_type == 5 then
+      local group = p[i].prc_num[bank]
+      local delay = p[i].prc_option[bank] == 1 and -1/4 or 0 
+      clock.run(function()
+        clock.sync(bar_val, delay)
+        if group < 0 then
+          clear_kit_mutes()
+        else
+          set_kit_mutes(group)
+        end
+      end)
+    else -- track program changes
+      if (p[i].prc_option[bank] == 2 or pattern[i].play == 1) then
+        if p[i].prc_type == 3 then
+          m[i]:program_change(p[i].prc_num[bank] - 1, p[i].prc_ch)
+        elseif p[i].prc_type < 3 then
+          polyform.prc_load(p[i].prc_num[bank], p[i].prc_type)
+        elseif p[i].prc_type == 4 then  
+          drmfm.prc_load(p[i].prc_num[bank])
+        end
+      end
+    end
+    p[i].prc_pulse = true
+    dirtygrid = true
+    clock.run(function()
+      clock.sleep(1/30)
+      p[i].prc_pulse = false
+      dirtygrid = true
+    end)
   end
 end
 
@@ -1849,44 +1875,6 @@ function set_output_volt(i)
 end
 
 
-function at_ramp_up(i)
-  local inc = (1 - at[i].value) / (at[i].rise / at_res)
-  while at[i].value < 1 do
-    clock.sleep(at_res)
-    at[i].value = util.clamp(at[i].value + inc, 0, 1)
-    send_aftertouch(i, at[i].value)
-  end
-end
-
-
-function at_ramp_down(i)
-  local inc = at[i].value / (at[i].fall / at_res)
-  while at[i].value > 0 do
-    clock.sleep(at_res)
-    at[i].value = util.clamp(at[i].value - inc, 0, 1)
-    send_aftertouch(i, at[i].value)
-  end
-end
-
-function send_aftertouch(i, val)
-  if voice[i].output < 3 then
-    local min = i == 1 and 1 or 3
-    local max = i == 1 and 2 or 8
-    for voice = min, max do
-      engine.at_mod(voice, val)
-    end
-  elseif voice[i].output == 3 then
-    local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
-    m[i]:channel_pressure(m_val, voice[i].midi_ch)
-  elseif voice[i].output > 7 then
-    local n = voice[i].output - 7
-    local player = params:lookup_param("nb_"..n):get_player()
-    player:modulate(val)
-  end
-  dirtygrid = true
-end
-
-
 -- pitchbend
 function pb_ramp_up(i, dir)
   local inc = (1 - pb[i].value) / (pb[i].rise / pb_res)
@@ -1923,6 +1911,80 @@ function send_pitchbend(i, val, dir)
     m[i]:pitchbend(m_val, voice[i].midi_ch)
   elseif voice[i].output > 7 then
 
+  end
+  dirtygrid = true
+end
+
+-- modwheel
+function mw_ramp_up(i)
+  local inc = (1 - mw[i].value) / (mw[i].rise / mw_res)
+  while mw[i].value < 1 do
+    clock.sleep(mw_res)
+    mw[i].value = util.clamp(mw[i].value + inc, 0, 1)
+    send_modwheel(i, mw[i].value)
+  end
+end
+
+function mw_ramp_down(i)
+  local inc = mw[i].value / (mw[i].fall / mw_res)
+  while mw[i].value > 0 do
+    clock.sleep(mw_res)
+    mw[i].value = util.clamp(mw[i].value - inc, 0, 1)
+    send_modwheel(i, mw[i].value)
+  end
+end
+
+function send_modwheel(i, val)
+  if voice[i].output < 3 then
+    local min = i == 1 and 1 or 3
+    local max = i == 1 and 2 or 8
+    for voice = min, max do
+      engine.mod_wheel(voice, val)
+    end
+  elseif voice[i].output == 3 then
+    local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
+    m[i]:cc(1, m_val, voice[i].midi_ch)
+  elseif voice[i].output > 7 then
+    local n = voice[i].output - 7
+    local player = params:lookup_param("nb_"..n):get_player()
+    player:modulate(val)
+  end
+  dirtygrid = true
+end
+
+-- aftertouch
+function at_ramp_up(i)
+  local inc = (1 - at[i].value) / (at[i].rise / at_res)
+  while at[i].value < 1 do
+    clock.sleep(at_res)
+    at[i].value = util.clamp(at[i].value + inc, 0, 1)
+    send_aftertouch(i, at[i].value)
+  end
+end
+
+function at_ramp_down(i)
+  local inc = at[i].value / (at[i].fall / at_res)
+  while at[i].value > 0 do
+    clock.sleep(at_res)
+    at[i].value = util.clamp(at[i].value - inc, 0, 1)
+    send_aftertouch(i, at[i].value)
+  end
+end
+
+function send_aftertouch(i, val)
+  if voice[i].output < 3 then
+    local min = i == 1 and 1 or 3
+    local max = i == 1 and 2 or 8
+    for voice = min, max do
+      engine.vibrato_depth(voice, val)
+    end
+  elseif voice[i].output == 3 then
+    local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
+    m[i]:channel_pressure(m_val, voice[i].midi_ch)
+  elseif voice[i].output > 7 then
+    local n = voice[i].output - 7
+    local player = params:lookup_param("nb_"..n):get_player()
+    player:modulate(val)
   end
   dirtygrid = true
 end
@@ -2195,9 +2257,6 @@ function init()
     util.make_dir(midim_default_path)
   end
 
-  -- nb
-  nb:init()
-
   -- check for crow
   if norns.crow.connected() then
     crow_is_here = true
@@ -2254,7 +2313,7 @@ function init()
   params:add_group("kit_group", "kit settings", 35)
 
   params:add_option("kit_dest", "kit mode", {"drmFM", "midi"}, 1)
-  params:set_action("kit_dest", function(mode) kit_mode = mode build_menu() end)
+  params:set_action("kit_dest", function(mode) kit_mode = mode p[7].prc_type = mode == 2 and 3 or 4 build_menu() end)
 
   params:add_number("kit_root_note", "kit base note", 0, 24, 12, function(param) return mu.note_num_to_name(param:get(), true) end)
   params:set_action("kit_root_note", function(val) kit_root_note = val - 12 dirtygrid = true end)
@@ -2386,7 +2445,6 @@ function init()
   params:add_number("drum_vel_lo", "lo velocity", 1, 127, 32)
   params:set_action("drum_vel_lo", function(val) drum_vel_lo = val end)
 
-
   -- rytm params
   params:add_group("rytm_params", "rytm settings", 2)
   if not rytm_mode then params:hide("rytm_params") end
@@ -2396,7 +2454,6 @@ function init()
 
   params:add_number("rytm_out_channel", "rytm out channel", 1, 16, 14)
   params:set_action("rytm_out_channel", function(val) midi_rytm_ch = val end)
-
 
   -- octave params
   params:add_group("octave_params", "octaves", 14)
@@ -2459,7 +2516,7 @@ function init()
   -- voice params
   params:add_separator("voices", "voices")
   for i = 1, NUM_VOICES do
-    params:add_group("voice_"..i, "voice "..i, 30)
+    params:add_group("voice_"..i, "voice "..i, 33)
     -- output
     params:add_option("voice_out_"..i, "output", options.output, 1)
     params:set_action("voice_out_"..i, function(val) set_voice_output(i, val) end)
@@ -2490,19 +2547,26 @@ function init()
     params:add_binary("midi_panic_"..i, "don't panic!", "trigger", 0)
     params:set_action("midi_panic_"..i, function() notes_off(i) end)
 
-    params:add_separator("at_settings"..i, "aftertouch")
-    params:add_control("aftertouch_rise_"..i, "rise", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
-    params:set_action("aftertouch_rise_"..i, function(val) at[i].rise = val end)
-
-    params:add_control("aftertouch_fall_"..i, "fall", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
-    params:set_action("aftertouch_fall_"..i, function(val) at[i].fall = val end)
-
     params:add_separator("pb_settings"..i, "pitchbend")
     params:add_control("pitchbend_rise_"..i, "rise", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
     params:set_action("pitchbend_rise_"..i, function(val) pb[i].rise = val end)
 
     params:add_control("pitchbend_fall_"..i, "fall", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
     params:set_action("pitchbend_fall_"..i, function(val) pb[i].fall = val end)
+
+    params:add_separator("mw_settings"..i, "modwheel")
+    params:add_control("modwheel_rise_"..i, "rise", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
+    params:set_action("modwheel_rise_"..i, function(val) mw[i].rise = val end)
+
+    params:add_control("modwheel_fall_"..i, "fall", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
+    params:set_action("modwheel_fall_"..i, function(val) mw[i].fall = val end)
+
+    params:add_separator("at_settings"..i, "aftertouch")
+    params:add_control("aftertouch_rise_"..i, "rise", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
+    params:set_action("aftertouch_rise_"..i, function(val) at[i].rise = val end)
+
+    params:add_control("aftertouch_fall_"..i, "fall", controlspec.new(0.1, 10, "lin", 0.1, 0.1), function(param) return round_form(param:get(), 0.1, "s") end)
+    params:set_action("aftertouch_fall_"..i, function(val) at[i].fall = val end)
 
     params:add_separator("voice_midi_cc_"..i, "midi cc's")
     for n = 1, 4 do
@@ -2760,18 +2824,7 @@ function init()
     build_pset_list()
     print("finished deleting pset:'"..name.."'")
   end
-
-  -- bang params
-  if load_pset then
-    params:default()
-  else
-    params:bang()
-  end
   
-  -- set defaults
-  notes_last = notes_home
-  set_defaults()
-
   -- hardware callbacks
   m[midi_in_dev].event = midi_events
 
@@ -2811,6 +2864,14 @@ function init()
   }
 
   vizclock:start()
+
+  -- bang params
+  if load_pset then
+    params:default()
+  else
+    params:bang()
+    set_defaults()
+  end
 
 end
 
@@ -2950,10 +3011,14 @@ function enc(n, d)
     end
   elseif prgchange_view then
     if n == 2 then
-      if pattern_focus == 8 then
-        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, -1, 6)
+      if p[pattern_focus].prc_type < 3 then
+        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, polyform.prc_list())
+      elseif p[pattern_focus].prc_type == 4 then
+        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, drmfm.prc_list())
+      elseif  p[pattern_focus].prc_type == 5 then
+          p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, -1, 6)
       else
-        if shift then
+        if shift and p[pattern_focus].prc_type == 3 then
           p[pattern_focus].prc_ch = util.clamp(p[pattern_focus].prc_ch + d, 1, 16)
         else
           p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, 127)
@@ -3122,7 +3187,8 @@ function redraw()
       screen.text_right(shift and ">  load   all" or ">  load   pset")
     end
   elseif prgchange_view then
-    local options = {"play", "load"}
+    local launch_options = {{"play", "load"}, {"upbeat", "dnbeat"}}
+    local launch_mode = p[pattern_focus].prc_option[bank_focus]
     local num = p[pattern_focus].prc_num[bank_focus]
     screen.font_size(8)
     screen.level(15)
@@ -3132,10 +3198,17 @@ function redraw()
     -- param list
     screen.level(4)
     screen.move(30, 60)
-    if shift then 
+    if shift and p[pattern_focus].prc_type == 3 then 
       screen.text_center("prg    channel")
     else
-      local txt = pattern_focus == 8 and "mute   group" or "prg    msg"
+      local txt = "prg    msg"
+      if p[pattern_focus].prc_type < 3 then
+        txt = "polyform   patch"
+      elseif p[pattern_focus].prc_type == 4 then
+        txt = "drmfm   kit"
+      elseif p[pattern_focus].prc_type == 5 then
+        txt = "mute   group"
+      end
       screen.text_center(txt)
     end
     screen.move(98, 60)
@@ -3143,13 +3216,13 @@ function redraw()
     screen.level(15)
     screen.font_size(16)
     screen.move(30, 39)
-    if shift then
+    if shift and p[pattern_focus].prc_type == 3 then 
       screen.text_center(p[pattern_focus].prc_ch)
     else
       screen.text_center(num == 0 and "off" or (num == -1 and "clear" or num))
     end
     screen.move(98, 39)
-    screen.text_center(options[p[pattern_focus].prc_option[bank_focus]])
+    screen.text_center(launch_options[pattern_focus == 8 and 2 or 1][launch_mode])
   elseif trigs_edit then
     screen.font_size(8)
     screen.level(15)
@@ -3477,26 +3550,24 @@ function get_mid(str)
 end
 
 function show_message(message)
-  clock.run(
-    function()
-      view_message = message
+  clock.run(function()
+    view_message = message
+    dirtyscreen = true
+    if string.len(message) > 20 then
+      clock.sleep(1.6) -- long display time
+      view_message = ""
       dirtyscreen = true
-      if string.len(message) > 20 then
-        clock.sleep(1.6) -- long display time
-        view_message = ""
-        dirtyscreen = true
-      else
-        clock.sleep(0.8) -- short display time
-        view_message = ""
-        dirtyscreen = true
-      end
+    else
+      clock.sleep(0.8) -- short display time
+      view_message = ""
+      dirtyscreen = true
     end
-  )
+  end)
 end
 
-function build_menu()
+function build_menu() -- it's so weird that in this fuction > or < does not work in conditionals!!!????
   for i = 1, NUM_VOICES do
-    if (voice[i].output == 3 or voice[i].output == 8 or  voice[i].output == 9) and voice[i].keys_option < 4 then
+    if (voice[i].output == 3 or voice[i].output == 8 or voice[i].output == 9) and voice[i].keys_option < 4 then
       params:show("note_velocity_"..i)
       params:show("note_length_"..i)
     else
@@ -3507,12 +3578,6 @@ function build_menu()
       params:show("midi_device_"..i)
       params:show("midi_channel_"..i)
       params:show("midi_panic_"..i)
-      params:show("at_settings"..i)
-      params:show("aftertouch_rise_"..i)
-      params:show("aftertouch_fall_"..i)
-      params:show("pb_settings"..i)
-      params:show("pitchbend_rise_"..i)
-      params:show("pitchbend_fall_"..i)
       params:show("voice_midi_cc_"..i)
       for n = 1, 4 do
         params:show("midi_cc_name_"..n.."_"..i)
@@ -3523,18 +3588,39 @@ function build_menu()
       params:hide("midi_device_"..i)
       params:hide("midi_channel_"..i)
       params:hide("midi_panic_"..i)
-      params:hide("at_settings"..i)
-      params:hide("aftertouch_rise_"..i)
-      params:hide("aftertouch_fall_"..i)
-      params:hide("pb_settings"..i)
-      params:hide("pitchbend_rise_"..i)
-      params:hide("pitchbend_fall_"..i)
       params:hide("voice_midi_cc_"..i)
       for n = 1, 4 do
         params:hide("midi_cc_name_"..n.."_"..i)
         params:hide("midi_cc_dest_"..n.."_"..i)
         params:hide("midi_cc_val_"..n.."_"..i)
       end
+    end
+    if voice[i].output == 1 or voice[i].output == 2 or voice[i].output == 3 or voice[i].output == 8 or voice[i].output == 9 then
+      params:show("pb_settings"..i)
+      params:show("pitchbend_rise_"..i)
+      params:show("pitchbend_fall_"..i)
+      params:show("mw_settings"..i)
+      params:show("modwheel_rise_"..i)
+      params:show("modwheel_fall_"..i)
+      if voice[i].output == 3 then
+        params:show("at_settings"..i)
+        params:show("aftertouch_rise_"..i)
+        params:show("aftertouch_fall_"..i)
+      else
+        params:hide("at_settings"..i)
+        params:hide("aftertouch_rise_"..i)
+        params:hide("aftertouch_fall_"..i)
+      end
+    else
+      params:hide("pb_settings"..i)
+      params:hide("pitchbend_rise_"..i)
+      params:hide("pitchbend_fall_"..i)
+      params:hide("mw_settings"..i)
+      params:hide("modwheel_rise_"..i)
+      params:hide("modwheel_fall_"..i)
+      params:hide("at_settings"..i)
+      params:hide("aftertouch_rise_"..i)
+      params:hide("aftertouch_fall_"..i)
     end
     if voice[i].output == 4 then
       if (params:get("clock_crow_out") == 2 or params:get("clock_crow_out") == 3) then
@@ -3560,7 +3646,6 @@ function build_menu()
       params:hide("jf_amp_"..i)
     end
   end
-
   if kit_mode == 2 then
     pageNum = 1
     params:show("kit_out_device")
@@ -3639,7 +3724,7 @@ function show_banner()
   g:all(0)
   for x = 1, 16 do
     for y = hi, lo do
-      g:led(x, y, banner[y - hi + 1][x] * 4)
+      g:led(x, y, banner[y - hi + 1][x] * 5)
     end
   end
   g:refresh()
