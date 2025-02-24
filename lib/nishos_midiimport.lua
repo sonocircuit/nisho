@@ -35,7 +35,7 @@ function copy_to_slot(ptn, bank, beats)
   local i = math.floor(ptn) -- some wonky stuff going on here... callback messes with first arg. why?
   p[i].count[bank] = t.count
   p[i].event[bank] = deep_copy(t.event)
-  p[ptn].endpoint[bank] = beats * STEP_RES
+  p[i].endpoint[bank] = beats * STEP_RES
   p[i].endpoint_init[bank] = beats * STEP_RES
   -- get bar and meter values
   if ((p[i].endpoint[bank] % STEP_RES == 0) and (p[i].endpoint[bank] >= (STEP_RES * 2))) then
