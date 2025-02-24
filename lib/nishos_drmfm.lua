@@ -6,13 +6,12 @@ local md = require 'core/mods'
 
 local NUM_VOICES = 16
 local NUM_PERF_SLOTS = 4
-local MAX_VOICES = 6
 
 local preset_path = norns.state.data.."drmfm_kits"
 local default_kit = norns.state.data.."drmfm_kits/default.kit"
+local failsafe_kit = norns.state.lib.."drmfm_kits/default.kit"
 
 local selected_voice = 1
-local active_voice = 1
 local current_kit = ""
 local glb_level = 1
 local perf_amt = 0
@@ -20,14 +19,17 @@ local p_slot = 1
 local perf_names = {"A", "B", "C", "D"}
 
 local clipboard = {}
+local kit_list = {}
 
 local ratio_options = {}
 local ratio_values = {}
+
 
 --[[ -- indexing needs to correspond to sc msg!
 \freq, \tune, \decay, \sweep_time, \sweep_depth, \mod_ratio, \mod_time, \mod_amp, \mod_fb, \mod_dest,
 \noise_amp, \noise_decay, \cutoff_lpf, \cutoff_hpf, \phase, \fold, \level, \pan, \sendA, \sendB],
 --]]
+
 
 local param_list = {
   "freq", "tune", "decay", "sweep_time", "sweep_depth", "mod_ratio", "mod_time", "mod_amp", "mod_fb", "mod_dest",
@@ -169,6 +171,19 @@ local function scale_perf_val(i, k, mult)
   --print(param_list[k], dv.max[k], dv.min[k], mult, dv.mod[k])
 end
 
+local function build_kit_list()
+  local files = util.scandir(preset_path)
+  kit_list = {}
+  for i = 1, #files do
+    if files[i]:match("^.+(%..+)$") == ".kit" then
+      local num = tonumber(files[i]:match(".-%d+"))
+      if num ~= nil then
+        kit_list[num] = files[i]
+      end
+    end
+  end
+end
+
 local function save_drmfm_kit(txt)
   if txt then
     local kit = {}
@@ -181,24 +196,54 @@ local function save_drmfm_kit(txt)
     tab.save(kit, preset_path.."/"..txt..".kit")
     current_kit = txt
     params:set("drmfm_load_kit", preset_path.."/"..txt..".kit", true)
+    build_kit_list()
     print("saved kit "..preset_path.."/"..txt..".kit")
   end
 end
 
 local function load_drmfm_kit(path)
-  if util.file_exists(path) then
-    local r = tab.load(path)
-    for i = 1, NUM_VOICES do
-      for k, v in ipairs(param_list) do
-        params:set("drmfm_"..v.."_"..i, r[i][k])
+  if path ~= "cancel" and path ~= "" then
+    if path:match("^.+(%..+)$") == ".kit" then
+      local r = tab.load(path)
+      if r ~= nil then
+        for i = 1, NUM_VOICES do
+          for k, v in ipairs(param_list) do
+            params:set("drmfm_"..v.."_"..i, r[i][k])
+          end
+        end
+        local name = path:match("[^/]*$")
+        current_kit = name:gsub(".kit", "")
+        print("loaded kit: "..path)
+      else
+        print("error: could not load kit", path)
+        load_default_kit()
       end
+    else
+      print("error: not a kit file")
     end
-    local name = path:match("[^/]*$")
-    current_kit = name:gsub(".kit", "")
-    print("loaded kit: "..path)
-  else
-    print("kit file "..path.." does not exist yet")
   end
+end
+
+function load_default_kit()
+  load_drmfm_kit(failsafe_kit)
+end
+
+-- load kit via program change
+function drmfm.prc_load(num)
+  if kit_list[num] ~= nil then
+    params:set("drmfm_load_kit", preset_path.."/"..kit_list[num])
+  else
+    print("error: unvalid kit number: "..num)
+  end
+end
+
+-- return number of files for program change
+function drmfm.prc_list()
+  local num = 0
+  if #kit_list > 0 then
+    num = #kit_list
+  end
+  return num
 end
 
 function drmfm.copy_voice(voice)
@@ -229,13 +274,8 @@ function drmfm.trig(note, vel)
       end
       msg[k] = util.clamp(msg[k] + (dv.mod[p_slot][k] * perf_amt), dv.min[k], dv.max[k])
     end
-    -- TODO: roundrobin voice index (modulo or wrap). insert idx instead of 1
-    -- adapt sc file to limit voices to max voice count.
-    --[[
-    active_voice = util.wrap(active_voice + 1, 1, MAX_VOICES)
-    table.insert(msg, active_voice, 1)
-    --]]
-    table.insert(msg, 1, 1)
+    local slot = (voice - 1) % 8 -- sc is zero-indexed!
+    table.insert(msg, 1, slot)
     osc.send({'localhost',57120}, '/drmfm/trig', msg)
   end
 end
@@ -246,8 +286,9 @@ function drmfm.add_params()
     util.make_dir(preset_path)
     os.execute('cp '.. norns.state.path .. 'lib/drmfm_kits/*.kit '.. preset_path)
   end
-  -- build tables
+  -- populate tables
   build_tables()
+  build_kit_list()
 
   -- drmfm params
   params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 21) + (NUM_PERF_SLOTS * 15) + 14))
