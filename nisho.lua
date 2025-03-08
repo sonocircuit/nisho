@@ -121,11 +121,9 @@ for n = 1, 6 do
 end
 
 -- drmfm
-drmfm_copying = false
-drmfm_voice_focus = 1
-drmfm_clipboard_contains = false
-perfclock = nil
+local perfclock = nil
 perftime = 8 -- beats
+drmfm_voice_focus = 1
 
 -- sequencer
 seq_notes = {}
@@ -138,37 +136,35 @@ appending_notes = false
 notes_added = false
 seq_step = 0
 seq_rate = 1/4
-seq_hold = false
 
 -- key repeat
+local rep_rate = 1/4
+local rep_rates = {1/4, 1/8, 3/8, 1/16, 1/3, 3/16, 1/6, 1/32, 3/64, 1/12, 5/16, 3/32, 7/16, 1/24, 9/16}
 key_repeat_view = false
 latch_key_repeat = false
 key_repeat = false
-rep_rate = 1/4
 
 --trig patterns
 trigs_config_view = false
 trigs_edit = false
-set_trigs_end = false
 trigs_focus = 1
 trig_step = 0
-trigs_reset = false
 
 -- midi
-midi_in_dev = 9
-midi_in_ch = 1
-midi_in_dest = 0
-midi_in_quant = false
-midi_out_dev = 8
-midi_out_ch = 1
-midi_thru = false
+local midi_in_dev = 9
+local midi_in_ch = 1
+local midi_in_dest = 0
+local midi_in_quant = false
+local midi_out_dev = 8
+local midi_out_ch = 1
+local midi_thru = false
 midi_rytm_dev = 10
 midi_rytm_ch = 1
 
 -- crow
-crow_is_here = false
-wsyn_amp = 5
-crw = {}
+local crow_is_here = false
+local wsyn_amp = 5
+local crw = {}
 crw.wsyn_amp = 5
 crw.env_shapes = {'logarithmic', 'linear', 'exponential'}
 for i = 1, 2 do
@@ -186,13 +182,13 @@ for i = 1, 2 do
 end
 
 -- jf
-jf_num_mono = 0
-jf_poly_alloc = vx.new(6, 2)
-jf_poly_notes = {}
+local jf_num_mono = 0
+local jf_poly_alloc = vx.new(6, 2)
+local jf_poly_notes = {}
 
 -- wsyn
-wsyn_alloc = vx.new(4, 2)
-wsyn_notes = {}
+local wsyn_alloc = vx.new(4, 2)
+local wsyn_notes = {}
 
 -- ansible
 ansi_view = false
@@ -202,7 +198,7 @@ for i = 1, 4 do
   ansi_trig[i] = false
 end
 
-ansi_cv = {}
+local ansi_cv = {}
 for i = 1, 4 do
   ansi_cv[i] = {}
   ansi_cv[i].lvl = 0
@@ -215,15 +211,9 @@ end
 chord_any = false
 chord_play = true
 chord_strum = false
-chord_preview = false
-prev_chord_inversion = 1
 chord_inversion = 1
 chord_oct_shift = 0
 last_chord_root = 0
-chordkeys_options = false
-strum_count_options = false
-strum_mode_options = false
-strum_skew_options = false
 strum_count = 6
 strum_mode = 1
 strum_skew = 0
@@ -269,11 +259,7 @@ quant_rate = 1/4
 -- patterns
 pattern_rec_mode = "queued"
 pattern_overdub = false
-copying_pattern = false
 copy_src = {state = false, pattern = nil, bank = nil}
-pasting_pattern = false
-duplicating_pattern = false
-appending_pattern = false
 pattern_clear = false
 pattern_view = false
 pattern_focus = 1
@@ -282,7 +268,6 @@ keyquant_edit = false
 pattern_bank_page = 0
 pattern_voicemap = false
 rec_enabled = false
-
 stop_all = false
 stop_all_timer = nil
 
@@ -1729,48 +1714,19 @@ function clear_pattern_loop(i, dur)
 end
 
 -------- misc, other and the rest --------
-local rep_rates = {1, 1/2, 3/2, 1/4, 2/5, 3/4, 8/3, 1/8, 3/16, 16/7, 4/3, 3/8, 2/3, 1/3, 4}
-local rep_rate_names = {"1/4", "1/8", "3/8", "1/16", "2/5", "3/16", "2/3", "1/32", "3/64", "4/7", "1/3", "3/32", "1/6", "1/12", "4"}
 function set_repeat_rate(k1, k2, k3, k4)
   if not key_repeat then trig_step = 0 end
   key_repeat = (k1 + k2 + k3 + k4) > 0 and true or false
   local idx = tonumber(tostring(k4..k3..k2..k1), 2)
   if idx > 0 then
-    if idx == 15 then
-      rep_rate = bar_val
-    else
-      rep_rate = rep_rates[idx]
-    end
-    print("repeat rate: "..rep_rate_names[idx], idx)
+    rep_rate = rep_rates[idx] * 4
   end
 end
-
-  --[[
-  1 [1] -> 1/4 = 1
-  2 [2] -> 1/8 = 1/2
-  3 [4] -> 1/16 = 1/4
-  4 [8] -> 1/32 = 1/8
-
-  1+2 [3] -> 3/8 = 3/2
-  2+3 [6] -> 3/16 = 3/4
-  3+4 [12] -> 3/32 = 3/8
-  1+4 [9] -> 3/64 = 3/16
-
-  1+3 [5] -> 2/5 = 8/5
-  2+4 [10] -> 4/7 = 16/7
-
-  1+2+3 [7] -> 2/3 = 8/3
-  1+2+4 [11] -> 1/3 = 4/3
-  1+3+4 [13] -> 1/6 = 2/3
-  2+3+4 [14] -> 1/12 = 1/3
-
-  1+2+3+4 [15] -> 1/64 = 1/16
-  ]]
 
 function kit_gridviz(note_num)
   local n = note_num - (kit_oct * 16) - 47 - kit_root_note
   local x = (n > 8 and n - 5 or n + 3)
-  local y = (n > 8 and 1 or 2) + (GRIDSIZE == 128 and 2 or 9)
+  local y = (n > 8 and 1 or 2) + 9
   if x > 3 and x < 12 then
     gkey[x][y].active = true
     dirtygrid = true
