@@ -1,8 +1,25 @@
 grd = {}
 
+-- local variables
 local trig_shortpress = false
 local held_chord_edit = 0
+local seq_hold = false
+local set_trigs_end = false
+local trigs_reset = false
+local drmfm_copying = false
+local drmfm_clipboard_contains = false
+local chord_preview = false
+local prev_chord_inversion = 1
+local chordkeys_options = false
+local strum_count_options = false
+local strum_mode_options = false
+local strum_skew_options = false
+local copying_pattern = false
+local pasting_pattern = false
+local duplicating_pattern = false
+local appending_pattern = false
 
+-- grid keys and redraw
 function grd.zero_keys(x, y, z)
   if (x < 4 or x > 13) and y < 4 then
     pattern_options(x, y, z)
