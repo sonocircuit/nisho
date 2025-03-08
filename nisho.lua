@@ -1,4 +1,4 @@
--- nisho v1.7.4 @sonocircuit
+-- nisho v1.7.5 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --   six voices & eight patterns
@@ -6,10 +6,12 @@
 --                &
 --           composition
 --
- 
----------------------------------------------------------------------------
--- TODO: revert to og polyform and kit prgchg num selection
----------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+-- TODO: add velocity to polyform
+-- TODO: add vibrato mod depth to polyform
+-- TODO: add velocity to crow/jf/wsyn: when amp == 0 then responds to velocity
+-------------------------------------------------------------------------------
 
 engine.name = "Polyform"
 
@@ -21,11 +23,10 @@ local vx = require 'voice'
 local lo = require 'lfo'
 
 local polyform = include 'lib/nishos_polyform'
-local grd_zero = include 'lib/nishos_grid_zero'
-local grd_one = include 'lib/nishos_grid_one'
 local mirror = include 'lib/nishos_reflection'
 local midim = include 'lib/nishos_midiimport'
 local drmfm = include 'lib/nishos_drmfm'
+local grd = include 'lib/nishos_grid'
 local nb = include 'lib/nb/lib/nb'
 
 g = grid.connect()
@@ -51,12 +52,13 @@ mod_a = false
 mod_b = false
 mod_c = false
 mod_d = false
+mod_chord = false
 
 -- keyboards
 int_focus = 1
 key_focus = 1
 voice_focus = 1
-strum_focus = 1
+strum_focus = 0
 key_link = true
 transposing = false
 transpose_value = 0
@@ -226,7 +228,7 @@ strum_count = 6
 strum_mode = 1
 strum_skew = 0
 strum_rate = 0.1
-strum_step = 0
+strum_drift = 0
 
 -- scale
 root_oct = 3 -- number of octaves root_note differs from root_base. required for changing root note after pattern rec.
@@ -370,13 +372,13 @@ for i = 1, NUM_VOICES do
 end
 
 -- chords
-current_chord = {}
+local chord_values = {1, 2, 4, 3, 5, 6, 7}
+local current_chord = {}
 local chord_arp = {}
 local chord = {}
 for i = 1, 12 do
   chord[i] = {}
   chord[i].is = {}
-  chord[i].map = {}
   chord[i].event = {}
   chord[i].notes = {}
   chord[i].strum = {}
@@ -387,6 +389,16 @@ for i = 1, 12 do
     for n = 1, 4 do
       chord[i].notes[t][n] = {}
     end
+  end
+end
+
+crd = {}
+for i = 1, 12 do
+  crd[i] = {}
+  for s = 1, 3 do
+    crd[i][s] = {}
+    crd[i][s].key = 0
+    crd[i][s].viz = 0
   end
 end
 
@@ -401,7 +413,6 @@ for i = 1, NUM_VOICES do
   notes_oct_int[i] = 0
   notes_oct_key[i] = 0
 end
-
 
 -- note viz
 local nv = {}
@@ -447,7 +458,6 @@ for x = 1, 16 do
   for y = 1, 16 do
     gkey[x][y] = {}
     gkey[x][y].active = false
-    gkey[x][y].chord_viz = 0
     gkey[x][y].note = 0
   end
 end
@@ -459,6 +469,11 @@ for i = 1, 8 do
   held[i].max = 0
   held[i].first = 0
   held[i].second = 0
+end
+
+rk = {}
+for i = 1, 4 do
+  rk[i] = 0
 end
 
 -- parameter UI
@@ -595,15 +610,18 @@ function clear_chord()
     for index, value in ipairs(current_chord) do
       local e = {t = eKEYS, i = key_focus, note = value, action = "note_off"} event(e)
     end
-    current_chord = {}
     notes_held = {}
+    current_chord = {}
   end
 end
 
 function play_chord(i)
   local i = i or last_chord_root
-  local chord_type = get_chord_type(i + 2)
+  local chord_type = chord_values[tonumber(tostring(crd[i][3].key..crd[i][2].key..crd[i][1].key), 2)]
   if chord[i].is[chord_type] or chord_any then
+    if key_repeat and #current_chord == 0 then
+      trig_step = 0
+    end
     clear_chord()
     -- set chord and strum notes
     current_chord = {}
@@ -656,86 +674,55 @@ function play_chord(i)
   end
 end
 
-function get_chord_type(x)
-  local off = GRIDSIZE == 128 and 8 or 0
-  if gkey[x][13 - off].active and gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return 7 --"Augmented"
-  elseif not gkey[x][13 - off].active and gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return 6 --"Minor 7"
-  elseif gkey[x][13 - off].active and not gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return 5 --"Major 7"
-  elseif gkey[x][13 - off].active and gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return 4 --"Diminished"
-  elseif not gkey[x][13 - off].active and gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return 2 --"Minor"
-  elseif gkey[x][13 - off].active and not gkey[x][14 - off].active and not gkey[x][15 - off].active then
-    return 1 --"Major"
-  elseif not gkey[x][13 - off].active and not gkey[x][14 - off].active and gkey[x][15 - off].active then
-    return 3 --"Sus4"
-  end
-end
-
 function build_chord_map()
   for i = 1, 12 do
     local note_num = 59 + i
-    chord[i].map = {}
-    chord[i].map = mu.chord_types_for_note(note_num, root_base, scale_names[current_scale])
-    --print("note"..mu.note_num_to_name(note_num))
-    --tab.print(chord[i].map)
-  end
-  set_chord_viz()
-end
-
-function set_chord_viz()
-  local off = GRIDSIZE == 128 and 0 or 8
-  for i = 1, 12 do
-    local x = i + 2
-    for y = 5 + off, 7 + off do
-      gkey[x][y].chord_viz = 0
+    local chordmap = mu.chord_types_for_note(note_num, root_base, scale_names[current_scale])
+    for s = 1, 3 do
+      crd[i][s].viz = 0
     end
     for t = 1, 7 do
       chord[i].is[t] = false
     end
-    if #chord[i].map > 0 then
-      if tab.contains(chord[i].map, "Augmented") then
-        gkey[x][5 + off].chord_viz = 2
-        gkey[x][6 + off].chord_viz = 2
-        gkey[x][7 + off].chord_viz = 2
-        chord[i].is[7] = true
+    if tab.contains(chordmap, "Augmented") then
+      for s = 1, 3 do
+        crd[i][s].viz = 2
       end
-      if tab.contains(chord[i].map, "Diminished") then
-        gkey[x][5 + off].chord_viz = 2
-        gkey[x][6 + off].chord_viz = 2
-        chord[i].is[4] = true
+      chord[i].is[7] = true
+    end
+    if tab.contains(chordmap, "Diminished") then
+      for s = 1, 2 do
+        crd[i][s].viz = 2
       end
-      if tab.contains(chord[i].map, "Major") then
-        gkey[x][5 + off].chord_viz = 9
-        chord[i].is[1] = true
+      chord[i].is[4] = true
+    end
+    if tab.contains(chordmap, "Major") then
+      crd[i][1].viz = 9
+      chord[i].is[1] = true
+    end
+    if tab.contains(chordmap, "Minor") then
+      crd[i][2].viz = 9
+      chord[i].is[2] = true
+    end
+    if tab.contains(chordmap, "Sus4") then
+      crd[i][3].viz = 9
+      chord[i].is[3] = true
+    end
+    if tab.contains(chordmap, "Major 7") then
+      if tab.contains(chordmap, "Sus4") then
+        crd[i][3].viz = 6
+      else
+        crd[i][3].viz = 3
       end
-      if tab.contains(chord[i].map, "Minor") then
-        gkey[x][6 + off].chord_viz = 9
-        chord[i].is[2] = true
+      chord[i].is[5] = true
+    end
+    if tab.contains(chordmap, "Minor 7") then
+      if tab.contains(chordmap, "Sus4") then
+        crd[i][3].viz = 6
+      else
+        crd[i][3].viz = 3
       end
-      if tab.contains(chord[i].map, "Sus4") then
-        gkey[x][7 + off].chord_viz = 9
-        chord[i].is[3] = true
-      end
-      if tab.contains(chord[i].map, "Major 7") then
-        if tab.contains(chord[i].map, "Sus4") then
-          gkey[x][7 + off].chord_viz = 6
-        else
-          gkey[x][7 + off].chord_viz = 3
-        end
-        chord[i].is[5] = true
-      end
-      if tab.contains(chord[i].map, "Minor 7") then
-        if tab.contains(chord[i].map, "Sus4") then
-          gkey[x][7 + off].chord_viz = 6
-        else
-          gkey[x][7 + off].chord_viz = 3
-        end
-        chord[i].is[6] = true
-      end
+      chord[i].is[6] = true
     end
   end
 end
@@ -1180,6 +1167,7 @@ function update_pattern_bank(i)
     send_program_change(i, p[i].bank)
     p[i].load = nil
   end
+  page_redraw(3)
 end
 
 function stop_all_patterns()
@@ -1676,11 +1664,12 @@ function run_keyrepeat()
 end
 
 function autostrum()
-  local rate = strum_rate
   local endpoint = strum_count + chord_inversion - 1
+  -- strum loop
   for i = chord_inversion, endpoint do
     local step = i
     local pos = i - chord_inversion + 1
+    -- calc index (step)
     if strum_mode == 2 then
       if pos % 2 == 0 then
         step = endpoint - pos + 1
@@ -1695,14 +1684,28 @@ function autostrum()
       step = endpoint - pos + 1
     end
     if step > 15 then step = 15 end
+    -- calc rate
+    local rate_var = math.random(-12, 12) * strum_drift -- rand + [0.0001 - 0.01]
+    local rate = strum_rate + rate_var
+    if strum_skew > 0 then
+      rate = strum_rate + ((endpoint - (i - 1)) * strum_skew * 0.001)
+    elseif strum_skew < 0 then
+      rate = strum_rate - (i * strum_skew * 0.001)
+    end
+    -- play note
+    local voice = strum_focus > 0 and strum_focus or key_focus
     local note = chord_arp[step] + (12 * chord_oct_shift)
-    local e = {t = eKEYS, i = strum_focus, note = note, action = "note_on"} event(e)
+    local e = {t = eKEYS, i = voice, note = note, action = "note_on"}
+    if key_quantize then
+      table.insert(quant_event, e)
+    else
+      event(e)
+    end
     clock.run(function()
       clock.sleep(rate)
-      local e = {t = eKEYS, i = strum_focus, note = note, action = "note_off"} event(e)
+      local e = {t = eKEYS, i = voice, note = note, action = "note_off"} event(e)
     end)
     clock.sleep(rate)
-    rate = rate - (i * strum_skew * 0.001)
   end
 end
 
@@ -1725,47 +1728,44 @@ function clear_pattern_loop(i, dur)
   pattern[i].step_max = pattern[i].endpoint
 end
 
-
 -------- misc, other and the rest --------
-function set_repeat_rate()
-  local off = GRIDSIZE == 128 and 0 or 8
-  -- get key state
-  local key1 = gkey[16][5 + off].active
-  local key2 = gkey[16][6 + off].active
-  local key3 = gkey[16][7 + off].active
-  local key4 = gkey[16][8 + off].active
-  -- get key_repeat state
-  if not key_repeat then
-    trig_step = 0
-  end
-  if (key1 or key2 or key3 or key4) then
-    key_repeat = true
-  else
-    key_repeat = false
-  end
-  -- get repeat rate
-  if key1 and not (key2 or key3 or key4) then
-    rep_rate = 1/4 * 4
-  elseif key2 and not (key1 or key3 or key4) then
-    rep_rate = 1/8 * 4
-  elseif key3 and not (key1 or key2 or key4) then
-    rep_rate = 1/16 * 4
-  elseif key4 and not (key1 or key2 or key3) then
-    rep_rate = 1/32 * 4
-  elseif key1 and key2 and not (key3 or key4) then
-    rep_rate = 3/16 * 4
-  elseif key2 and key3 and not (key1 or key4) then
-    rep_rate = 3/32 * 4
-  elseif key3 and key4 and not (key1 or key2) then
-    rep_rate = 3/64 * 4
-  elseif key1 and key3 and not (key2 or key4) then
-    rep_rate = 1/6 * 4
-  elseif key2 and key4 and not (key1 or key3) then
-    rep_rate = 1/12 * 4
-  elseif key1 and key4 and not (key2 or key3) then
-    rep_rate = 1/24 * 4
+local rep_rates = {1, 1/2, 3/2, 1/4, 2/5, 3/4, 8/3, 1/8, 3/16, 16/7, 4/3, 3/8, 2/3, 1/3, 4}
+local rep_rate_names = {"1/4", "1/8", "3/8", "1/16", "2/5", "3/16", "2/3", "1/32", "3/64", "4/7", "1/3", "3/32", "1/6", "1/12", "4"}
+function set_repeat_rate(k1, k2, k3, k4)
+  if not key_repeat then trig_step = 0 end
+  key_repeat = (k1 + k2 + k3 + k4) > 0 and true or false
+  local idx = tonumber(tostring(k4..k3..k2..k1), 2)
+  if idx > 0 then
+    if idx == 15 then
+      rep_rate = bar_val
+    else
+      rep_rate = rep_rates[idx]
+    end
+    print("repeat rate: "..rep_rate_names[idx], idx)
   end
 end
+
+  --[[
+  1 [1] -> 1/4 = 1
+  2 [2] -> 1/8 = 1/2
+  3 [4] -> 1/16 = 1/4
+  4 [8] -> 1/32 = 1/8
+
+  1+2 [3] -> 3/8 = 3/2
+  2+3 [6] -> 3/16 = 3/4
+  3+4 [12] -> 3/32 = 3/8
+  1+4 [9] -> 3/64 = 3/16
+
+  1+3 [5] -> 2/5 = 8/5
+  2+4 [10] -> 4/7 = 16/7
+
+  1+2+3 [7] -> 2/3 = 8/3
+  1+2+4 [11] -> 1/3 = 4/3
+  1+3+4 [13] -> 1/6 = 2/3
+  2+3+4 [14] -> 1/12 = 1/3
+
+  1+2+3+4 [15] -> 1/64 = 1/16
+  ]]
 
 function kit_gridviz(note_num)
   local n = note_num - (kit_oct * 16) - 47 - kit_root_note
@@ -2010,7 +2010,7 @@ function voice_note_on(i, note_num, vel)
   elseif voice[i].output == 7 then
     wsyn_note_on(note_num)
   elseif voice[i].output > 7 then
-    nb_note_on(voice[i].output - 7, note_num, util.linlin(1, 127, 0, 1, velocity))
+    nb_note_on(voice[i].output - 7, note_num, util.linlin(0, 127, 0, 1, velocity))
   end
   if midi_thru then
     local channel = midi_out_ch + i - 1
@@ -2430,6 +2430,9 @@ function init()
 
   params:add_number("strm_rate", "strum rate", 4, 100, 20, function(param) return round_form((1 / param:get()), 0.001,"hz") end)
   params:set_action("strm_rate", function(val) strum_rate = val / 200 end)
+
+  params:add_number("strm_drift", "strum drift", 0, 100, 0, function(param) return round_form(param:get(), 1,"%") end)
+  params:set_action("strm_drift", function(val) strum_drift = val / 10000 end)
 
   params:add_separator("drum_keys", "drum keys")
 
@@ -3012,9 +3015,9 @@ function enc(n, d)
   elseif prgchange_view then
     if n == 2 then
       if p[pattern_focus].prc_type < 3 then
-        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, polyform.prc_list())
+        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, 127)
       elseif p[pattern_focus].prc_type == 4 then
-        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, drmfm.prc_list())
+        p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, 0, 127)
       elseif  p[pattern_focus].prc_type == 5 then
           p[pattern_focus].prc_num[bank_focus] = util.clamp(p[pattern_focus].prc_num[bank_focus] + d, -1, 6)
       else
@@ -3462,19 +3465,19 @@ end
 
 -------- grid interface -------- 
 function g.key(x, y, z)
-  if GRIDSIZE == 128 then
-    grd_one.keys(x, y, z)
-  elseif GRIDSIZE == 256 then
-    grd_zero.keys(x, y, z)
+  if GRIDSIZE == 256 then
+    grd.zero_keys(x, y, z)
+  elseif GRIDSIZE == 128 then
+    grd.one_keys(x, y, z)
   end
   dirtygrid = true
 end 
 
 function gridredraw()
-  if GRIDSIZE == 128 then
-    grd_one.draw()
-  elseif GRIDSIZE == 256 then
-    grd_zero.draw()
+  if GRIDSIZE == 256 then
+    grd.zero_draw()
+  elseif GRIDSIZE == 128 then
+    grd.one_draw()
   end
 end
 
