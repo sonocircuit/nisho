@@ -18,6 +18,7 @@ local copying_pattern = false
 local pasting_pattern = false
 local duplicating_pattern = false
 local appending_pattern = false
+local seq_rate_names = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16","1/32"}
 
 -- grid keys and redraw
 function grd.zero_keys(x, y, z)
@@ -659,7 +660,7 @@ function grid_options(x, y, z, off) -- grid one: off = -7
         for i = 1, 4 do
           rk[i] = 0
         end
-        set_repeat_rate(rk[1], rk[2], rk[3], rk[4])
+        set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
       end
     end
   end
@@ -667,7 +668,6 @@ end
 
 function kit_grid(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
-  --print("kitgrid", x, y, z)
   if x > 3 and x < 12 then
     if y > 9 and y < 12 then
       local note = ((x - 3) + (11 - y) * 8) + (kit_oct * 16) + 47 + kit_root_note
@@ -754,7 +754,7 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
           cancel_drmf_perf()
         end
       elseif y == 11 then
-        if kit_edit_mutes then
+        if kit_edit_mutes and z == 1 then
           clear_kit_mutes()
         else
           local state = z == 1 and true or false
@@ -873,6 +873,7 @@ function seq_settings(x, z)
   if x > 4 and x < 13 and z == 1 then
     if not key_repeat_view then
       params:set("key_seq_rate", x - 4)
+      show_message("seq   rate:  "..seq_rate_names[x - 4])
     end
   elseif x > 12 then
     if x == 15 and z == 1 then
@@ -884,7 +885,7 @@ function seq_settings(x, z)
           for i = 1, 4 do
             rk[i] = 0
           end
-          set_repeat_rate(rk[1], rk[2], rk[3], rk[4])
+          set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
         end
         sequencer_config = false
       else
@@ -983,7 +984,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
             for i = 1, 4 do
               rk[i] = 0
             end
-            set_repeat_rate(rk[1], rk[2], rk[3], rk[4])
+            set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
           end
         end
       end
@@ -1003,7 +1004,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
         else
           rk[slot] = z
         end
-        set_repeat_rate(rk[1], rk[2], rk[3], rk[4])
+        set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
       end
     else
       if y == 13 and z == 1 then
@@ -1220,17 +1221,24 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
         params:set("strm_mode", x - 9)
       end
     elseif strum_skew_options then
-      if (x == 9 or x == 10) then
+      if (x == 8 or x == 9) then
         gkey[x][y].active = z == 1 and true or false
         if z == 1 then
-          params:delta("strm_rate", x == 9 and 1 or -1)
+          params:delta("strm_rate", x == 8 and -1 or 1)
+          show_message("strum   rate:  ".. params:string("strm_rate"))
         end
-      elseif x == 12 and z == 1 then
-        params:delta("strm_skew", -1)
-      elseif x == 13 and z == 1 then
-        params:set("strm_skew", 0)
-      elseif x == 14 and z == 1 then
-        params:delta("strm_skew", 1)
+      elseif (x == 10 or x == 11) then
+        if z == 1 then
+          params:delta("strm_drift", x == 10 and -1 or 1)
+          show_message("strum   drift:  ".. params:string("strm_drift"))
+        end
+      elseif x > 11 and x < 15 and z == 1 then
+        if x == 13 then
+          params:set("strm_skew", 0)
+        else
+          params:delta("strm_skew", x == 12 and - 1 or 1)
+        end
+        show_message("strum   skew:  ".. params:string("strm_skew"))
       end
     else
       if (x == 8 or x == 9) then
@@ -1329,8 +1337,10 @@ function pattern_key_draw(off)
     else
       g:led(i + 4, 7 + off, 2)
     end
-    if off ~= 0 or pattern_view then
-      g:led(i + 4, 8 + off , pattern_bank_page + 1 == i and 1 or 0)
+    if off == 0 then
+      g:led(i + 4, 8, pattern_bank_page + 1 == i and 1 or 0)
+    elseif pattern_view then
+      g:led(i + 4, 8 + off, pattern_bank_page + 1 == i and 1 or 0)
     end
   end
 end
@@ -1627,12 +1637,14 @@ function keyboard_draw(off)
         g:led(i + 9, 16 + off, strum_mode == i and 10 or 2)
       end
     elseif strum_skew_options then
-      g:led(9, 16 + off, gkey[9][16].active and 15 or (strum_rate == 0.5 and 10 or 4))
-      g:led(10, 16 + off, gkey[10][16].active and 15 or (strum_rate == 0.02 and 10 or 4))
+      g:led(8, 16 + off, gkey[8][16].active and 15 or (strum_rate == 0.5 and 10 or 4))
+      g:led(9, 16 + off, gkey[9][16].active and 15 or (strum_rate == 0.02 and 10 or 4))
+      g:led(10, 16 + off, gkey[10][16].active and 15 or 1)
+      g:led(11, 16 + off, gkey[11][16].active and 15 or 1)
       local val = util.clamp(math.floor(math.abs((strum_skew) / 2) + 4), 3, 15)
-      g:led(12, 16 + off, strum_skew < 0 and val or 2)
-      g:led(13, 16 + off, strum_skew == 0 and 10 or 2)
-      g:led(14, 16 + off, strum_skew > 0 and val or 2)
+      g:led(12, 16 + off, strum_skew < 0 and val or 3)
+      g:led(13, 16 + off, strum_skew == 0 and 10 or 3)
+      g:led(14, 16 + off, strum_skew > 0 and val or 3)
     else
       g:led(8, 16 + off, gkey[8][16].active and 15 or 2)
       g:led(9, 16 + off, gkey[9][16].active and 15 or 2)
