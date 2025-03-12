@@ -7,12 +7,6 @@
 --           composition
 --
 
--------------------------------------------------------------------------------
--- TODO: add velocity to polyform
--- TODO: add vibrato mod depth to polyform
--- TODO: add velocity to crow/jf/wsyn: when amp == 0 then responds to velocity
--------------------------------------------------------------------------------
-
 engine.name = "Polyform"
 
 local fs = require 'fileselect'
@@ -39,8 +33,8 @@ local rotate_grid = false
 local GRIDSIZE = 0
 local NUM_VOICES = 6
 
--- user modes
-rytm_mode = true
+-- user mode
+rytm_mode = false
 
 -- ui variables
 pageNum = 1
@@ -140,6 +134,7 @@ seq_rate = 1/4
 -- key repeat
 local rep_rate = 1/4
 local rep_rates = {1/4, 1/8, 3/8, 1/16, 1/3, 3/16, 1/6, 1/32, 3/64, 1/12, 5/16, 3/32, 7/16, 1/24, 9/16}
+local rep_rate_names = {"1/4", "1/8", "3/8", "1/16", "1/3", "3/16", "1/6", "1/32", "3/64", "1/12", "5/16", "3/32", "7/16", "1/24", "9/16"}
 key_repeat_view = false
 latch_key_repeat = false
 key_repeat = false
@@ -1023,16 +1018,12 @@ end
 function add_active_notes(i, voice, note_num)
   if i ~= nil then
     table.insert(pattern[i].active_notes[voice], note_num)
-    --print("added "..note_num.." to pattern ".. i .." voice ".. voice)
-    --tab.print(pattern[i].active_notes[voice])
   end
 end
 
 function remove_active_notes(i, voice, note_num)
   if i ~= nil then
     table.remove(pattern[i].active_notes[voice], tab.key(pattern[i].active_notes[voice], note_num))
-    --print("removed "..note_num.." to pattern ".. i .." voice ".. voice)
-    --tab.print(pattern[i].active_notes[voice])
   end
 end
 
@@ -1042,8 +1033,6 @@ function clear_active_notes(i)
       for _, note in ipairs(pattern[i].active_notes[voice]) do
         voice_note_off(voice, note)
       end
-      --print("cleared notes")
-      --tab.print(pattern[i].active_notes[voice])
       pattern[i].active_notes[voice] = {}
     end
   end
@@ -1056,7 +1045,6 @@ function set_pattern_length(i)
     if prev_length ~= pattern[i].length then
       pattern[i]:set_length(pattern[i].length)
       save_pattern_bank(i, p[i].bank)
-      --print("saved pattern bank", i, p[i].bank)
     end
   end
 end
@@ -1089,7 +1077,6 @@ function save_pattern_bank(i, bank)
   p[i].meter[bank] = pattern[i].meter
   p[i].length[bank] = pattern[i].length
   p[i].manual_length[bank] = pattern[i].manual_length
-  --print("saved pattern "..i.." bank "..bank)
 end
 
 function load_pattern_bank(i, bank)
@@ -1118,7 +1105,6 @@ function load_pattern_bank(i, bank)
     pattern[i]:stop()
   end
   page_redraw(3)
-  --print("loaded values", pattern[i].meter, pattern[i].barnum, pattern[i].manual_length)
 end
 
 function clear_pattern_bank(i, bank)
@@ -1134,7 +1120,6 @@ function clear_pattern_bank(i, bank)
     clear_active_notes(i)
     pattern[i]:clear()
   end
-  --print("pattern "..i.." bank "..bank.." cleared")
   show_message("pattern   cleared")
 end
 
@@ -1176,8 +1161,8 @@ function stop_all_patterns()
       clock.sync(bar_val)
       for i = 1, 8 do
         if p[i].stop and pattern[i].play == 1 then
-          p[i].stop = false
           pattern[i]:stop()
+          p[i].stop = false
         end
       end
       stop_all = false
@@ -1420,9 +1405,9 @@ end
 function build_midi_device_list()
   midi_devices = {}
   for i = 1, #midi.vports do
-    local long_name = midi.vports[i].name
-    local short_name = string.len(long_name) > 15 and util.acronym(long_name) or long_name
-    table.insert(midi_devices, i..": "..short_name)
+    local name = midi.vports[i].name
+    local id = string.len(name) > 8 and str_format(name, 8, "") or name
+    table.insert(midi_devices, i..": "..id)
   end
 end
 
@@ -1670,7 +1655,7 @@ function autostrum()
     end
     if step > 15 then step = 15 end
     -- calc rate
-    local rate_var = math.random(-12, 12) * strum_drift -- rand + [0.0001 - 0.01]
+    local rate_var = math.random(-12, 12) * strum_drift
     local rate = strum_rate + rate_var
     if strum_skew > 0 then
       rate = strum_rate + ((endpoint - (i - 1)) * strum_skew * 0.001)
@@ -1689,6 +1674,11 @@ function autostrum()
     clock.run(function()
       clock.sleep(rate)
       local e = {t = eKEYS, i = voice, note = note, action = "note_off"} event(e)
+      if key_quantize then
+        table.insert(quant_event, e)
+      else
+        event(e)
+      end
     end)
     clock.sleep(rate)
   end
@@ -1714,12 +1704,15 @@ function clear_pattern_loop(i, dur)
 end
 
 -------- misc, other and the rest --------
-function set_repeat_rate(k1, k2, k3, k4)
+function set_repeat_rate(k1, k2, k3, k4, keypress)
   if not key_repeat then trig_step = 0 end
   key_repeat = (k1 + k2 + k3 + k4) > 0 and true or false
   local idx = tonumber(tostring(k4..k3..k2..k1), 2)
   if idx > 0 then
     rep_rate = rep_rates[idx] * 4
+    if keypress == 1 then
+      show_message("repeat  rate:  "..rep_rate_names[idx])
+    end
   end
 end
 
@@ -1932,8 +1925,9 @@ function send_aftertouch(i, val)
     local min = i == 1 and 1 or 3
     local max = i == 1 and 2 or 8
     for voice = min, max do
-      engine.vibrato_depth(voice, val)
-    end
+      engine.vibrato_rmod(voice, polyform.rate_mode * val)
+      engine.vibrato_dmod(voice, polyform.depth_mod * val)
+    end  
   elseif voice[i].output == 3 then
     local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
     m[i]:channel_pressure(m_val, voice[i].midi_ch)
@@ -1949,7 +1943,7 @@ end
 function voice_note_on(i, note_num, vel)
   local velocity = vel or voice[i].velocity
   if (voice[i].output == 1 or voice[i].output == 2) then
-    polyform.note_on(voice[i].output, note_num)
+    polyform.note_on(voice[i].output, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
   elseif voice[i].output == 3 then
     m[i]:note_on(note_num, velocity, voice[i].midi_ch)
     if voice[i].length > 0 then
@@ -1960,11 +1954,11 @@ function voice_note_on(i, note_num, vel)
       end)
     end
   elseif (voice[i].output == 4 or voice[i].output == 5) then
-    crow_note_on(voice[i].output - 3, note_num)
+    crow_note_on(voice[i].output - 3, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
   elseif voice[i].output == 6 then
-    jf_note_on(i, note_num)
+    jf_note_on(i, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
   elseif voice[i].output == 7 then
-    wsyn_note_on(note_num)
+    wsyn_note_on(note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
   elseif voice[i].output > 7 then
     nb_note_on(voice[i].output - 7, note_num, util.linlin(0, 127, 0, 1, velocity))
   end
@@ -2035,7 +2029,7 @@ function clear_all_notes()
   end
 end
 
-function crow_note_on(i, note_num)
+function crow_note_on(i, note_num, velocity)
   local cv = i == 1 and 1 or 3
   local env = i == 1 and 2 or 4
   local v8 = ((note_num - 60) / crw[i].v8_std)
@@ -2046,9 +2040,9 @@ function crow_note_on(i, note_num)
     crow.output[cv].volts = v8
   end
   if crw[i].count > 0 and crw[i].legato then
-    crow.output[env].action = string.format("{ to(%f,%f,'%s') }", crw[i].env_amp * crw[i].env_s, crw[i].env_d, crw[i].env_curve)
+    crow.output[env].action = string.format("{ to(%f,%f,'%s') }", crw[i].env_amp * crw[i].env_s * velocity, crw[i].env_d, crw[i].env_curve)
   else
-    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", crw[i].env_amp, crw[i].env_a, crw[i].env_curve, crw[i].env_amp * crw[i].env_s, crw[i].env_d, crw[i].env_curve)
+    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", crw[i].env_amp * velocity, crw[i].env_a, crw[i].env_curve, crw[i].env_amp * crw[i].env_s * velocity, crw[i].env_d, crw[i].env_curve)
   end
   crow.output[env]()
   crw[i].count = crw[i].count + 1
@@ -2065,10 +2059,10 @@ function crow_note_off(i)
   end
 end
 
-function jf_note_on(i, note_num)
+function jf_note_on(i, note_num, velocity)
   local note = (note_num - 60) / 12
   if voice[i].jf_mode == 1 then
-    crow.ii.jf.play_voice(voice[i].jf_ch, note, voice[i].jf_amp)
+    crow.ii.jf.play_voice(voice[i].jf_ch, note, voice[i].jf_amp * velocity)
     voice[i].jf_count = voice[i].jf_count + 1
   else
     local slot = jf_poly_notes[note_num]
@@ -2080,7 +2074,7 @@ function jf_note_on(i, note_num)
       crow.ii.jf.trigger(slot.id + jf_num_mono, 0)
     end
     jf_poly_notes[note_num] = slot
-    crow.ii.jf.play_voice(slot.id + jf_num_mono, note, voice[i].jf_amp)
+    crow.ii.jf.play_voice(slot.id + jf_num_mono, note, voice[i].jf_amp * velocity)
   end
 end
 
@@ -2101,7 +2095,7 @@ function jf_note_off(i, note_num)
   end
 end
 
-function wsyn_note_on(note_num)
+function wsyn_note_on(note_num, velocity)
   local note = (note_num - 60) / 12
   local slot = wsyn_notes[note_num]
   if slot == nil then
@@ -2112,7 +2106,7 @@ function wsyn_note_on(note_num)
     crow.ii.wsyn.velocity(slot.id, 0)
   end
   wsyn_notes[note_num] = slot
-  crow.ii.wsyn.play_voice(slot.id, note, wsyn_amp)  
+  crow.ii.wsyn.play_voice(slot.id, note, wsyn_amp * velocity)  
 end
 
 function wsyn_note_off(note_num)
@@ -2355,7 +2349,7 @@ function init()
   params:set_action("glb_midi_panic", function() all_notes_off() end)
 
   -- keyboard settings
-  params:add_group("keyboard_group", "keyboard settings", 16)
+  params:add_group("keyboard_group", "keyboard settings", 17)
 
   params:add_separator("scale_keys", "scale keys")
 
@@ -2384,8 +2378,8 @@ function init()
   params:add_number("strm_skew", "strum skew", -30, 30, 0, function(param) return round_form((util.linlin(-30, 30, -100, 100, param:get())), 1,"%") end)
   params:set_action("strm_skew", function(val) strum_skew = val end)
 
-  params:add_number("strm_rate", "strum rate", 4, 100, 20, function(param) return round_form((1 / param:get()), 0.001,"hz") end)
-  params:set_action("strm_rate", function(val) strum_rate = val / 200 end)
+  params:add_number("strm_rate", "strum rate", 10, 100, 70, function(param) return round_form((1 / strum_rate), 0.01,"hz") end)
+  params:set_action("strm_rate", function(val) strum_rate = (110 - val) / 200 end)
 
   params:add_number("strm_drift", "strum drift", 0, 100, 0, function(param) return round_form(param:get(), 1,"%") end)
   params:set_action("strm_drift", function(val) strum_drift = val / 10000 end)
@@ -2408,7 +2402,7 @@ function init()
   params:add_group("rytm_params", "rytm settings", 2)
   if not rytm_mode then params:hide("rytm_params") end
 
-  params:add_option("rytm_out_device", "rytm out device", midi_devices, 1)
+  params:add_option("rytm_out_device", "rytm out device", midi_devices, 2)
   params:set_action("rytm_out_device", function(val) m[midi_rytm_dev] = midi.connect(val) end)
 
   params:add_number("rytm_out_channel", "rytm out channel", 1, 16, 14)
@@ -3509,22 +3503,21 @@ function get_mid(str)
 end
 
 function show_message(message)
-  clock.run(function()
+  if msg_clock ~= nil then
+    clock.cancel(msg_clock)
+  end
+  msg_clock = clock.run(function()
     view_message = message
     dirtyscreen = true
-    if string.len(message) > 20 then
-      clock.sleep(1.6) -- long display time
-      view_message = ""
-      dirtyscreen = true
-    else
-      clock.sleep(0.8) -- short display time
-      view_message = ""
-      dirtyscreen = true
-    end
+    local dur = string.len(message) > 20 and 1.6 or 0.8
+    clock.sleep(dur)
+    view_message = ""
+    dirtyscreen = true
+    msg_clock = nil
   end)
 end
 
-function build_menu() -- it's so weird that in this fuction > or < does not work in conditionals!!!????
+function build_menu()
   for i = 1, NUM_VOICES do
     if (voice[i].output == 3 or voice[i].output == 8 or voice[i].output == 9) and voice[i].keys_option < 4 then
       params:show("note_velocity_"..i)
@@ -3664,11 +3657,11 @@ function get_grid_size()
   if GRIDSIZE == 256 and rotate_grid then
     g:rotation(1) -- 1 is 90°
   end
+  dirtygrid = true
 end
 
 function grid.add()
   get_grid_size()
-  dirtygrid = true
 end
 
 function show_banner()
