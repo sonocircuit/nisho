@@ -85,7 +85,7 @@ function get_specs(name)
   local pattern = tonumber(name:match("[P%d+](%d+)"))
   local num_beats = tonumber(name:match("[_%d+](%d+)"))
   if name and pattern and num_beats then
-    print(type(bank), type(pattern), type(num_beats))
+    --print(type(bank), type(pattern), type(num_beats))
     return bank, pattern, num_beats
   end
 end
