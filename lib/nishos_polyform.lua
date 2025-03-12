@@ -16,6 +16,9 @@ for i = 1, 2 do
   current_patch[i] = ""
 end
 
+polyForm.rate_mode = 0
+polyForm.depth_mod = 0
+
 local polyform_params = {
   main_amp = 0,
   pan = 0, 
@@ -24,6 +27,7 @@ local polyform_params = {
   send_B = 0,
   unison_mode = 0,
   unison_detune = 0,
+  ptichbend_range = 0,
   saw_tune = 0,
   saw_shape = 0,
   swm_rate = 0,
@@ -59,7 +63,9 @@ local polyform_params = {
   mod_pulse_width = 0,
   mod_noise_level = 0,
   vib_freq = 0,
+  vib_freqmod = 0,
   vib_depth = 0,
+  vib_depthmod = 0,
   vib_onset = 0,
   vib_delay = 0,
   drift_freq = 0,
@@ -260,17 +266,15 @@ local function load_synth_patch(path, i)
         current_patch[active_ch] = name:gsub(".patch", "")
         print("loaded patch: "..path)
       else
+        if util.file_exists(failsafe_patch) then
+          load_synth_patch(failsafe_patch, i)
+        end
         print("error: could not load patch", path)
-        load_default_patch(i)
       end
     else
       print("error: not a polyform patch file")
     end
   end
-end
-
-function load_default_patch(i)
-  load_synth_patch(failsafe_patch, i)
 end
 
 -- load patch via program change
@@ -292,22 +296,23 @@ function polyForm.prc_list()
 end
 
 -- play and mute
-function polyForm.note_on(synth, note_num)
+function polyForm.note_on(synth, note_num, vel)
   local freq = mu.note_num_to_freq(note_num)
+  local vel = vel or 1
   local offset = synth == 1 and 0 or 2
   if synthvoice[synth].unison then
     local min = synth == 1 and 1 or 3
     local max = synth == 1 and 2 or 8
     local off = synth == 1 and 2 or -2
     for voice = min, max do
-      engine.trig(voice, detune_freq(voice + off, freq, synthvoice[synth].detune))
+      engine.trig(voice, detune_freq(voice + off, freq, synthvoice[synth].detune), vel)
     end
     if synthvoice[synth].env == 2 then
       synthvoice[synth].count = synthvoice[synth].count + 1
     end
   elseif synthvoice[synth].env == 1 then
     synthvoice[synth].vox = util.wrap(synthvoice[synth].vox + 1, 1, (synth == 1 and 1 or 6))
-    engine.trig(synthvoice[synth].vox + offset, freq)
+    engine.trig(synthvoice[synth].vox + offset, freq, vel)
   else
     local slot = synthvoice[synth].notes[note_num]
     if slot == nil then
@@ -318,7 +323,7 @@ function polyForm.note_on(synth, note_num)
       engine.stop(slot.id + offset)
     end
     synthvoice[synth].notes[note_num] = slot
-    engine.trig(slot.id + offset, freq)
+    engine.trig(slot.id + offset, freq, vel)
   end
 end
 
@@ -363,7 +368,7 @@ function polyForm.init()
   for i = 1, 2 do
     local name = i == 1 and "mono" or "poly"
 
-    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 65)
+    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 67)
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
@@ -525,9 +530,15 @@ function polyForm.init()
     -- vibrato rate
     params:add_control("polyform_vib_freq_"..i, "vibrato rate", controlspec.new(0.2, 20, "exp", 0, 8), function(param) return (round_form(param:get(), 0.01," hz")) end)
     params:set_action("polyform_vib_freq_"..i, function(x) set_value(i, engine.vibrato_rate, x) end)
+    -- vibrato rate mod
+    params:add_control("polyform_vib_freqmod_"..i, "vibrato rate mod", controlspec.new(-1, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:set_action("polyform_vib_freqmod_"..i, function(x) polyForm.rate_mode = x end)
     -- vibrato depth
     params:add_control("polyform_vib_depth_"..i, "vibrato depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_vib_depth_"..i, function(x) set_value(i, engine.vibrato_depth, x) end)
+    -- vibrato depth mod
+    params:add_control("polyform_vib_depthmod_"..i, "vibrato depth mod", controlspec.new(0, 1, "lin", 0, 0), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:set_action("polyform_vib_depthmod_"..i, function(x) polyForm.depth_mod = x end)
     -- vibrato onset
     params:add_control("polyform_vib_onset_"..i, "vibrato fade in", controlspec.new(0, 2, "lin", 0, 0.2), function(param) return (round_form(param:get(), 0.01, "s")) end)
     params:set_action("polyform_vib_onset_"..i, function(x) set_value(i, engine.vibrato_onset, x) end)
