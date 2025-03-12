@@ -74,7 +74,7 @@ function reflection:start(beat_sync)
     clock.cancel(self.clock)
   end
   self.clock = clock.run(function()
-    clock.sync(beat_sync, offset)
+    clock.sync(beat_sync)
     self:begin_playback()
   end)
 end
@@ -300,10 +300,9 @@ function reflection:begin_playback()
   end
 end
 
-function reflection:end_playback(silent)
-  if self.clock and not silent then
+function reflection:end_playback()
+  if self.clock then
     clock.cancel(self.clock)
-    self.clock = nil
   end
   self.play = 0
   self.rec = 0
@@ -314,6 +313,7 @@ function reflection:end_playback(silent)
   end
   self:_clear_flags()
   self.end_callback()
+  self.clock = nil
 end
 
 function reflection:_clear_flags()
