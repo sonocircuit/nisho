@@ -1,4 +1,4 @@
-// supercollider class based on the skilled labour study written by dan derks & ezra buchla for monome.org
+// supercollider class based on the skilled labour study written by ezra buchla & dani derks for monome.org
 // synthDef written by sacha di piazza with bits of code and inspiration from ezra buchla, zack scholl & naomi seyfer
 
 Polyform {
@@ -17,7 +17,7 @@ Polyform {
 			s.waitForBoot {
 
 				SynthDef("Polyform",{
-					arg out, gate = 1, freq = 110,
+					arg out, gate = 1, freq = 110, vel = 1,
 					main_amp = 0.2, pan = 0, mix_osc_level = 1, mix_noise_level = 0,
 					sendA = 0, sendB = 0, sendABus = 0, sendBBus = 0,
 					// ptichbend
@@ -49,7 +49,9 @@ Polyform {
 					cutoff_lpf = 500, res_lpf = 0, env_lpf_depth = 0.5, env_lpf_mod = 0,
 					cutoff_hpf = 20, res_hpf = 0, env_hpf_depth = 0, env_hpf_mod = 0,
 					// vibrato
+					vibrato_rmod = 0,
 					vibrato_rate = 6,
+					vibrato_dmod = 0,
 					vibrato_depth = 0,
 					vibrato_onset = 0,
 					vibrato_delay = 0.1,
@@ -60,7 +62,8 @@ Polyform {
 					var signal, osc_mix, osc_saw, osc_pulse, osc_noise,
 					freq_saw, freq_pulse, lfo_saw, lfo_pulse,
 					cut_lin_scale = 1, cut_lin_lpf, cut_lpf_mod, cut_lin_hpf, cut_hpf_mod, rq_lpf, rq_hpf,
-					env, env_ar, env_adsr, action_ar, action_adsr, mod_val, env_mod, env_mod_ar, env_mod_adsr;
+					env, env_ar, env_adsr, action_ar, action_adsr, mod_val, env_mod, env_mod_ar, env_mod_adsr,
+					vibrato_freq, vibrato_amount;
 
 					// smooth args
 					main_amp = Lag.kr(main_amp);
@@ -77,6 +80,8 @@ Polyform {
 					res_hpf = Lag.kr(res_hpf);
 					mod_wheel = Lag.kr(mod_wheel);
 					pb_depth = Lag.kr(pb_depth);
+					vibrato_rmod = Lag.kr(vibrato_rmod);
+					vibrato_dmod = Lag.kr(vibrato_dmod);
 
 					// randomize slop
 					freq_slop = freq_slop * Rand(-2, 2);
@@ -101,9 +106,11 @@ Polyform {
 					mod_val = Select.kr(mod_source > 0, [env_mod, mod_wheel]);
 					
 					// freq slop, ptichbend  vibrato
+					vibrato_freq = (vibrato_rate + (10 * vibrato_rmod)).max(0.2).min(20);
+					vibrato_amount = ((vibrato_depth + vibrato_dmod) * 0.1).max(0).min(0.1);
 					freq = freq + freq_slop;
 					freq = Lag.kr(freq * 2.pow((pb_depth * pb_range) / 12));
-					freq = Vibrato.kr(freq, vibrato_rate, vibrato_depth / 10, vibrato_delay, vibrato_onset);
+					freq = Vibrato.kr(freq, vibrato_freq, vibrato_amount, vibrato_delay, vibrato_onset);
 
 					// tune oscillators. expected range [-24, 24] semitones.
 					freq_saw = Lag.kr(freq * 2.pow(saw_tune / 12));
@@ -149,7 +156,7 @@ Polyform {
 					signal = Pan2.ar(signal, (pan + pan_slop).max(-1).min(1));
 
 					//output
-					signal = signal * env * main_amp;
+					signal = signal * env * main_amp * vel;
 
 					// ouptut stage
 					Out.ar(out, signal);
@@ -173,6 +180,7 @@ Polyform {
 
 		globalParams = Dictionary.newFrom([
 			\freq, 220,
+			\vel, 1,
 			\main_amp, 1,
 			\pan, 0,
 			\sendA, 0,
@@ -226,7 +234,9 @@ Polyform {
 			\envmod_s, 0.6,
 			\envmod_r, 1,
 
+			\vibrato_rmod, 0,
 			\vibrato_rate, 8,
+			\vibrato_dmod, 0,
 			\vibrato_depth, 0,
 			\vibrato_delay, 0,
 			\vibrato_onset, 0.2,
@@ -245,26 +255,17 @@ Polyform {
 		});
 	}
 
-	playVoice { arg voiceKey, freq;
+	playVoice { arg voiceKey, freq, vel;
 		singleVoices[voiceKey].set(\gate, -1.05);
 		voiceParams[voiceKey][\freq] = freq;
+		voiceParams[voiceKey][\vel] = vel;
 		Synth.new("Polyform",
 		[
 			\freq, freq,
+			\vel, vel,
 			\sendABus, ~sendA ? Server.default.outputBus,
 			\sendBBus, ~sendB ? Server.default.outputBus,
 		] ++ voiceParams[voiceKey].getPairs, singleVoices[voiceKey]);
-	}
-
-	trigger { arg voiceKey, freq;
-		if( voiceKey == 'all',{
-			voiceKeys.do({ arg vK;
-				this.playVoice(vK, freq);
-			});
-		},
-		{
-			this.playVoice(voiceKey, freq);
-		});
 	}
 
 	stopVoice { arg voiceKey;
@@ -274,17 +275,6 @@ Polyform {
 	adjustVoice { arg voiceKey, paramKey, paramValue;
 		singleVoices[voiceKey].set(paramKey, paramValue);
 		voiceParams[voiceKey][paramKey] = paramValue
-	}
-
-	setParam { arg voiceKey, paramKey, paramValue;
-		if( voiceKey == 'all',{
-			voiceKeys.do({ arg vK;
-				this.adjustVoice(vK, paramKey, paramValue);
-			});
-		},
-		{
-			this.adjustVoice(voiceKey, paramKey, paramValue);
-		});
 	}
 
 	freeAllNotes {
