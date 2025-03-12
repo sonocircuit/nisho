@@ -215,17 +215,15 @@ local function load_drmfm_kit(path)
         current_kit = name:gsub(".kit", "")
         print("loaded kit: "..path)
       else
+        if util.file_exists(failsafe_kit) then
+          load_drmfm_kit(failsafe_kit)
+        end
         print("error: could not load kit", path)
-        load_default_kit()
       end
     else
       print("error: not a kit file")
     end
   end
-end
-
-function load_default_kit()
-  load_drmfm_kit(failsafe_kit)
 end
 
 -- load kit via program change
