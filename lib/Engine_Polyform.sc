@@ -1,4 +1,4 @@
-// Engine template written by dan derks & ezra buchla for monome.org
+// Engine template written by ezra buchla & dani derks for monome.org
 // adapted by sacha di piazza for polyform engine
 
 Engine_Polyform : CroneEngine {
@@ -13,10 +13,11 @@ Engine_Polyform : CroneEngine {
 
 		kernel = Polyform.new(Crone.server);
 
-		this.addCommand(\trig, "sf", { arg msg;
+		this.addCommand(\trig, "sff", { arg msg;
 			var voiceKey = msg[1].asSymbol;
 			var freq = msg[2].asFloat;
-			kernel.trigger(voiceKey, freq);
+			var vel = msg[3].asFloat;
+			kernel.playVoice(voiceKey, freq, vel);
 		});
 
 		this.addCommand(\stop, "s", { arg msg;
@@ -26,7 +27,7 @@ Engine_Polyform : CroneEngine {
 
 		kernel.globalParams.keysValuesDo({ arg paramKey;
 			this.addCommand(paramKey, "sf", {arg msg;
-				kernel.setParam(msg[1].asSymbol, paramKey.asSymbol, msg[2].asFloat);
+				kernel.adjustVoice(msg[1].asSymbol, paramKey.asSymbol, msg[2].asFloat);
 			});
 		});
 
