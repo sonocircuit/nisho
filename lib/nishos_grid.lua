@@ -1,6 +1,11 @@
 grd = {}
 
 -- local variables
+local mod_a = false
+local mod_b = false
+local mod_c = false
+local mod_d = false
+local mod_any = false
 local trig_shortpress = false
 local held_chord_edit = 0
 local seq_hold = false
@@ -538,7 +543,7 @@ function modifier_keys(x, y, z, off) -- grid one: off = -6
       mod_d = z == 1 and true or false
     end
   end
-  mod_chord = z == 1 and true or false
+  mod_any = z == 1 and true or false
 end
 
 function voice_settings(x, y, z, off) -- grid one: off = -6
@@ -751,7 +756,9 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
         if z == 1 then
           run_drmf_perf()
         else
-          cancel_drmf_perf()
+          if not mod_any then
+            cancel_drmf_perf()
+          end
         end
       elseif y == 11 then
         if kit_edit_mutes and z == 1 then
@@ -821,7 +828,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
         notes_last = new_note
       -- toggle key link
       elseif x > 7 and x < 10 then
-        if (mod_a or mod_b or mod_c or mod_d) then
+        if mod_any then
           transposing = not transposing
           page_redraw(1)
         else
@@ -897,78 +904,65 @@ end
 
 function octave_options(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
-  --("octave options", x, y, z)
-  if (mod_a or mod_b or mod_c or mod_d) and x == 1 and z == 1 then
-    ansi_view = not ansi_view
-  elseif y == 13 and x == 2 then
-    -- channel aftertouch
-    local at_coro = z == 1 and at_ramp_up or at_ramp_down
-    if at[key_focus].timer ~= nil then
-      clock.cancel(at[key_focus].timer)
-    end
-    at[key_focus].timer = clock.run(at_coro, key_focus)
-  elseif y == 14 and x == 2 then
-    -- modwheel aftertouch
-    local mw_coro = z == 1 and mw_ramp_up or mw_ramp_down
-    if mw[key_focus].timer ~= nil then
-      clock.cancel(mw[key_focus].timer)
-    end
-    mw[key_focus].timer = clock.run(mw_coro, key_focus)
-  elseif (y == 15 or y == 16) and x == 2 then
-    -- pitchbend
-    local pb_coro = z == 1 and pb_ramp_up or pb_ramp_down
-    pb[key_focus].dir = y == 15 and 1 or -1
-    if pb[key_focus].timer ~= nil then
-      clock.cancel(pb[key_focus].timer)
-    end
-    pb[key_focus].timer = clock.run(pb_coro, key_focus, pb[key_focus].dir)
-  end
-  if ansi_view then
-    local i = y - 12
-    if x == 1 then
-      gkey[x][y].active = z == 1 and true or false
-      if z == 1 then
-        table.insert(ansi_held, i)
-        if key_repeat then
-          if #ansi_held == 1 then
-            trig_step = 0
+  if x == 1 then
+    if mod_any and z == 1 then
+      ansi_view = not ansi_view
+    else
+      if ansi_view then
+        local i = y - 12
+        gkey[x][y].active = z == 1 and true or false
+        if z == 1 then
+          table.insert(ansi_held, i)
+          if key_repeat then
+            if #ansi_held == 1 then
+              trig_step = 0
+            end
+          else
+            local e = {t = eANSI, i = i} event(e)
           end
         else
-          local e = {t = eANSI, i = i} event(e)
+          table.remove(ansi_held, tab.key(ansi_held, i))
         end
       else
-        table.remove(ansi_held, tab.key(ansi_held, i))
-      end
-    end
-  else
-    if x == 1 then
-      if y == 13 and z == 1 then
-        if kit_view then
-          params:delta("kit_octaves", 1)
-        else
-          params:delta("interval_octaves_"..int_focus, 1)
-        end
-      elseif y == 14 and z == 1 then
-        if kit_view then
-          params:delta("kit_octaves", -1)
-        else
-          params:delta("interval_octaves_"..int_focus, -1)
-        end
-      elseif y == 15 and z == 1 then
-        if chordkeys_options then
-          params:delta("strum_octaves", 1)
-        else
-          params:delta("keys_octaves_"..key_focus, 1)
-        end
-      elseif y == 16 and z == 1 then
-        if chordkeys_options then
-          params:delta("strum_octaves", -1)
-        else
-          params:delta("keys_octaves_"..key_focus, -1)
+        if (y == 13 or y == 14) and z == 1 then
+          local inc = y == 13 and 1 or -1
+          if kit_view then
+            params:delta("kit_octaves", inc)
+          else
+            params:delta("interval_octaves_"..int_focus, inc)
+          end
+        elseif (y == 15 or y == 16) and z == 1 then
+          local inc = y == 15 and 1 or -1
+          if chordkeys_options then
+            params:delta("strum_octaves", inc)
+          else
+            params:delta("keys_octaves_"..key_focus, inc)
+          end
         end
       end
     end
-  end
+  elseif x == 2 then
+    if y == 13 then -- channel aftertouch
+      local at_coro = z == 1 and at_ramp_up or at_ramp_down
+      if at[key_focus].timer ~= nil then
+        clock.cancel(at[key_focus].timer)
+      end
+      at[key_focus].timer = clock.run(at_coro, key_focus)
+    elseif y == 14 then -- modwheel
+      local mw_coro = z == 1 and mw_ramp_up or mw_ramp_down
+      if mw[key_focus].timer ~= nil then
+        clock.cancel(mw[key_focus].timer)
+      end
+      mw[key_focus].timer = clock.run(mw_coro, key_focus)
+    elseif (y == 15 or y == 16) then -- pitchbend
+      local pb_coro = z == 1 and pb_ramp_up or pb_ramp_down
+      pb[key_focus].dir = y == 15 and 1 or -1
+      if pb[key_focus].timer ~= nil then
+        clock.cancel(pb[key_focus].timer)
+      end
+      pb[key_focus].timer = clock.run(pb_coro, key_focus, pb[key_focus].dir)
+    end
+  end  
 end
 
 function event_options(x, y, z, off) -- off -8 for grid one
@@ -990,7 +984,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
       end
     else
       if voice[key_focus].keys_option == 3 and y == 16 then
-        mod_chord = z == 1 and true or false
+        mod_any = z == 1 and true or false
       end
     end
   elseif x == 16 then
@@ -1267,7 +1261,7 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
         held_chord_edit = held_chord_edit + (z * 2 - 1)
         if z == 1 then
           if held_chord_edit < 1 then held_chord_edit = 1 end
-          if mod_chord then
+          if mod_any then
             prev_chord_inversion = x - 10
           end
           chord_inversion = x - 10
