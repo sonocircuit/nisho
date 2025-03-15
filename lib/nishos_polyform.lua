@@ -84,7 +84,7 @@ for i = 1, 2 do
   synthvoice[i].detune = 1
   synthvoice[i].count = 0
   synthvoice[i].alloc = vx.new(alloc_num, 2) -- 2 is LRU
-  synthvoice[i].notes = {}
+  synthvoice[i].slot = {}
 end
 
 -- JP800 supersaw emulation based on adam szbao's thesis,
@@ -295,6 +295,7 @@ function polyForm.prc_list()
   return num
 end
 
+prev_note_num = 0
 -- play and mute
 function polyForm.note_on(synth, note_num, vel)
   local freq = mu.note_num_to_freq(note_num)
@@ -314,15 +315,19 @@ function polyForm.note_on(synth, note_num, vel)
     synthvoice[synth].vox = util.wrap(synthvoice[synth].vox + 1, 1, (synth == 1 and 1 or 6))
     engine.trig(synthvoice[synth].vox + offset, freq, vel)
   else
-    local slot = synthvoice[synth].notes[note_num]
+    local slot = synthvoice[synth].slot[note_num]
     if slot == nil then
+      if synth == 1 then
+        synthvoice[synth].slot[prev_note_num] = nil
+        prev_note_num = note_num
+      end
       slot = synthvoice[synth].alloc:get()
       slot.count = 1
     end
     slot.on_release = function()
       engine.stop(slot.id + offset)
     end
-    synthvoice[synth].notes[note_num] = slot
+    synthvoice[synth].slot[note_num] = slot
     engine.trig(slot.id + offset, freq, vel)
   end
 end
@@ -335,11 +340,11 @@ function polyForm.note_off(synth, note_num)
         polyForm.panic(synth)
       end
     else
-      local slot = synthvoice[synth].notes[note_num]
+      local slot = synthvoice[synth].slot[note_num]
       if slot ~= nil then
         synthvoice[synth].alloc:release(slot)
       end
-      synthvoice[synth].notes[note_num] = nil
+      synthvoice[synth].slot[note_num] = nil
     end
   end
 end
@@ -402,7 +407,7 @@ function polyForm.init()
     params:add_number("polyform_unison_detune_"..i, "detune", 1, 100, 1, function(param) return round_form(param:get(), 1, "%") end)
     params:set_action("polyform_unison_detune_"..i, function(x) synthvoice[i].detune = x end)
     -- pitchbend range
-    params:add_number("polyform_ptichbend_range_"..i, "pitchbend", 0, 24, 7, function(param) return param:get().."st" end)
+    params:add_number("polyform_ptichbend_range_"..i, "pitchbend", 0, 24, 7, function(param) return "±"..param:get().."st" end)
     params:set_action("polyform_ptichbend_range_"..i, function(x) set_value(i, engine.pb_range, x) end)
     -- osc mix
     params:add_control("polyform_mix_"..i, "mix [saw/pulse]", controlspec.new(-1, 1, "lin", 0, -0.75), function(param) return mix_display(param:get()) end)
