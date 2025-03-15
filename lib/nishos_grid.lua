@@ -25,6 +25,82 @@ local duplicating_pattern = false
 local appending_pattern = false
 local seq_rate_names = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16","1/32"}
 
+local gkey = {}
+for x = 1, 16 do
+  gkey[x] = {}
+  for y = 1, 16 do
+    gkey[x][y] = {}
+    gkey[x][y].active = false
+    gkey[x][y].note = 0
+  end
+end
+
+local held = {}
+for i = 1, 8 do
+  held[i] = {}
+  held[i].num = 0
+  held[i].max = 0
+  held[i].first = 0
+  held[i].second = 0
+end
+
+local kyrp = {}
+for i = 1, 4 do
+  kyrp[i] = 0
+end
+
+local ansi_trig = {}
+for i = 1, 4 do
+  ansi_trig[i] = false
+end
+
+-- functions
+function set_pattern_loop(i, focus)
+  clock.sync(1)
+  local segment = math.floor(pattern[focus].endpoint / 16)
+  pattern[i].step_min = segment * (math.min(held[focus].first, held[focus].second) - 1)
+  pattern[i].step_max = segment * math.max(held[focus].first, held[focus].second)
+  pattern[i].step = pattern[i].step_min
+  p[i].step_min_viz[p[i].bank] = math.min(held[focus].first, held[focus].second)
+  p[i].step_max_viz[p[i].bank] = math.max(held[focus].first, held[focus].second)
+  p[i].looping = true
+  clear_active_notes(i)
+end
+
+function clear_pattern_loop(i, dur)
+  clock.sync(dur)
+  pattern[i].step = 0
+  pattern[i].step_min = 0
+  pattern[i].step_max = pattern[i].endpoint
+end
+
+function grd.kitviz(note_num)
+  local n = note_num - (kit_oct * 16) - 47 - kit_root_note
+  local x = (n > 8 and n - 5 or n + 3)
+  local y = (n > 8 and 1 or 2) + 9
+  if x > 3 and x < 12 then
+    gkey[x][y].active = true
+    dirtygrid = true
+    clock.run(function()
+      clock.sleep(1/30)
+      gkey[x][y].active = false
+      dirtygrid = true
+    end)
+  end
+end
+
+function grd.ansiviz(i)
+  if ansi_view then
+    clock.run(function()
+      ansi_trig[i] = true
+      dirtygrid = true
+      clock.sleep(1/30)
+      ansi_trig[i] = false
+      dirtygrid = true
+    end)
+  end
+end
+
 -- grid keys and redraw
 function grd.zero_keys(x, y, z)
   if (x < 4 or x > 13) and y < 4 then
@@ -663,9 +739,9 @@ function grid_options(x, y, z, off) -- grid one: off = -7
       else
         latch_key_repeat = false
         for i = 1, 4 do
-          rk[i] = 0
+          kyrp[i] = 0
         end
-        set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
+        set_repeat_rate(kyrp[1], kyrp[2], kyrp[3], kyrp[4], z)
       end
     end
   end
@@ -890,9 +966,9 @@ function seq_settings(x, z)
         latch_key_repeat = not latch_key_repeat
         if not latch_key_repeat then
           for i = 1, 4 do
-            rk[i] = 0
+            kyrp[i] = 0
           end
-          set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
+          set_repeat_rate(kyrp[1], kyrp[2], kyrp[3], kyrp[4], z)
         end
         sequencer_config = false
       else
@@ -927,7 +1003,9 @@ function octave_options(x, y, z, off) -- off -8 for grid one
         if (y == 13 or y == 14) and z == 1 then
           local inc = y == 13 and 1 or -1
           if kit_view then
-            params:delta("kit_octaves", inc)
+            if kit_mode == 2 then
+              params:delta("kit_octaves", inc)
+            end
           else
             params:delta("interval_octaves_"..int_focus, inc)
           end
@@ -976,9 +1054,9 @@ function event_options(x, y, z, off) -- off -8 for grid one
           latch_key_repeat = not latch_key_repeat
           if not latch_key_repeat then
             for i = 1, 4 do
-              rk[i] = 0
+              kyrp[i] = 0
             end
-            set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
+            set_repeat_rate(kyrp[1], kyrp[2], kyrp[3], kyrp[4], z)
           end
         end
       end
@@ -993,12 +1071,12 @@ function event_options(x, y, z, off) -- off -8 for grid one
         local slot = y - 12
         if latch_key_repeat then
           if z == 1 then
-            rk[slot] = 1 - rk[slot]
+            kyrp[slot] = 1 - kyrp[slot]
           end
         else
-          rk[slot] = z
+          kyrp[slot] = z
         end
-        set_repeat_rate(rk[1], rk[2], rk[3], rk[4], z)
+        set_repeat_rate(kyrp[1], kyrp[2], kyrp[3], kyrp[4], z)
       end
     else
       if y == 13 and z == 1 then
@@ -1566,7 +1644,7 @@ function event_options_draw(off)
   local off = off and off or 0
   if key_repeat_view then
     for i = 1, 4 do
-      g:led(16, i + 12 + off, rk[i] == 1 and 15 or i * 2)
+      g:led(16, i + 12 + off, kyrp[i] == 1 and 15 or i * 2)
     end
     if off == 0 then
       g:led(16, 12, latch_key_repeat and pulse_key_slow or 0)
