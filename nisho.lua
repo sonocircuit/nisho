@@ -1440,7 +1440,7 @@ function midi_events(data)
     local destination = midi_in_dest == 0 and msg.ch or midi_in_dest
     local channel = midi_in_dest == 0 and (util.wrap(destination, 1, 8)) or midi_in_ch
     if msg.ch == channel then
-      if midi_in_quant then
+      if midi_in_quant and destination ~= 7 then
         msg.note = mu.snap_note_to_array(msg.note, note_map)
       end
       if destination == 8 then
@@ -1564,39 +1564,60 @@ function run_keyrepeat()
         trig_step = 0
       end
       trig_step = trig_step + 1
-      if #notes_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
+      if trigs[trigs_focus].pattern[trig_step] == 1 then
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
-          for _, v in ipairs(notes_held) do
-            local current_vel = math.floor(util.linlin(0, 1, 0, 127, trigs[trigs_focus].vel[trig_step])) 
-            if voice[key_focus].keys_option == 1 then
-              local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, vel = current_vel, action = "note_on"} event(e)
-              clock.run(function()
-                clock.sync(rep_rate / 2)
-                local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = "note_off"} event(e)
-              end)
-            elseif voice[key_focus].keys_option == 4 then
-              local e = {t = eDRUMS, i = key_focus, note = v, vel = current_vel} event(e)
-            else
-              local e = {t = eKEYS, i = key_focus, note = v, vel = current_vel, action = "note_on"} event(e)
-              clock.run(function()
-                clock.sync(rep_rate / 2)
-                local e = {t = eKEYS, i = key_focus, note = v, action = "note_off"} event(e)
-              end)    
+          local current_vel = math.floor(util.linlin(0, 1, 0, 127, trigs[trigs_focus].vel[trig_step]))
+          -- held notes
+          if #notes_held > 0 then
+            for _, v in ipairs(notes_held) do
+              if voice[key_focus].keys_option == 1 then
+                local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, vel = current_vel, action = "note_on"} event(e)
+                clock.run(function()
+                  clock.sync(rep_rate / 2)
+                  local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = "note_off"} event(e)
+                end)
+              elseif voice[key_focus].keys_option == 4 then
+                local e = {t = eDRUMS, i = key_focus, note = v, vel = current_vel} event(e)
+              else
+                local e = {t = eKEYS, i = key_focus, note = v, vel = current_vel, action = "note_on"} event(e)
+                clock.run(function()
+                  clock.sync(rep_rate / 2)
+                  local e = {t = eKEYS, i = key_focus, note = v, action = "note_off"} event(e)
+                end)    
+              end
             end
           end
-        end
-      end
-      if #kit_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
-        if trigs[trigs_focus].prob[trig_step] >= math.random() then
-          for _, v in ipairs(kit_held) do
-            local e = {t = eKIT, i = 7, note = v} event(e)
+          -- sustained notes for all voices
+          for i = 1, NUM_VOICES do
+            if voice[i].sustain then
+              for _, v in ipairs(voice[i].held_notes) do
+                if voice[i].keys_option == 1 then
+                  local e = {t = eSCALE, i = i, root = root_oct, note = v, vel = current_vel, action = "note_on"} event(e)
+                  clock.run(function()
+                    clock.sync(rep_rate / 2)
+                    local e = {t = eSCALE, i = i, root = root_oct, note = v, action = "note_off"} event(e)
+                  end)
+                elseif voice[i].keys_option == 2 then
+                  local e = {t = eKEYS, i = i, note = v, vel = current_vel, action = "note_on"} event(e)
+                  clock.run(function()
+                    clock.sync(rep_rate / 2)
+                    local e = {t = eKEYS, i = i, note = v, action = "note_off"} event(e)
+                  end)    
+                end
+              end
+            end
           end
-        end
-      end
-      if #ansi_held > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
-        if trigs[trigs_focus].prob[trig_step] >= math.random() then
-          for _, v in ipairs(ansi_held) do
-            local e = {t = eANSI, i = v} event(e)
+          -- held kit notes
+          if #kit_held > 0 then
+            for _, v in ipairs(kit_held) do
+              local e = {t = eKIT, i = 7, note = v, vel = current_vel} event(e)
+            end
+          end
+          -- held ansi keys
+          if #ansi_held > 0 then
+            for _, v in ipairs(ansi_held) do
+              local e = {t = eANSI, i = v} event(e)
+            end
           end
         end
       end
@@ -1932,12 +1953,12 @@ function send_aftertouch(i, val)
 end
 
 -------- playback --------
-function voice_note_on(i, note_num, vel)
-  local velocity = vel or voice[i].velocity
+function voice_note_on(i, note_num, velocity)
+  local vel = velocity or voice[i].velocity
   if (voice[i].output == 1 or voice[i].output == 2) then
-    polyform.note_on(voice[i].output, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
+    polyform.note_on(voice[i].output, note_num, vel)
   elseif voice[i].output == 3 then
-    m[i]:note_on(note_num, velocity, voice[i].midi_ch)
+    m[i]:note_on(note_num, vel, voice[i].midi_ch)
     if voice[i].length > 0 then
       clock.run(function()
         clock.sleep(voice[i].length)
@@ -1946,17 +1967,17 @@ function voice_note_on(i, note_num, vel)
       end)
     end
   elseif (voice[i].output == 4 or voice[i].output == 5) then
-    crow_note_on(voice[i].output - 3, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
+    crow_note_on(voice[i].output - 3, note_num, vel)
   elseif voice[i].output == 6 then
-    jf_note_on(i, note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
+    jf_note_on(i, note_num, vel)
   elseif voice[i].output == 7 then
-    wsyn_note_on(note_num, util.linlin(0, 127, 0, 1, (vel or 127)))
+    wsyn_note_on(note_num, vel)
   elseif voice[i].output > 7 then
-    nb_note_on(voice[i].output - 7, note_num, util.linlin(0, 127, 0, 1, velocity))
+    nb_note_on(voice[i].output - 7, note_num, vel)
   end
   if midi_thru then
     local channel = midi_out_ch + i - 1
-    m[midi_out_dev]:note_on(note_num, velocity, channel)
+    m[midi_out_dev]:note_on(note_num, vel, channel)
   end
   if pageNum == 1 then set_note_viz(note_num, true) end
 end
@@ -2000,6 +2021,7 @@ function dont_panic(voice)
 end
 
 function crow_note_on(i, note_num, velocity)
+  local vel = util.linlin(0, 127, 0, 1, (velocity or 127))
   local cv = i == 1 and 1 or 3
   local env = i == 1 and 2 or 4
   local v = ((note_num - 60) / caw[i].v8_std)
@@ -2012,9 +2034,9 @@ function crow_note_on(i, note_num, velocity)
     crow.output[cv].volts = v8
   end
   if caw[i].count > 0 and caw[i].legato then
-    crow.output[env].action = string.format("{ to(%f,%f,'%s') }", caw[i].env_amp * caw[i].env_s * velocity, caw[i].env_d, caw[i].env_curve)
+    crow.output[env].action = string.format("{ to(%f,%f,'%s') }", caw[i].env_amp * caw[i].env_s * vel, caw[i].env_d, caw[i].env_curve)
   else
-    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", caw[i].env_amp * velocity, caw[i].env_a, caw[i].env_curve, caw[i].env_amp * caw[i].env_s * velocity, caw[i].env_d, caw[i].env_curve)
+    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", caw[i].env_amp * vel, caw[i].env_a, caw[i].env_curve, caw[i].env_amp * caw[i].env_s * velocity, caw[i].env_d, caw[i].env_curve)
   end
   crow.output[env]()
   caw[i].count = caw[i].count + 1
@@ -2039,11 +2061,12 @@ function crow_panic(i)
 end
 
 function jf_note_on(i, note_num, velocity)
+  local vel = util.linlin(0, 127, 0, 1, (velocity or 127))
   local v = (note_num - 60) / 12
   if jf[i].mode == 1 then
     local v8 = v + jf[jf[i].ch].pb_v8
     jf[jf[i].ch].v8 = v
-    crow.ii.jf.play_voice(jf[i].ch, v8, jf[i].amp * velocity)
+    crow.ii.jf.play_voice(jf[i].ch, v8, jf[i].amp * vel)
     jf[i].count = jf[i].count + 1
   else
     local slot = jf.poly_notes[note_num]
@@ -2057,7 +2080,7 @@ function jf_note_on(i, note_num, velocity)
     jf.poly_notes[note_num] = slot
     local v8 = v + jf[slot.id + jf.num_mono].pb_v8
     jf[slot.id + jf.num_mono].v8 = v
-    crow.ii.jf.play_voice(slot.id + jf.num_mono, v8, jf[i].amp * velocity)
+    crow.ii.jf.play_voice(slot.id + jf.num_mono, v8, jf[i].amp * vel)
   end
 end
 
@@ -2085,6 +2108,7 @@ function jf_panic()
 end
 
 function wsyn_note_on(note_num, velocity)
+  local vel = util.linlin(0, 127, 0, 1, (velocity or 127))
   local v = (note_num - 60) / 12
   local v8 = v + wsyn.pb_v8
   local slot = wsyn.notes[note_num]
@@ -2097,7 +2121,7 @@ function wsyn_note_on(note_num, velocity)
   end
   wsyn.notes[note_num] = slot
   wsyn[slot.id].v8 = v
-  crow.ii.wsyn.play_voice(slot.id, v8, wsyn.amp * velocity)  
+  crow.ii.wsyn.play_voice(slot.id, v8, wsyn.amp * vel)  
 end
 
 function wsyn_note_off(note_num)
