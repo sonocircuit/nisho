@@ -1579,7 +1579,7 @@ function kit_grid_draw(off)
   local off = off and off or 0
   for x = 1, 2 do
     for y = 10, 11 do
-      local i = (x + (11 - y) * 8) % 16
+      local i = ((x + (11 - y) * 8) + kit_root_note) % 16
       g:led(x + 3, y + off, gkey[x + 3][y].active and 15 or (kit_mute.key[i] and 0 or 2))
       g:led(x + 5, y + off, gkey[x + 5][y].active and 15 or (kit_mute.key[i + 2] and 0 or 4))
       g:led(x + 7, y + off, gkey[x + 7][y].active and 15 or (kit_mute.key[i + 4] and 0 or 2))
