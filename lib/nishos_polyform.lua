@@ -299,7 +299,7 @@ prev_note_num = 0
 -- play and mute
 function polyForm.note_on(synth, note_num, vel)
   local freq = mu.note_num_to_freq(note_num)
-  local vel = vel or 1
+  local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
   local offset = synth == 1 and 0 or 2
   if synthvoice[synth].unison then
     local min = synth == 1 and 1 or 3
