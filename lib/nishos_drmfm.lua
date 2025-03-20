@@ -1,4 +1,4 @@
-drmfm = {}
+local drmfm = {}
 
 local tx = require 'textentry'
 local mu = require 'musicutil'
@@ -9,7 +9,7 @@ local NUM_PERF_SLOTS = 4
 
 local preset_path = norns.state.data.."drmfm_kits"
 local default_kit = norns.state.data.."drmfm_kits/default.kit"
-local failsafe_kit = norns.state.lib.."drmfm_kits/default.kit"
+local failsafe_kit = norns.state.path.."data/drmfm_kits/default.kit"
 
 local selected_voice = 1
 local current_kit = ""
@@ -235,15 +235,6 @@ function drmfm.prc_load(num)
   end
 end
 
--- return number of files for program change
-function drmfm.prc_list()
-  local num = 0
-  if #kit_list > 0 then
-    num = #kit_list
-  end
-  return num
-end
-
 function drmfm.copy_voice(voice)
   local voice = voice or selected_voice
   for _,v in ipairs(param_list) do 
@@ -282,7 +273,7 @@ function drmfm.add_params()
   -- make directory and copy files
   if util.file_exists(preset_path) == false then
     util.make_dir(preset_path)
-    os.execute('cp '.. norns.state.path .. 'lib/drmfm_kits/*.kit '.. preset_path)
+    os.execute('cp '.. norns.state.path .. 'data/drmfm_kits/*.kit '.. preset_path)
   end
   -- populate tables
   build_tables()
