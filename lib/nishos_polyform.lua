@@ -2,13 +2,14 @@ local polyForm = {}
 
 local tx = require 'textentry'
 local mu = require 'musicutil'
-local vx = require 'voice'
 local md = require 'core/mods'
+local vx = require 'voice'
 
 local preset_path = norns.state.data.."polyform_patches"
 local default_patch = norns.state.data.."polyform_patches/default.patch"
-local failsafe_patch = norns.state.lib.."polyform_patches/default.patch"
+local failsafe_patch = norns.state.path.."data/polyform_patches/default.patch"
 
+local prev_note_num = 0
 local active_ch = 1
 local patch_list = {}
 local current_patch = {}
@@ -286,16 +287,6 @@ function polyForm.prc_load(num, i)
   end
 end
 
--- return number of files for program change
-function polyForm.prc_list()
-  local num = 0
-  if #patch_list > 0 then
-    num = #patch_list
-  end
-  return num
-end
-
-prev_note_num = 0
 -- play and mute
 function polyForm.note_on(synth, note_num, vel)
   local freq = mu.note_num_to_freq(note_num)
@@ -363,7 +354,7 @@ function polyForm.init()
   -- make directory and copy files
   if util.file_exists(preset_path) == false then
     util.make_dir(preset_path)
-    os.execute('cp '.. norns.state.path .. 'lib/polyform_patches/*.patch '.. preset_path)
+    os.execute('cp '.. norns.state.path .. 'data/polyform_patches/*.patch '.. preset_path)
   end
   -- populate detune table
   build_detune_values()
