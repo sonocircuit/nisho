@@ -24,13 +24,7 @@ local kit_list = {}
 local ratio_options = {}
 local ratio_values = {}
 
-
---[[ -- indexing needs to correspond to sc msg!
-\freq, \tune, \decay, \sweep_time, \sweep_depth, \mod_ratio, \mod_time, \mod_amp, \mod_fb, \mod_dest,
-\noise_amp, \noise_decay, \cutoff_lpf, \cutoff_hpf, \phase, \fold, \level, \pan, \sendA, \sendB],
---]]
-
-
+-- param list indexing needs to correspond to sc msg!
 local param_list = {
   "freq", "tune", "decay", "sweep_time", "sweep_depth", "mod_ratio", "mod_time", "mod_amp", "mod_fb", "mod_dest",
   "noise_amp", "noise_decay", "cutoff_lpf", "cutoff_hpf", "phase", "fold", "level", "pan", "sendA", "sendB"
@@ -70,19 +64,13 @@ local function round_form(param, quant, form)
 end
 
 local function pan_display(param)
-  local pos_right = ""
-  local pos_left = ""
-  if param < -0.02 then
-    pos_right = ""
-    pos_left = "L< "
-  elseif param > 0.02 then
-    pos_right = " >R"
-    pos_left = ""
+  if param < -0.01 then
+    return ("L < "..math.abs(util.round(param * 100, 1)))
+  elseif param > 0.01 then
+    return (math.abs(util.round(param * 100, 1)).." > R")
   else
-    pos_right = "<"
-    pos_left = ">"
+    return "> <"
   end
-  return (pos_left..math.abs(util.round(util.linlin(-1, 1, -100, 100, param), 1))..pos_right)
 end
 
 local function build_menu(dest)
@@ -168,7 +156,6 @@ local function scale_perf_val(i, k, mult)
   else
     dv.mod[i][k] = (dv.max[k] - dv.min[k]) * mult
   end
-  --print(param_list[k], dv.max[k], dv.min[k], mult, dv.mod[k])
 end
 
 local function build_kit_list()
@@ -213,12 +200,12 @@ local function load_drmfm_kit(path)
         end
         local name = path:match("[^/]*$")
         current_kit = name:gsub(".kit", "")
-        print("loaded kit: "..path)
+        print("loaded kit: "..name)
       else
         if util.file_exists(failsafe_kit) then
           load_drmfm_kit(failsafe_kit)
         end
-        print("error: could not load kit", path)
+        print("error: could not find kit", path)
       end
     else
       print("error: not a kit file")
