@@ -1,5 +1,7 @@
 grd = {}
 
+local drmfm = include 'lib/nishos_drmfm'
+
 -- local variables
 local mod_a = false
 local mod_b = false
