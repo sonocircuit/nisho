@@ -7,11 +7,7 @@
 --           composition
 --
 
-
 --------------------------------------------------------------
--- TODO: make music
---------------------------------------------------------------
-
 
 engine.name = "Polyform"
 
@@ -772,16 +768,6 @@ function set_jf_levels(i, level)
   end
 end
 
-function set_defaults()
-  params:set("voice_out_1", 1)
-  params:set("voice_out_2", 2)
-  params:set("voice_out_3", 3)
-  params:set("voice_out_4", 3)
-  params:set("voice_out_5", 3)
-  params:set("voice_out_6", 3)
-  params:set("polyform_load_patch_1", norns.state.data.."polyform_patches/jpad.patch")
-  params:set("polyform_load_patch_2", norns.state.data.."polyform_patches/lowers.patch")
-end
 
 -------- patterns and events --------
 function event_exec(e, n)
@@ -2378,15 +2364,14 @@ function init()
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
   params:set_action("metronome_viz", function(mode) set_metronome(mode) end)
 
-  params:add_number("time_signature", "time signature", 2, 9, 4, function(param) return param:get().."/4" end)
-  params:set_action("time_signature", function(val) bar_val = val end)
-
   params:add_option("pattern_mapping", "pattern alloc", {"free", "voices"}, 1)
   params:set_action("pattern_mapping", function(mode) pattern_voicemap = mode == 2 and true or false end)
+
+  params:add_number("time_signature", "time signature", 2, 9, 4, function(param) return param:get().."/4" end)
+  params:set_action("time_signature", function(val) bar_val = val end)
         
   params:add_option("key_quant_value", "key quantization", options.key_quant, 7)
   params:set_action("key_quant_value", function(idx) quant_rate = options.quant_value[idx] * 4 end)
-  params:hide("key_quant_value")
   
   params:add_option("key_seq_rate", "seq rate", options.key_quant, 7)
   params:set_action("key_seq_rate", function(idx) seq_rate = options.quant_value[idx] * 4 end)
@@ -2618,7 +2603,7 @@ function init()
   for i = 1, NUM_VOICES do
     params:add_group("voice_"..i, "voice "..i, 35)
     -- output
-    params:add_option("voice_out_"..i, "output", options.output, 1)
+    params:add_option("voice_out_"..i, "output", options.output, (i > 2 and 3 or i))
     params:set_action("voice_out_"..i, function(val) set_voice_output(i, val) end)
     -- mute
     params:add_option("voice_mute_"..i, "mute", {"off", "on"}, 1)
@@ -2913,7 +2898,6 @@ function init()
     params:default()
   else
     params:bang()
-    set_defaults()
   end
 
 end
@@ -3523,6 +3507,7 @@ function gridredraw()
 end
 
 
+
 -------- utilities --------
 function r()
   norns.script.load(norns.state.script)
@@ -3744,6 +3729,5 @@ end
 function cleanup()
   clear_all_notes()
   show_banner()
-  midi.cleanup()
   crow.ii.jf.mode(0)
 end
