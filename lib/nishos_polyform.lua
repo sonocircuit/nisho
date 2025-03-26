@@ -165,20 +165,15 @@ local function display_params(i)
 end
 
 local function pan_display(param)
-  local pos_right = ""
-  local pos_left = ""
   if param < -0.01 then
-    pos_right = ""
-    pos_left = "L< "
+    return ("L < "..math.abs(util.round(param * 100, 1)))
   elseif param > 0.01 then
-    pos_right = " >R"
-    pos_left = ""
+    return (math.abs(util.round(param * 100, 1)).." > R")
   else
-    pos_right = "<"
-    pos_left = ">"
+    return "> <"
   end
-  return (pos_left..math.abs(util.round(util.linlin(-1, 1, -100, 100, param), 1))..pos_right)
 end
+
 
 local function shape_display(param)
   if param < -0.01 then
@@ -264,13 +259,13 @@ local function load_synth_patch(path, i)
         end
         display_params(i)
         local name = path:match("[^/]*$")
-        current_patch[active_ch] = name:gsub(".patch", "")
-        print("loaded patch: "..path)
+        current_patch[i] = name:gsub(".patch", "")
+        print("loaded patch: "..name)
       else
         if util.file_exists(failsafe_patch) then
           load_synth_patch(failsafe_patch, i)
         end
-        print("error: could not load patch", path)
+        print("error: could not find patch", path)
       end
     else
       print("error: not a polyform patch file")
