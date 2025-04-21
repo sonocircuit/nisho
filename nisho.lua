@@ -2022,7 +2022,7 @@ function crow_note_on(i, note_num, velocity)
   if caw[i].count > 0 and caw[i].legato then
     crow.output[env].action = string.format("{ to(%f,%f,'%s') }", caw[i].env_amp * caw[i].env_s * vel, caw[i].env_d, caw[i].env_curve)
   else
-    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", caw[i].env_amp * vel, caw[i].env_a, caw[i].env_curve, caw[i].env_amp * caw[i].env_s * velocity, caw[i].env_d, caw[i].env_curve)
+    crow.output[env].action = string.format("{ to(%f,%f,'%s'), to(%f,%f,'%s') }", caw[i].env_amp * vel, caw[i].env_a, caw[i].env_curve, caw[i].env_amp * caw[i].env_s * vel, caw[i].env_d, caw[i].env_curve)
   end
   crow.output[env]()
   caw[i].count = caw[i].count + 1
