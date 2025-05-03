@@ -302,7 +302,12 @@ function pattern_keys(i)
             pattern[i]:undo()
             rec_enabled = false
           else
-            pattern[i]:set_rec(1)     
+            if oneshot_overdub then
+              local dur = pattern_rec_mode ~= "free" and pattern[i].length or nil
+              pattern[i]:set_rec(2, dur, beat_sync)
+            else
+              pattern[i]:set_rec(1)
+            end   
             rec_enabled = true          
           end
         else
@@ -435,12 +440,21 @@ function pattern_options(x, y, z)
   elseif y == 1 and x == 3 then
     appending_pattern = z == 1 and true or false
   elseif y == 1 and x == 14 and z == 1 then
+    if pattern_rec_mode == "queued" then
+      oneshot_overdub = not oneshot_overdub
+    end
     pattern_rec_mode = "queued"
     page_redraw(3)
   elseif y == 1 and x == 15 and z == 1  then
+    if pattern_rec_mode == "synced" then
+      oneshot_overdub = not oneshot_overdub
+    end
     pattern_rec_mode = "synced"
     page_redraw(3)
   elseif y == 1 and x == 16 and z == 1  then
+    if pattern_rec_mode == "free" then
+      oneshot_overdub = not oneshot_overdub
+    end
     pattern_rec_mode = "free"
     page_redraw(3)
   elseif y == 2 and x == 1 then
@@ -471,18 +485,16 @@ function pattern_trigs(x, z)
   held[pattern_focus].num = held[pattern_focus].num + (z * 2 - 1)
   if held[pattern_focus].num > held[pattern_focus].max then held[pattern_focus].max = held[pattern_focus].num end
   if z == 1 then
-    if pattern[pattern_focus].rec == 0 then
-      if held[pattern_focus].num == 1 then
-        held[pattern_focus].first = x
-      elseif held[pattern_focus].num == 2 then
-        held[pattern_focus].second = x
-      end
-      if pattern_clear then
-        for i = 1, 8 do
-          if p[i].looping then
-            clock.run(clear_pattern_loop, i, bar_val)
-            p[i].looping = false
-          end
+    if held[pattern_focus].num == 1 then
+      held[pattern_focus].first = x
+    elseif held[pattern_focus].num == 2 then
+      held[pattern_focus].second = x
+    end
+    if pattern_clear then
+      for i = 1, 8 do
+        if p[i].looping then
+          clock.run(clear_pattern_loop, i, bar_val)
+          p[i].looping = false
         end
       end
     end
@@ -1149,7 +1161,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
       prev_seq_notes = {table.unpack(seq_notes)}
     end
     -- play notes
-    if (not seq_active or #seq_notes == 0) then
+    if not seq_active then
       if key_repeat then
         if heldkey_key == 1 then
           trig_step = 0
@@ -1169,7 +1181,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
         if seq_active and not (collecting_notes or appending_notes or seq_hold) then
           table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
         end
-        if not (seq_active or key_repeat) or #seq_notes == 0 then
+        if not (seq_active or key_repeat) then
           local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
         end
       end
@@ -1178,7 +1190,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
       if seq_active and not (collecting_notes or appending_notes or seq_hold) then
         table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
       end
-      if not (seq_active or key_repeat) or #seq_notes == 0 then
+      if not (seq_active or key_repeat) then
         local e = {t = eSCALE, i = key_focus, root = root_oct, note = gkey[x][y].note, action = "note_off"} event(e)
       end
     end
@@ -1213,7 +1225,7 @@ function chrom_grid(x, y, z, off) -- off -8 for grid one
       prev_seq_notes = {table.unpack(seq_notes)}
     end
     -- play notes
-    if (not seq_active or #seq_notes == 0) then
+    if not seq_active then
       if key_repeat then
         if heldkey_key == 1 then
           trig_step = 0
@@ -1229,7 +1241,7 @@ function chrom_grid(x, y, z, off) -- off -8 for grid one
         if seq_active and not (collecting_notes or appending_notes or seq_hold) then
           table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
         end
-        if not (seq_active or key_repeat) or #seq_notes == 0 then
+        if not (seq_active or key_repeat) then
           local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
         end
       end
@@ -1238,7 +1250,7 @@ function chrom_grid(x, y, z, off) -- off -8 for grid one
       if seq_active and not (collecting_notes or appending_notes or seq_hold) then
         table.remove(seq_notes, tab.key(notes_held, gkey[x][y].note))
       end
-      if not (seq_active or key_repeat) or #seq_notes == 0 then
+      if not (seq_active or key_repeat) then
         local e = {t = eKEYS, i = key_focus, note = gkey[x][y].note, action = "note_off"} event(e)
       end
     end
@@ -1446,10 +1458,10 @@ function pattern_options_draw(grid)
   g:led(1, 2, pattern_clear and pulse_key_slow or 4)
   g:led(2, 2, pattern_clear and pulse_key_slow or (duplicating_pattern and 15 or 4))
   g:led(1, 3, pattern_overdub and 15 or 4)
-
-  g:led(14, 1, pattern_rec_mode == "queued" and 10 or 4)
-  g:led(15, 1, pattern_rec_mode == "synced" and 10 or 4)
-  g:led(16, 1, pattern_rec_mode == "free" and 10 or 4)
+  local osod = oneshot_overdub and 5 or 0
+  g:led(14, 1, pattern_rec_mode == "queued" and (10 + osod) or 4)
+  g:led(15, 1, pattern_rec_mode == "synced" and (10 + osod) or 4)
+  g:led(16, 1, pattern_rec_mode == "free" and (10 + osod) or 4)
   g:led(15, 2, prgchange_view and 15 or 4)
   g:led(16, 2, loading_page and pulse_key_mid or 4)
   if grid == 128 then
