@@ -16,16 +16,17 @@ local mu = require 'musicutil'
 local md = require 'core/mods'
 local lt = require 'lattice'
 local vx = require 'voice'
-local lo = require 'lfo'
 
 local polyform = include 'lib/nishos_polyform'
 local reflect = include 'lib/nishos_reflection'
 local midim = include 'lib/nishos_midiimport'
 local drmfm = include 'lib/nishos_drmfm'
 local grd = include 'lib/nishos_grid'
+local lo = include 'lib/nishos_lfo'
 local nb = include 'lib/nb/lib/nb'
 
 g = grid.connect()
+a = arc.connect()
 
 -------- variables -------
 local load_pset = false
@@ -49,6 +50,12 @@ pattern_view = false
 prgchange_view = false
 key_repeat_view = false
 trigs_config_view = false
+
+-- arc variables
+local arc_is = false
+local arc_lfo_view = false
+local arc_shortpress = false
+local arc_keypresstimer = nil
 
 -- preset and pattern loading
 local loaded_pattern_data = nil
@@ -191,13 +198,14 @@ quant_rate = 1/4
 -- patterns
 pattern_rec_mode = "queued"
 pattern_overdub = false
+oneshot_overdub = false
 copy_src = {state = false, pattern = nil, bank = nil}
 pattern_clear = false
 pattern_focus = 1
 bank_focus = 1
 keyquant_edit = false
 pattern_bank_page = 0
-pattern_voicemap = false
+pattern_alloc_free = true
 rec_enabled = false
 stop_all = false
 stop_all_timer = nil
@@ -306,6 +314,8 @@ for i = 1, 4 do
   ansi_cv[i].lvl = 0
   ansi_cv[i].min = 0
   ansi_cv[i].max = 10
+  ansi_cv[i].viz = 0
+  ansi_cv[i].prev_val = nil
   ansi_cv[i].lfo = {}
 end
 
@@ -354,7 +364,6 @@ local chord = {}
 for i = 1, 12 do
   chord[i] = {}
   chord[i].is = {}
-  chord[i].event = {}
   chord[i].notes = {}
   chord[i].strum = {}
   for t = 1, 7 do
@@ -619,13 +628,13 @@ function build_chord_map()
 end
 
 function clear_chord()
-  if #current_chord > 0 then
+  if #current_chord > 0 and not key_repeat then
     for index, value in ipairs(current_chord) do
       local e = {t = eKEYS, i = key_focus, note = value, action = "note_off"} event(e)
     end
-    notes_held = {}
-    current_chord = {}
   end
+  notes_held = {}
+  current_chord = {}
 end
 
 function play_chord(i)
@@ -649,7 +658,7 @@ function play_chord(i)
     -- play chord
     if chord_play and #current_chord > 0 and not key_repeat then
       for index, value in ipairs(current_chord) do
-        chord[index].event = {t = eKEYS, i = key_focus, note = value, action = "note_on"} event(chord[index].event)
+        local e = {t = eKEYS, i = key_focus, note = value, action = "note_on"} event(e)
       end
     end
     -- strum chord
@@ -838,10 +847,10 @@ function event_exec(e, n)
 end
 
 function event_rec(e)
-  if not pattern_voicemap then
-    pattern[pattern_focus]:watch(e)
-  elseif e.i == pattern_focus then
-    pattern[pattern_focus]:watch(e)
+  if (pattern_alloc_free or (e.i == pattern_focus)) then
+    if not (pattern[pattern_focus].play == 0 and e.action == "note_off") then
+      pattern[pattern_focus]:watch(e)
+    end
   end
 end
 
@@ -960,17 +969,23 @@ function step_one_indicator(i)
     dirtygrid = true
   end) 
 end
-
+ 
 function catch_held_notes(i, action)
-  if #notes_held > 0 then
-    local s = action == "note_on" and (pattern[i].step_min + 1) or pattern[i].step_max
-    for n, v in ipairs(notes_held) do
-      if voice[key_focus].keys_option == 1 then
-        local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = action}
-        pattern[i]:insert(e, s)
-      else
-        local e = {t = eKEYS, i = key_focus, note = v, action = action}
-        pattern[i]:insert(e, s)
+  if #notes_held > 0 and not (seq_active or key_repeat) then
+    if pattern_rec_mode ~= "synced" and action == "note_on" then
+      print("not me", pattern_rec_mode ~= "synced", action == "note_on")
+      return
+    else
+      local s = pattern[i].step
+      for n, v in ipairs(notes_held) do
+        if voice[key_focus].keys_option == 1 then
+          local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = action}
+          print("caught:", action, v, s)
+          pattern[i]:watch(e, s)
+        else
+          local e = {t = eKEYS, i = key_focus, note = v, action = action}
+          pattern[i]:watch(e, s)
+        end
       end
     end
   end
@@ -1039,6 +1054,7 @@ function save_pattern_bank(i, bank)
   p[i].length[bank] = pattern[i].length
   p[i].manual_length[bank] = pattern[i].manual_length
   page_redraw(3)
+  dirtygrid = true
 end
 
 function load_pattern_bank(i, bank)
@@ -1067,6 +1083,7 @@ function load_pattern_bank(i, bank)
     pattern[i]:stop()
   end
   page_redraw(3)
+  dirtygrid = true
 end
 
 function clear_pattern_bank(i, bank)
@@ -1698,6 +1715,16 @@ function set_repeat_rate(k1, k2, k3, k4, keypress)
   end
 end
 
+function reset_trig_step() -- TOOD: add trig reset modes
+  if trig_reset_mode == 1 then
+    trig_step = 0
+  elseif trig_reset_mode == 2 then
+    -- lock
+  else
+    -- synced start and lock
+  end
+end
+
 function set_kit_mutes(group)
   kit_mute.focus = group
   kit_mute.active = true
@@ -2326,6 +2353,11 @@ function init()
     util.make_dir(midim_default_path)
   end
 
+  -- check for arc
+  if a.device then
+    arc_is = true
+  end
+
   -- check for crow
   if norns.crow.connected() then
     caw.is = true
@@ -2364,8 +2396,8 @@ function init()
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
   params:set_action("metronome_viz", function(mode) set_metronome(mode) end)
 
-  params:add_option("pattern_mapping", "pattern alloc", {"free", "voices"}, 1)
-  params:set_action("pattern_mapping", function(mode) pattern_voicemap = mode == 2 and true or false end)
+  params:add_option("pattern_mapping", "pattern alloc", {"free", "voice"}, 1)
+  params:set_action("pattern_mapping", function(mode) pattern_alloc_free = mode == 1 and true or false end)
 
   params:add_number("time_signature", "time signature", 2, 9, 4, function(param) return param:get().."/4" end)
   params:set_action("time_signature", function(val) bar_val = val end)
@@ -2766,7 +2798,6 @@ function init()
       params:show("wsyn_lpg_sym")
     end
     _menu.rebuild_params()
-    dirtyscreen = true
   end)
 
   params:add_control("wsyn_lpg_time", "lpg time", controlspec.new(-5, 5, "lin", 0, 0, "v"))
@@ -2809,7 +2840,7 @@ function init()
 
 
   -- ansible cv params
-  params:add_group("ansible_params", "crow [ansible]", (4 + 15) * 4)
+  params:add_group("ansible_params", "crow [ansible]", (4 + 11) * 4)
   if not caw.is then params:hide("ansible_params") end
 
   for i = 1, 4 do
@@ -2825,8 +2856,19 @@ function init()
     params:set_action("ansible_cv_"..i.."_max", function(val) ansi_cv[i].max = val clamp_range(i) set_output_volt(i) end)
 
     ansi_cv[i].lfo = lo:add{min = 0, max = 1, baseline = 'min'}
-    ansi_cv[i].lfo:add_params("ansi_cv_lfo_"..i, "cv out "..i.." lfo")
-    ansi_cv[i].lfo:set("action", function(scaled, raw) params:set("ansible_cv_"..i.."_level", scaled) end) 
+    ansi_cv[i].lfo:add_params("ansi_cv_"..i, "cv out "..i.." lfo")
+    ansi_cv[i].lfo:set("action", function(scaled, raw)
+      params:set("ansible_cv_"..i.."_level", scaled)
+      ansi_cv[i].viz = math.floor(raw * 12) + 3
+    end)
+    ansi_cv[i].lfo:set("state_callback", function(enabled)
+      if not enabled and ansi_cv[i].prev_val ~= nil then
+        params:set("ansible_cv_"..i.."_level", ansi_cv[i].prev_val)
+      elseif enabled then
+        ansi_cv[i].prev_val = params:get("ansible_cv_"..i.."_level")
+      end
+      ansi_cv[i].viz = enabled and 3 or 0
+    end)
   end
 
   -- drmFM params
@@ -3506,6 +3548,76 @@ function gridredraw()
   end
 end
 
+-------- arc interface --------
+
+function a.key(n, z)
+  if z == 1 then
+    arc_keypresstimer = clock.run(function()
+      arc_shortpress = true
+      clock.sleep(0.2)
+      arc_shortpress = false
+      arc_longpress = true
+      arc_keypresstimer = nil
+    end)
+  else
+    if arc_keypresstimer ~= nil then
+      clock.cancel(arc_keypresstimer)
+    end
+    if arc_shortpress then
+      arc_lfo_view = not arc_lfo_view
+    end
+    arc_longpress = false
+  end
+end
+
+function a.delta(n, d)
+  if arc_lfo_view then
+    if arc_longpress then
+      params:delta("lfo_rate_ansi_cv_"..n, d / 16)
+    else
+      params:delta("lfo_depth_ansi_cv_"..n, d / 16)
+      if ansi_cv[n].lfo.depth == 0 then
+        if ansi_cv[n].lfo.enabled == 1 then
+          params:set("lfo_ansi_cv_"..n, 1)
+        end
+      else
+        if ansi_cv[n].lfo.enabled == 0 then
+          params:set("lfo_ansi_cv_"..n, 2)
+        end
+      end
+    end
+  else
+    if ansi_cv[n].lfo.enabled == 1 then
+      if arc_longpress then
+        params:delta("lfo_depth_ansi_cv_"..n, d / 16)
+      else
+        params:delta("lfo_offset_ansi_cv_"..n, d / 16)
+      end
+    else
+      params:delta("ansible_cv_"..n.."_level", d / 16)
+    end
+  end
+end
+
+function arc_redraw()
+  a:all(0)
+  for n = 1, 4 do
+    local level = math.ceil(ansi_cv[n].lvl * 56) - 27
+    a:led(n, 29, 8)
+    a:led(n, -27, 8)
+    for i = -26, 28 do
+      if i < level then
+        a:led(n, i, 4)
+      end
+    end
+    a:led(n, level, 15)
+    a:led(n, 32, arc_lfo_view and 15 or 0)
+    a:led(n, 33, ansi_cv[n].viz)
+    a:led(n, 34, arc_lfo_view and 15 or 0)
+  end
+  a:refresh()
+end
+
 
 
 -------- utilities --------
@@ -3527,6 +3639,7 @@ function hardware_redraw()
     gridredraw()
     dirtygrid = false
   end
+  if arc_is then arc_redraw() end
 end
 
 function screen_redraw()
