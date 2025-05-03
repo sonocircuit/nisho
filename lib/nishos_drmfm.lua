@@ -200,7 +200,7 @@ local function load_drmfm_kit(path)
         end
         local name = path:match("[^/]*$")
         current_kit = name:gsub(".kit", "")
-        print("loaded kit: "..name)
+        print("load drmfm: "..name)
       else
         if util.file_exists(failsafe_kit) then
           load_drmfm_kit(failsafe_kit)
