@@ -93,8 +93,8 @@ end
 
 --- enable / disable record head
 function reflection:set_rec(rec, dur, beat_sync)
-  self.rec = rec == 1 and 1 or 0
   self.rec_enabled = rec > 0 and 1 or 0
+  self.rec = rec == 1 and 1 or 0
   if self.rec == 1 then
     self.start_rec_callback()
   end
@@ -174,39 +174,25 @@ function reflection:clear()
 end
 
 --- watch
-function reflection:watch(event)
-  local step_one = false
+function reflection:watch(event, step)
+  local step = step
   local offset = 0
   if self.queued_rec ~= nil then
     if self.queued_rec.state then
-      self:set_rec(1, self.queued_rec.duration, 1/PPQN)
       self.queued_rec.state = false
-      step_one = true
+      self:set_rec(1, self.queued_rec.duration, 1/PPQN)
     end
     offset = 1
   end
-  if (self.rec == 1 and self.play == 1) or step_one then
+  if (self.rec == 1 and (self.queued_rec or self.play == 1)) or step then
     event._flag = true
-    local s = step_one and 1 or math.floor(self.step + offset)
+    local s = step or (self.play == 0 and self.step_min + 1 or math.floor(self.step + offset))
     if s == 0 then s = 1 end
     if not self.event[s] then
       self.event[s] = {}
     end
     table.insert(self.event[s], event)
     self.count = self.count + 1
-  end
-end
-
---- insert event
-function reflection:insert(event, step)
-  if step then
-    if step <= self.endpoint then
-      if not self.event[step] then
-        self.event[step] = {}
-      end
-      table.insert(self.event[step], event)
-      self.count = self.count + 1
-    end
   end
 end
 
@@ -244,10 +230,18 @@ function reflection:begin_playback()
           self.step_max = self.endpoint
           self:set_rec(0)
           self.rec_dur = nil
-          if self.loop == 1 then
-            queued_start_callback = true
-            self.step = self.step_min
-            self.play = 1
+          if self.count > 0 then
+            if self.loop == 0 then
+              queued_end_playback = true
+            elseif self.loop == 1 then
+              self.step = self.step_min
+              self:_clear_flags()
+              queued_start_callback = true
+            end
+          else
+            queued_end_of_loop_callback = true
+            queued_end_playback = true
+            self.endpoint = 0
           end
         end
       else
@@ -256,7 +250,9 @@ function reflection:begin_playback()
           self.endpoint_init = self.step
           self.manual_length = true
           self.step_max = self.step
-          if self.loop == 1 then
+          if self.loop == 0 then
+            queued_end_playback = true
+          elseif self.loop == 1 then
             self.step = self.step_min
             self:_clear_flags()
             queued_start_callback = true
