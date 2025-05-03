@@ -260,7 +260,8 @@ local function load_synth_patch(path, i)
         display_params(i)
         local name = path:match("[^/]*$")
         current_patch[i] = name:gsub(".patch", "")
-        print("loaded patch: "..name)
+        local synth = {"polyform[mono]", "polyform[poly]"}
+        print("load "..synth[i]..": "..name)
       else
         if util.file_exists(failsafe_patch) then
           load_synth_patch(failsafe_patch, i)
