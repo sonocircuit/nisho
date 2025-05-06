@@ -50,6 +50,7 @@ pattern_view = false
 prgchange_view = false
 key_repeat_view = false
 trigs_config_view = false
+trigs_reset_view = false
 
 -- arc variables
 local arc_is = false
@@ -157,6 +158,8 @@ key_repeat = false
 trigs_edit = false
 trigs_focus = 1
 trig_step = 0
+trig_lock = false
+trig_reset_mode = 1
 
 -- chord
 chord_any = false
@@ -628,25 +631,24 @@ function build_chord_map()
 end
 
 function clear_chord()
-  if #current_chord > 0 and not key_repeat then
-    for index, value in ipairs(current_chord) do
+  if next(current_chord) and not key_repeat then
+    for _, value in ipairs(current_chord) do
       local e = {t = eKEYS, i = key_focus, note = value, action = "note_off"} event(e)
     end
   end
-  notes_held = {}
   current_chord = {}
+  notes_held = {}
 end
 
 function play_chord(i)
   local i = i or last_chord_root
   local chord_type = chord_values[tonumber(tostring(crd[i][3].key..crd[i][2].key..crd[i][1].key), 2)]
   if chord[i].is[chord_type] or chord_any then
-    if key_repeat and #current_chord == 0 then
-      trig_step = 0
-    end
+    -- clear notes    
     clear_chord()
+    -- reset trig step
+    if (key_repeat or seq_active) and #current_chord == 0 then reset_trig_step() end
     -- set chord and strum notes
-    current_chord = {}
     for _, value in ipairs(chord[i].notes[chord_type][chord_inversion]) do
       table.insert(current_chord, value + (12 * notes_oct_key[key_focus]))
       table.insert(notes_held, value + (12 * notes_oct_key[key_focus]))
@@ -688,7 +690,7 @@ function play_chord(i)
           table.insert(prev_seq_notes, chord_arp[note])
         end
         if heldkey_key > 0 then
-          trig_step = 0
+          reset_trig_step()
         end
         seq_step = 0
       end
@@ -1704,7 +1706,9 @@ function clear_all_notes()
 end
 
 function set_repeat_rate(k1, k2, k3, k4, keypress)
-  if not key_repeat then trig_step = 0 end
+  if not key_repeat then
+    set_trig_start()
+  end
   key_repeat = (k1 + k2 + k3 + k4) > 0 and true or false
   local idx = tonumber(tostring(k4..k3..k2..k1), 2)
   if idx > 0 then
@@ -1713,15 +1717,32 @@ function set_repeat_rate(k1, k2, k3, k4, keypress)
       show_message("repeat  rate:  "..rep_rate_names[idx])
     end
   end
+  if not key_repeat then trig_lock = false end
 end
 
-function reset_trig_step() -- TOOD: add trig reset modes
+function set_trig_start()
+  trig_lock = false
+  trig_step = 0
+  if trig_reset_mode > 2 then
+    if not trig_lock then
+      local beat_sync = trig_reset_mode == 3 and 1 or bar_val
+      clock.run(function()
+        clock.sync(beat_sync, -1/8)
+        trig_step = 0
+        trig_lock = true
+      end)
+    end
+  end
+end
+
+function reset_trig_step()
   if trig_reset_mode == 1 then
     trig_step = 0
   elseif trig_reset_mode == 2 then
-    -- lock
-  else
-    -- synced start and lock
+    if not trig_lock then
+      trig_step = 0
+      trig_lock = true
+    end
   end
 end
 
@@ -1826,8 +1847,8 @@ end
 
 function send_pitchbend(i, val, dir)
   if voice[i].output < 3 then
-    local min = i == 1 and 1 or 3
-    local max = i == 1 and 2 or 8
+    local min = voice[i].output == 1 and 1 or 3
+    local max = voice[i].output == 1 and 2 or 8
     for voice = min, max do
       engine.pb_depth(voice, val * dir)
     end
@@ -1897,8 +1918,8 @@ end
 
 function send_modwheel(i, val)
   if voice[i].output < 3 then
-    local min = i == 1 and 1 or 3
-    local max = i == 1 and 2 or 8
+    local min = voice[i].output == 1 and 1 or 3
+    local max = voice[i].output == 1 and 2 or 8
     for voice = min, max do
       engine.mod_wheel(voice, val)
     end
@@ -1941,8 +1962,8 @@ end
 
 function send_aftertouch(i, val)
   if voice[i].output < 3 then
-    local min = i == 1 and 1 or 3
-    local max = i == 1 and 2 or 8
+    local min = voice[i].output == 1 and 1 or 3
+    local max = voice[i].output == 1 and 2 or 8
     for voice = min, max do
       engine.vibrato_rmod(voice, polyform.rate_mode * val)
       engine.vibrato_dmod(voice, polyform.depth_mod * val)
@@ -2153,7 +2174,8 @@ end
 
 function nb_note_on(i, note_num, velocity)
   local player = params:lookup_param("nb_"..i):get_player()
-  player:note_on(note_num, velocity)
+  local vel = util.linlin(0, 127, 0, 1, (velocity or 127))
+  player:note_on(note_num, vel)
   if voice[i].length > 0 then
     clock.run(function()
       clock.sleep(voice[i].length)
@@ -2513,7 +2535,7 @@ function init()
   params:set_action("glb_midi_panic", function() all_notes_off() end)
 
   -- keyboard settings
-  params:add_group("keyboard_group", "keyboard settings", 17)
+  params:add_group("keyboard_group", "keyboard settings", 18)
 
   params:add_separator("scale_keys", "scale keys")
 
@@ -2561,6 +2583,11 @@ function init()
 
   params:add_number("drum_vel_lo", "lo velocity", 1, 127, 32)
   params:set_action("drum_vel_lo", function(val) drum_vel_lo = val end)
+
+  params:add_option("trig_reset_mode", "trig reset mode", {"manual", "lock", "beat", "bar"}, 1)
+  params:set_action("trig_reset_mode", function(mode) trig_reset_mode = mode end)
+  params:hide("trig_reset_mode")
+
 
   -- rytm params
   params:add_group("rytm_params", "rytm settings", 2)
@@ -2996,6 +3023,8 @@ function key(n, z)
     -- do nothing yet
   elseif trigs_edit then
     -- do nothing yet
+  elseif trigs_reset_view then
+    -- do nothing yet
   else
     if pageNum == 1 then
       if n == 2 and z == 1 then
@@ -3104,6 +3133,10 @@ function enc(n, d)
       trigs[trigs_focus].vel[trig_step_focus] = util.clamp(trigs[trigs_focus].vel[trig_step_focus] + d/100, 0, 1)
     end
     dirtygrid = true
+  elseif trigs_reset_view then
+    if n > 1 then
+      params:delta("trig_reset_mode", d)
+    end
   elseif pageNum == 1 then
     if n == 2 then
       if shift and not seq_active then
@@ -3308,7 +3341,19 @@ function redraw()
     screen.move(30, 60)
     screen.text_center("probability")
     screen.move(98, 60)
-    screen.text_center("velocity") 
+    screen.text_center("velocity")
+  elseif trigs_reset_view then
+    screen.font_size(8)
+    screen.level(15)
+    screen.move(64, 12)
+    screen.text_center("trig   reset")
+    screen.font_size(16)
+    screen.move(64, 39)
+    screen.text_center(params:string("trig_reset_mode"))
+    screen.font_size(8)
+    screen.level(4)
+    screen.move(64, 60)
+    screen.text_center("mode")
   else
     if pageNum == 1 then
       for i = 1, 12 do
