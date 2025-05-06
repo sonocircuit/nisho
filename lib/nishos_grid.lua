@@ -13,6 +13,8 @@ local held_chord_edit = 0
 local seq_hold = false
 local set_trigs_end = false
 local trigs_reset = false
+local trig_rst_shortpress = false
+local trig_rst_clk = nil
 local drmfm_copying = false
 local drmfm_clipboard_contains = false
 local chord_preview = false
@@ -790,7 +792,7 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
           end
         elseif key_repeat then
           if heldkey_kit == 1 then
-            trig_step = 0
+            reset_trig_step()
           end
         else
           local e = {t = eKIT, i = 7, note = note} event(e)
@@ -973,8 +975,29 @@ function seq_settings(x, z)
       show_message("seq   rate:  "..seq_rate_names[x - 4])
     end
   elseif x > 12 then
-    if x == 15 and z == 1 then
-      trigs_config_view = not trigs_config_view
+    if x == 15 then
+      if z == 1 then
+        trig_rst_shortpress = true
+        if trig_rst_clk ~= nil then
+          clock.cancel(trig_rst_clk)
+        end
+        trig_rst_clk = clock.run(function()
+          clock.sleep(0.2)
+          trig_rst_shortpress = false
+          trigs_reset_view = true
+          trig_rst_clk = nil
+        end)
+      else
+        if trig_rst_shortpress then
+          trigs_config_view = not trigs_config_view
+          if trig_rst_clk ~= nil then
+            clock.cancel(trig_rst_clk)
+            trig_rst_clk = nil
+          end
+        else
+          trigs_reset_view = false
+        end
+      end
     elseif x == 16 and z == 1 then
       if key_repeat_view then
         latch_key_repeat = not latch_key_repeat
@@ -1005,7 +1028,7 @@ function octave_options(x, y, z, off) -- off -8 for grid one
           table.insert(ansi_held, i)
           if key_repeat then
             if #ansi_held == 1 then
-              trig_step = 0
+              reset_trig_step()
             end
           else
             local e = {t = eANSI, i = i} event(e)
@@ -1061,8 +1084,33 @@ function event_options(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if x == 15 then
     if off then
-      if y == 13 and z == 1 then
-        trigs_config_view = not trigs_config_view
+      if y == 13 then
+        if z == 1 then
+          trig_rst_shortpress = true
+          if trig_rst_clk ~= nil then
+            clock.cancel(trig_rst_clk)
+          end
+          trig_rst_clk = clock.run(function()
+            clock.sleep(1/6)
+            trig_rst_shortpress = false
+            trig_rst_clk = nil
+            if trigs_config_view then
+              trigs_reset_view = true
+              dirtyscreen = true
+            end
+          end)
+        else
+          if trig_rst_shortpress then
+            trigs_config_view = not trigs_config_view
+            if trig_rst_clk ~= nil then
+              clock.cancel(trig_rst_clk)
+              trig_rst_clk = nil
+            end
+          else
+            trigs_reset_view = false
+            dirtyscreen = true
+          end
+        end
       elseif y == 16 and z == 1 then
         if key_repeat_view then
           latch_key_repeat = not latch_key_repeat
@@ -1096,7 +1144,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
       if y == 13 and z == 1 then
         seq_active = not seq_active
         seq_step = 0
-        trig_step = 0
+        reset_trig_step()
         if not seq_active then
           seq_notes = {}
         end
@@ -1108,7 +1156,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
         end
         if z == 0 and #collected_notes > 0 then
           seq_step = 0
-          trig_step = 0
+          reset_trig_step()
           seq_notes = {table.unpack(collected_notes)}
           prev_seq_notes = {table.unpack(collected_notes)}
         else
@@ -1154,7 +1202,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
     -- insert notes
     if seq_active and not (collecting_notes or appending_notes) then
       if heldkey_key == 1 then
-        trig_step = 0
+        reset_trig_step()
         if seq_hold then seq_notes = {} end
       end
       table.insert(seq_notes, note)
@@ -1164,7 +1212,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
     if not seq_active then
       if key_repeat then
         if heldkey_key == 1 then
-          trig_step = 0
+          reset_trig_step()
         end
       else
         local e = {t = eSCALE, i = key_focus, root = root_oct, note = note, action = "note_on"} event(e)
@@ -1218,7 +1266,7 @@ function chrom_grid(x, y, z, off) -- off -8 for grid one
     -- insert notes
     if seq_active and not (collecting_notes or appending_notes) then
       if heldkey_key == 1 then
-        trig_step = 0
+        reset_trig_step()
         if seq_hold then seq_notes = {} end
       end
       table.insert(seq_notes, note)
@@ -1228,7 +1276,7 @@ function chrom_grid(x, y, z, off) -- off -8 for grid one
     if not seq_active then
       if key_repeat then
         if heldkey_key == 1 then
-          trig_step = 0
+          reset_trig_step()
         end
       else
         local e = {t = eKEYS, i = key_focus, note = note, action = "note_on"} event(e)
@@ -1381,7 +1429,7 @@ function drum_grid(x, y, z, off) -- off -8 for grid one
       drum_vel_last = vel
       if key_repeat then
         if heldkey_key == 1 then
-          trig_step = 0
+          reset_trig_step()
         end
       else
         local e = {t = eDRUMS, i = key_focus, note = note, vel = vel} event(e)
