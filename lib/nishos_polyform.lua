@@ -108,7 +108,7 @@ local function get_detune_val(x)
   return detune_val
 end
 
--- don't think it's good to call detune_curve() each time a note is triggered so we'll populate a table at init with 101 values (0 - 1).
+-- bad idea to call get_detune_val() each time a note is triggered so we'll populate a table at init with 101 values (0 - 1).
 local detune_curve = {}
 local function build_detune_values()
   for i = 1, 100 do
@@ -472,10 +472,10 @@ function polyForm.init()
     params:add_control("polyform_decay_"..i, "decay", controlspec.new(0.01, 10, "exp", 0, 0.4), function(param) return (round_form(param:get(),0.01," s")) end)
     params:set_action("polyform_decay_"..i, function(x) set_value(i, engine.env_d, x) end)
     -- sustain
-    params:add_control("polyform_sustain_"..i, "sustain", controlspec.new(0, 1, "lin", 0, 0.5), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:add_control("polyform_sustain_"..i, "sustain", controlspec.new(0, 1, "lin", 0, 0.5), function(param) return synthvoice[i].env == 1 and "-" or (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_sustain_"..i, function(x) set_value(i, engine.env_s, x) end)
     -- release
-    params:add_control("polyform_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.8), function(param) return (round_form(param:get(), 0.01, " s")) end)
+    params:add_control("polyform_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.8), function(param) return synthvoice[i].env == 1 and "-" or (round_form(param:get(), 0.01, " s")) end)
     params:set_action("polyform_release_"..i, function(x) set_value(i, engine.env_r, x) end)
 
     params:add_separator("polyform_mod_src_"..i, "mod source")
@@ -495,10 +495,10 @@ function polyForm.init()
     params:add_control("polyform_mod_decay_"..i, "decay", controlspec.new(0.01, 10, "exp", 0, 0.2), function(param) return (round_form(param:get(),0.01," s")) end)
     params:set_action("polyform_mod_decay_"..i, function(x) set_value(i, engine.envmod_d, x) end)
     -- sustain
-    params:add_control("polyform_mod_sustain_"..i, "sustain", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:add_control("polyform_mod_sustain_"..i, "sustain", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return synthvoice[i].env == 1 and "-" or (round_form(param:get() * 100, 1, "%")) end)
     params:set_action("polyform_mod_sustain_"..i, function(x) set_value(i, engine.envmod_s, x) end)
     -- release
-    params:add_control("polyform_mod_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.4), function(param) return (round_form(param:get(), 0.01, " s")) end)
+    params:add_control("polyform_mod_release_"..i, "release", controlspec.new(0.001, 10, "exp", 0, 0.4), function(param) return synthvoice[i].env == 1 and "-" or (round_form(param:get(), 0.01, " s")) end)
     params:set_action("polyform_mod_release_"..i, function(x) set_value(i, engine.envmod_r, x) end)
 
     params:add_separator("polyform_mod_dst_"..i, "mod destination")
