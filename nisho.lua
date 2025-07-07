@@ -1,4 +1,4 @@
--- nisho v1.8.0 @sonocircuit
+-- nisho v1.8.2 @sonocircuit
 -- llllllll.co/t/nisho
 --
 --   six voices & eight patterns
@@ -521,6 +521,11 @@ local drmfm_e3_params = {"drmfm_pan_", "drmfm_sendB_", "drmfm_tune_", "drmfm_dec
 local drmfm_e2_names = {"level", "sendA", "pitch", "decay", "sweep   time", "mod   ratio", "mod   amp", "mod   dest", "noise   amp", "cutoff   lpf"}
 local drmfm_e3_names = {"pan", "sendB", "tune", "decay   s&h",  "sweep   depth", "mod   time", "mod   fb", "wavefold", "noise   decay","cutoff   hpf"}
 
+local drmfm_mac_param_focus = 1
+local drmfm_mac_e2_params = {"drmfm_perf_time", "drmfm_sendA_perf_", "drmfm_sweep_time_perf_", "drmfm_decay_perf_", "drmfm_mod_amp_perf_", "drmfm_mod_dest_perf_", "drmfm_noise_amp_perf_", "drmfm_cutoff_lpf_perf_"}
+local drmfm_mac_e3_params = {"drmfm_perf_slot", "drmfm_sendB_perf_", "drmfm_sweep_depth_perf_",  "drmfm_mod_time_perf_", "drmfm_mod_fb_perf_", "drmfm_fold_perf_",  "drmfm_noise_decay_perf_", "drmfm_cutoff_hpf_perf_"}
+local drmfm_mac_e2_names = {"duration", "sendA", "sweep   time", "decay", "mod   amp", "mod   dest", "noise   amp", "cutoff   lpf"}
+local drmfm_mac_e3_names = {"slot", "sendB", "sweep   depth", "mod   time",  "mod   fb", "wavefold", "noise   decay","cutoff   hpf"}
 
 -------- scales --------
 function build_scale()
@@ -838,7 +843,12 @@ function event_exec(e, n)
       if kit_mode == 1 then
         drmfm.trig(e.note, e.vel)
       else
-        play_kit(e.note, e.vel)
+        local velocity = e.vel or kit_velocity
+        m[kit_midi_dev]:note_on(e.note, velocity, kit_midi_ch)
+        clock.run(function()
+          clock.sync(1/4)
+          m[kit_midi_dev]:note_off(e.note, 0, kit_midi_ch)
+        end)
       end
     end
     grd.kitviz(e.note)
@@ -975,14 +985,12 @@ end
 function catch_held_notes(i, action)
   if #notes_held > 0 and not (seq_active or key_repeat) then
     if pattern_rec_mode ~= "synced" and action == "note_on" then
-      print("not me", pattern_rec_mode ~= "synced", action == "note_on")
       return
     else
       local s = pattern[i].step
       for n, v in ipairs(notes_held) do
         if voice[key_focus].keys_option == 1 then
           local e = {t = eSCALE, i = key_focus, root = root_oct, note = v, action = action}
-          print("caught:", action, v, s)
           pattern[i]:watch(e, s)
         else
           local e = {t = eKEYS, i = key_focus, note = v, action = action}
@@ -1528,31 +1536,29 @@ end
 function run_seq()
   while true do
     clock.sync(seq_rate)
-    if #seq_notes > 0 and seq_active then
-      if seq_step >= #seq_notes then
-        seq_step = 0
-      end
-      if trig_step >= trigs[trigs_focus].step_max then
-        trig_step = 0
-      end
+    if seq_active then
+      if trig_step >= trigs[trigs_focus].step_max then trig_step = 0 end
       trig_step = trig_step + 1
-      seq_step = seq_step + 1
-      if seq_notes[seq_step] > 0 and trigs[trigs_focus].pattern[trig_step] == 1 then
+      if trigs[trigs_focus].pattern[trig_step] == 1 and #seq_notes > 0 then
+        if seq_step >= #seq_notes then seq_step = 0 end
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
-          local current_note = seq_notes[seq_step]
-          local current_vel = math.floor(util.linlin(0, 1, 0, 127, trigs[trigs_focus].vel[trig_step])) 
-          if voice[key_focus].keys_option == 1 then
-            local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, vel = current_vel, action = "note_on"} event(e)
-            clock.run(function()
-              clock.sync(seq_rate / 2)
-              local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
-            end)
-          elseif voice[key_focus].keys_option == 2 or voice[key_focus].keys_option == 3 then
-            local e = {t = eKEYS, i = key_focus, note = current_note, vel = current_vel, action = "note_on"} event(e)
-            clock.run(function()
-              clock.sync(seq_rate / 2)
-              local e = {t = eKEYS, i = key_focus, note = current_note, action = "note_off"} event(e)
-            end)    
+          seq_step = seq_step + 1
+          if seq_notes[seq_step] > 0 then
+            local current_note = seq_notes[seq_step]
+            local current_vel = math.floor(util.linlin(0, 1, 0, 127, trigs[trigs_focus].vel[trig_step])) 
+            if voice[key_focus].keys_option == 1 then
+              local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, vel = current_vel, action = "note_on"} event(e)
+              clock.run(function()
+                clock.sync(seq_rate / 2)
+                local e = {t = eSCALE, i = key_focus, root = root_oct, note = current_note, action = "note_off"} event(e)
+              end)
+            elseif voice[key_focus].keys_option == 2 or voice[key_focus].keys_option == 3 then
+              local e = {t = eKEYS, i = key_focus, note = current_note, vel = current_vel, action = "note_on"} event(e)
+              clock.run(function()
+                clock.sync(seq_rate / 2)
+                local e = {t = eKEYS, i = key_focus, note = current_note, action = "note_off"} event(e)
+              end)    
+            end
           end
         end
       end
@@ -1565,9 +1571,7 @@ function run_keyrepeat()
   while true do
     clock.sync(rep_rate)
     if key_repeat then
-      if trig_step >= trigs[trigs_focus].step_max then
-        trig_step = 0
-      end
+      if trig_step >= trigs[trigs_focus].step_max then trig_step = 0 end
       trig_step = trig_step + 1
       if trigs[trigs_focus].pattern[trig_step] == 1 then
         if trigs[trigs_focus].prob[trig_step] >= math.random() then
@@ -1830,18 +1834,18 @@ end
 function pb_ramp_up(i, dir)
   local inc = (1 - pb[i].value) / (pb[i].rise / pb_res)
   while pb[i].value < 1 do
-    clock.sleep(at_res)
     pb[i].value = util.clamp(pb[i].value + inc, 0, 1)
     send_pitchbend(i, pb[i].value, dir)
+    clock.sleep(pb_res) -- error correction: time * 0.93946
   end
 end
 
 function pb_ramp_down(i, dir)
   local inc = pb[i].value / (pb[i].fall / pb_res)
   while pb[i].value > 0 do
-    clock.sleep(pb_res)
     pb[i].value = util.clamp(pb[i].value - inc, 0, 1)
     send_pitchbend(i, pb[i].value, dir)
+    clock.sleep(pb_res)
   end
 end
 
@@ -1901,18 +1905,18 @@ end
 function mw_ramp_up(i)
   local inc = (1 - mw[i].value) / (mw[i].rise / mw_res)
   while mw[i].value < 1 do
-    clock.sleep(mw_res)
     mw[i].value = util.clamp(mw[i].value + inc, 0, 1)
     send_modwheel(i, mw[i].value)
+    clock.sleep(mw_res)
   end
 end
 
 function mw_ramp_down(i)
   local inc = mw[i].value / (mw[i].fall / mw_res)
   while mw[i].value > 0 do
-    clock.sleep(mw_res)
     mw[i].value = util.clamp(mw[i].value - inc, 0, 1)
     send_modwheel(i, mw[i].value)
+    clock.sleep(mw_res)
   end
 end
 
@@ -1945,18 +1949,19 @@ end
 function at_ramp_up(i)
   local inc = (1 - at[i].value) / (at[i].rise / at_res)
   while at[i].value < 1 do
-    clock.sleep(at_res)
+
     at[i].value = util.clamp(at[i].value + inc, 0, 1)
     send_aftertouch(i, at[i].value)
+    clock.sleep(at_res)
   end
 end
 
 function at_ramp_down(i)
   local inc = at[i].value / (at[i].fall / at_res)
   while at[i].value > 0 do
-    clock.sleep(at_res)
     at[i].value = util.clamp(at[i].value - inc, 0, 1)
     send_aftertouch(i, at[i].value)
+    clock.sleep(at_res)
   end
 end
 
@@ -2190,15 +2195,6 @@ function nb_note_off(i, note_num)
   player:note_off(note_num)
 end
 
-function play_kit(note_num, velocity)
-  local velocity = velocity or kit_velocity
-  m[kit_midi_dev]:note_on(note_num, velocity, kit_midi_ch)
-  clock.run(function()
-    clock.sync(1/4)
-    m[kit_midi_dev]:note_off(note_num, 0, kit_midi_ch)
-  end)
-end
-
 
 --------------------- PSET MANAGEMENT -----------------------
 
@@ -2412,7 +2408,7 @@ function init()
   params:add_number("root_note", "root note", 24, 84, 60, function(param) return mu.note_num_to_name(param:get(), true) end)
   params:set_action("root_note", function(val) root_note = val set_scale() dirtygrid = true end)
 
-  params:add_option("page_autofocus", "autofocus", {"off", "on"}, 1)
+  params:add_option("page_autofocus", "autofocus", {"off", "on"}, 2)
   params:set_action("page_autofocus", function(mode) autofocus = mode == 2 and true or false end)
 
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
@@ -2975,6 +2971,9 @@ end
 function key(n, z)
   if n == 1 then
     shift = z == 1 and true or false
+    if pageNum == 4 then
+      drmfm_mac_param_focus = 1
+    end
   end
   if keyquant_edit then
     if n == 2 then
@@ -3068,7 +3067,7 @@ function key(n, z)
       if n > 1 and z == 1 then
         local d = n == 2 and -1 or 1
         if shift then
-          drmfm_voice_focus = util.wrap(drmfm_voice_focus + d, 1, 16)
+          drmfm_mac_param_focus = util.wrap(drmfm_mac_param_focus + d, 1, #drmfm_mac_e2_names)
         else
           drmfm_param_focus = util.wrap(drmfm_param_focus + d, 1, #drmfm_e2_names)
         end        
@@ -3173,10 +3172,11 @@ function enc(n, d)
     end
   elseif pageNum == 4 then
     if shift then
+      local conc = drmfm_mac_param_focus == 1 and "" or drmfm.p_slot
       if n == 2 then
-        params:delta("drmfm_perf_time", d)
+        params:delta(drmfm_mac_e2_params[drmfm_mac_param_focus]..conc, d)
       elseif n == 3 then
-        params:delta("drmfm_perf_slot", d)
+        params:delta(drmfm_mac_e3_params[drmfm_mac_param_focus]..conc, d)
       end
     else
       if n == 2 then
@@ -3531,17 +3531,18 @@ function redraw()
       if shift then
         screen.text_center("drmFM   performance   macros")
         -- param list
+        local conc = drmfm_mac_param_focus == 1 and "" or drmfm.p_slot
         screen.level(4)
         screen.move(30, 60)
-        screen.text_center("duration")
+        screen.text_center(drmfm_mac_e2_names[drmfm_mac_param_focus])
         screen.move(98, 60)
-        screen.text_center("slot")
+        screen.text_center(drmfm_mac_e3_names[drmfm_mac_param_focus])
         screen.level(15)
         screen.font_size(16)
         screen.move(30, 39)
-        screen.text_center(params:string("drmfm_perf_time"))
+        screen.text_center(params:string(drmfm_mac_e2_params[drmfm_mac_param_focus]..conc))
         screen.move(98, 39)
-        screen.text_center(params:string("drmfm_perf_slot"))
+        screen.text_center(params:string(drmfm_mac_e3_params[drmfm_mac_param_focus]..conc))
       else
         screen.text_center("drmFM   voice   "..drmfm_voice_focus)
         -- param list
@@ -3639,7 +3640,7 @@ function a.delta(n, d)
         params:delta("lfo_offset_ansi_cv_"..n, d / 16)
       end
     else
-      params:delta("ansible_cv_"..n.."_level", d / 16)
+      params:delta("ansible_cv_"..n.."_level", d / 10)
     end
   end
 end
@@ -3664,7 +3665,6 @@ function arc_redraw()
 end
 
 
-
 -------- utilities --------
 function r()
   norns.script.load(norns.state.script)
@@ -3684,7 +3684,7 @@ function hardware_redraw()
     gridredraw()
     dirtygrid = false
   end
-  if arc_is then arc_redraw() end
+  if arc_is and caw.is then arc_redraw() end
 end
 
 function screen_redraw()
