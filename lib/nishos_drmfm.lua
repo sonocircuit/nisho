@@ -15,8 +15,9 @@ local selected_voice = 1
 local current_kit = ""
 local glb_level = 1
 local perf_amt = 0
-local p_slot = 1
 local perf_names = {"A", "B", "C", "D"}
+drmfm.p_slot = 1
+
 
 local clipboard = {}
 local kit_list = {}
@@ -30,7 +31,12 @@ local param_list = {
   "noise_amp", "noise_decay", "cutoff_lpf", "cutoff_hpf", "phase", "fold", "level", "pan", "sendA", "sendB"
 }
 
-local perf_list = {
+local voice_params = {
+  "freq", "tune", "decay", "decay_mod", "sweep_time", "sweep_depth", "mod_ratio", "mod_time", "mod_amp", "mod_fb", "mod_dest",
+  "noise_amp", "noise_decay", "cutoff_lpf", "cutoff_hpf", "phase", "fold", "level", "pan", "sendA", "sendB", "perf_mod"
+}
+
+local perf_params = {
   "sendA", "sendB", "sweep_time", "sweep_depth", "decay", "mod_time", "mod_amp", "mod_fb", "mod_dest", 
   "noise_amp", "noise_decay", "fold", "cutoff_lpf", "cutoff_hpf"
 }
@@ -39,6 +45,7 @@ local d_prm = {}
 for i = 1, NUM_VOICES do
   d_prm[i] = {}
   d_prm[i].d_mod = 0
+  d_prm[i].p_mod = true
   for j = 1, #param_list do
     d_prm[i][j] = 0
   end
@@ -77,27 +84,25 @@ local function build_menu(dest)
   if dest == "voice" then
     -- voice params
     for i = 1, NUM_VOICES do
-      for _,v in ipairs(param_list) do
+      for _,v in ipairs(voice_params) do
         local name = "drmfm_"..v.."_"..i
         if i == selected_voice then
           params:show(name)
-          params:show("drmfm_decay_mod_"..i)
           if not md.is_loaded("fx") then
             params:hide("drmfm_sendA_"..i)
             params:hide("drmfm_sendB_"..i)
           end
         else
           params:hide(name)
-          params:hide("drmfm_decay_mod_"..i)
         end
       end
     end
   elseif dest == "perf" then
     -- perf params
     for i = 1, NUM_PERF_SLOTS do
-      for _,v in ipairs(perf_list) do
+      for _,v in ipairs(perf_params) do
         local name = "drmfm_"..v.."_perf_"..i
-        if i == p_slot then
+        if i == drmfm.p_slot then
           params:show(name)
           params:show("drmfm_perf_depth"..i)
           if not md.is_loaded("fx") then
@@ -174,10 +179,18 @@ end
 local function save_drmfm_kit(txt)
   if txt then
     local kit = {}
-    for i = 1, NUM_VOICES do
-      table.insert(kit, {})
-      for _, v in ipairs(param_list) do
-        table.insert(kit[i], params:get("drmfm_"..v.."_"..i))
+    kit.vox = {}
+    for _, v in ipairs(voice_params) do
+      kit.vox[v] = {}
+      for n = 1, NUM_VOICES do
+        table.insert(kit.vox[v], params:get("drmfm_"..v.."_"..n))
+      end
+    end
+    kit.mod = {}
+    for _, v in ipairs(perf_params) do
+      kit.mod[v] = {}
+      for n = 1, NUM_PERF_SLOTS do
+        table.insert(kit.mod[v], params:get("drmfm_"..v.."_perf_"..n))
       end
     end
     tab.save(kit, preset_path.."/"..txt..".kit")
@@ -191,11 +204,18 @@ end
 local function load_drmfm_kit(path)
   if path ~= "cancel" and path ~= "" then
     if path:match("^.+(%..+)$") == ".kit" then
-      local r = tab.load(path)
-      if r ~= nil then
-        for i = 1, NUM_VOICES do
-          for k, v in ipairs(param_list) do
-            params:set("drmfm_"..v.."_"..i, r[i][k])
+      local kit = tab.load(path)
+      if kit ~= nil then
+        for i, v in ipairs(voice_params) do
+          if kit.vox[v] ~= nil then
+            for n = 1, NUM_VOICES do
+              params:set("drmfm_"..v.."_"..n, kit.vox[v][n])
+            end
+          end
+        end
+        for i, v in ipairs(perf_params) do
+          for n = 1, NUM_PERF_SLOTS do
+            params:set("drmfm_"..v.."_perf_"..n, kit.mod[v][n])
           end
         end
         local name = path:match("[^/]*$")
@@ -238,22 +258,22 @@ end
 
 function drmfm.trig(note, vel)
   local voice = note and (note % 16 + 1) or selected_voice
-  if not d_prm[voice].mute then
-    local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
-    local msg = {}
-    for k, v in ipairs(d_prm[voice]) do
-      msg[k] = v
-      if param_list[k] == "decay" then
-        msg[k] = msg[k] + math.random() * d_prm[voice].d_mod
-      elseif param_list[k] == "level" then
-        msg[k] = msg[k] * glb_level * vel
-      end
-      msg[k] = util.clamp(msg[k] + (dv.mod[p_slot][k] * perf_amt), dv.min[k], dv.max[k])
+  local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
+  local msg = {}
+  for k, v in ipairs(d_prm[voice]) do
+    msg[k] = v
+    if param_list[k] == "decay" then
+      msg[k] = msg[k] + math.random() * d_prm[voice].d_mod
+    elseif param_list[k] == "level" then
+      msg[k] = msg[k] * glb_level * vel
     end
-    local slot = (voice - 1) % 8 -- sc is zero-indexed!
-    table.insert(msg, 1, slot)
-    osc.send({'localhost',57120}, '/drmfm/trig', msg)
+    if d_prm[voice].p_mod then
+      msg[k] = util.clamp(msg[k] + (dv.mod[drmfm.p_slot][k] * perf_amt), dv.min[k], dv.max[k])
+    end
   end
+  local slot = (voice - 1) % 8 -- sc is zero-indexed!
+  table.insert(msg, 1, slot)
+  osc.send({'localhost',57120}, '/drmfm/trig', msg)
 end
 
 function drmfm.add_params()
@@ -267,7 +287,7 @@ function drmfm.add_params()
   build_kit_list()
 
   -- drmfm params
-  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 21) + (NUM_PERF_SLOTS * 15) + 14))
+  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 22) + (NUM_PERF_SLOTS * 15) + 14))
 
   params:add_separator("drmfm_kits", "drmFM kit")
 
@@ -359,6 +379,9 @@ function drmfm.add_params()
   
     params:add_control("drmfm_cutoff_hpf_"..i, "cutoff hpf", controlspec.new(20, 18000, "exp", 0, 20), function(param) return round_form(param:get(), 1, "hz") end)
     params:set_action("drmfm_cutoff_hpf_"..i, function(val) d_prm[i][tab.key(param_list, "cutoff_hpf")] = val end)
+
+    params:add_option("drmfm_perf_mod_"..i, "macros", {"ignore", "follow"}, 2)
+    params:set_action("drmfm_perf_mod_"..i, function(mode) d_prm[i].p_mod = mode == 2 and true or false end)
   end
 
   populate_minmax_values()
@@ -368,14 +391,14 @@ function drmfm.add_params()
   params:add_control("drmfm_perf_amt", "perf macro", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("drmfm_perf_amt", function(val) perf_amt = val end)
 
-  params:add_option("drmfm_perf_slot", "perf slot", perf_names, 1)
-  params:set_action("drmfm_perf_slot", function(t) p_slot = t build_menu("perf") end)
+  params:add_option("drmfm_perf_slot", "perf macro", perf_names, 1)
+  params:set_action("drmfm_perf_slot", function(t) drmfm.p_slot = t build_menu("perf") end)
 
   params:add_number("drmfm_perf_time", "perf time", 1, 8, 2, function(param) local name = param:get() == 1 and "bar" or "bars" return param:get().." "..name end)
   params:set_action("drmfm_perf_time", function(val) perftime = val * 4 end)
 
   for i = 1, NUM_PERF_SLOTS do
-    params:add_separator("drmfm_perf_depth"..i, "depth slot "..perf_names[i])
+    params:add_separator("drmfm_perf_depth"..i, "macro "..perf_names[i].." settings")
 
     params:add_control("drmfm_sendA_perf_"..i, "send a", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_sendA_perf_"..i, function(val) scale_perf_val(i, tab.key(param_list, "sendA"), val) end)
