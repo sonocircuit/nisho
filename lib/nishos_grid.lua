@@ -394,10 +394,14 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
           elseif (pasting_pattern or appending_pattern) and not copy_src.state then
             show_message("clipboard   empty")
           elseif copying_pattern and not copy_src.state then
-            copy_src.pattern = i
-            copy_src.bank = bank
-            copy_src.state = true
-            show_message("pattern  "..copy_src.pattern.."  bank  "..copy_src.bank.."  selected")
+            if p[i].count[bank] > 0 then
+              copy_src.pattern = i
+              copy_src.bank = bank
+              copy_src.state = true
+              show_message("pattern  "..copy_src.pattern.."  bank  "..copy_src.bank.."  selected")
+            else
+              show_message("pattern   empty")
+            end
           elseif duplicating_pattern then
             if p[i].count[bank] > 0 then
               append_pattern(i, bank, i, bank)
@@ -539,7 +543,7 @@ function event_trigs(x, y, z, grid)
           end
           trig_shortpress = true
           t_edit_clock = clock.run(function()
-            clock.sleep(0.15)
+            clock.sleep(1/6)
             trigs_edit = true
             trig_shortpress = false
             dirtyscreen = true
@@ -584,7 +588,7 @@ function event_trigs(x, y, z, grid)
             end
             trig_shortpress = true
             t_edit_clock = clock.run(function()
-              clock.sleep(0.15)
+              clock.sleep(1/6)
               trigs_edit = true
               trig_shortpress = false
               dirtyscreen = true
@@ -771,36 +775,43 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
       local kit_voice = (note % 16) + 1
       drmfm_voice_focus = kit_voice
       heldkey_kit = heldkey_kit + (z * 2 - 1)
-      if z == 1 then
-        gkey[x][y].note = note
-        table.insert(kit_held, note)
-        if kit_edit_mutes then
-          kit_mute.key[kit_voice] = not kit_mute.key[kit_voice]
-          if kit_mute.active then
-            local state = kit_mute.key[kit_voice] and 2 or 1
-            params:set("kit_mute_key_"..kit_voice.."_group_"..kit_mute.focus, state)
-          end
-        elseif drmfm_copying then
-          if drmfm_clipboard_contains then
-            drmfm.paste_voice(kit_voice)
-            show_message("pasted   drmFM   voice")
-            drmfm_clipboard_contains = false
-          else
-            drmfm.copy_voice(kit_voice)
-            show_message("copied   drmFM   voice   "..kit_voice)
-            drmfm_clipboard_contains = true
-          end
-        elseif key_repeat then
-          if heldkey_kit == 1 then
-            reset_trig_step()
-          end
-        else
-          local e = {t = eKIT, i = 7, note = note} event(e)
+      if shift then
+        if z == 1 then
+          local set = params:get("drmfm_perf_mod_"..kit_voice) == 1 and 2 or 1
+          params:set("drmfm_perf_mod_"..kit_voice, set)
         end
-        page_redraw(4)
       else
-        table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
-      end
+        if z == 1 then
+          gkey[x][y].note = note
+          table.insert(kit_held, note)
+          if kit_edit_mutes then
+            kit_mute.key[kit_voice] = not kit_mute.key[kit_voice]
+            if kit_mute.active then
+              local state = kit_mute.key[kit_voice] and 2 or 1
+              params:set("kit_mute_key_"..kit_voice.."_group_"..kit_mute.focus, state)
+            end
+          elseif drmfm_copying then
+            if drmfm_clipboard_contains then
+              drmfm.paste_voice(kit_voice)
+              show_message("pasted   drmFM   voice")
+              drmfm_clipboard_contains = false
+            else
+              drmfm.copy_voice(kit_voice)
+              show_message("copied   drmFM   voice   "..kit_voice)
+              drmfm_clipboard_contains = true
+            end
+          elseif key_repeat then
+            if heldkey_kit == 1 then
+              reset_trig_step()
+            end
+          else
+            local e = {t = eKIT, i = 7, note = note} event(e)
+          end
+          page_redraw(4)
+        else
+          table.remove(kit_held, tab.key(kit_held, gkey[x][y].note))
+        end
+      end        
     elseif y == 9 and kit_edit_mutes then
       if x > 5 and x < 12 then
         if z == 1 then
@@ -982,14 +993,18 @@ function seq_settings(x, z)
           clock.cancel(trig_rst_clk)
         end
         trig_rst_clk = clock.run(function()
-          clock.sleep(0.2)
+          clock.sleep(1/6)
           trig_rst_shortpress = false
-          trigs_reset_view = true
           trig_rst_clk = nil
+          if trigs_config_view then
+            trigs_reset_view = true
+            dirtyscreen = true
+          end
         end)
       else
         if trig_rst_shortpress then
           trigs_config_view = not trigs_config_view
+          trigs_edit = false
           if trig_rst_clk ~= nil then
             clock.cancel(trig_rst_clk)
             trig_rst_clk = nil
@@ -997,6 +1012,7 @@ function seq_settings(x, z)
         else
           trigs_reset_view = false
         end
+        dirtyscreen = true
       end
     elseif x == 16 and z == 1 then
       if key_repeat_view then
@@ -1094,22 +1110,21 @@ function event_options(x, y, z, off) -- off -8 for grid one
             clock.sleep(1/6)
             trig_rst_shortpress = false
             trig_rst_clk = nil
-            if trigs_config_view then
-              trigs_reset_view = true
-              dirtyscreen = true
-            end
+            trigs_reset_view = trigs_config_view and true or false
+            dirtyscreen = true
           end)
         else
           if trig_rst_shortpress then
             trigs_config_view = not trigs_config_view
+            trigs_edit = false
             if trig_rst_clk ~= nil then
               clock.cancel(trig_rst_clk)
               trig_rst_clk = nil
             end
           else
             trigs_reset_view = false
-            dirtyscreen = true
           end
+          dirtyscreen = true
         end
       elseif y == 16 and z == 1 then
         if key_repeat_view then
@@ -1144,8 +1159,9 @@ function event_options(x, y, z, off) -- off -8 for grid one
       if y == 13 and z == 1 then
         seq_active = not seq_active
         seq_step = 0
-        reset_trig_step()
-        if not seq_active then
+        if seq_active then
+          set_trig_start()
+        else
           seq_notes = {}
         end
       elseif y == 14 then
@@ -1642,10 +1658,17 @@ function kit_grid_draw(off)
   for x = 1, 2 do
     for y = 10, 11 do
       local i = ((x + (11 - y) * 8) + kit_root_note) % 16
-      g:led(x + 3, y + off, gkey[x + 3][y].active and 15 or (kit_mute.key[i] and 0 or 2))
-      g:led(x + 5, y + off, gkey[x + 5][y].active and 15 or (kit_mute.key[i + 2] and 0 or 4))
-      g:led(x + 7, y + off, gkey[x + 7][y].active and 15 or (kit_mute.key[i + 4] and 0 or 2))
-      g:led(x + 9, y + off, gkey[x + 9][y].active and 15 or (kit_mute.key[i + 6] and 0 or 4))
+      if kit_mode == 1 and shift then
+        g:led(x + 3, y + off, gkey[x + 3][y].active and 15 or (params:get("drmfm_perf_mod_"..i) == 2 and 6 or 2))
+        g:led(x + 5, y + off, gkey[x + 5][y].active and 15 or (params:get("drmfm_perf_mod_"..(i + 2)) == 2 and 6 or 2))
+        g:led(x + 7, y + off, gkey[x + 7][y].active and 15 or (params:get("drmfm_perf_mod_"..(i + 4)) == 2 and 6 or 2))
+        g:led(x + 9, y + off, gkey[x + 9][y].active and 15 or (params:get("drmfm_perf_mod_"..(i + 6)) == 2 and 6 or 2))
+      else
+        g:led(x + 3, y + off, gkey[x + 3][y].active and 15 or (kit_mute.key[i] and 0 or 2))
+        g:led(x + 5, y + off, gkey[x + 5][y].active and 15 or (kit_mute.key[i + 2] and 0 or 4))
+        g:led(x + 7, y + off, gkey[x + 7][y].active and 15 or (kit_mute.key[i + 4] and 0 or 2))
+        g:led(x + 9, y + off, gkey[x + 9][y].active and 15 or (kit_mute.key[i + 6] and 0 or 4))
+      end
     end
     g:led(13, x + 9 + off, gkey[13][x + 9].active and 15 or 8)
   end
