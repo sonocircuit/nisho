@@ -1658,7 +1658,7 @@ function kit_grid_draw(off)
   for x = 1, 2 do
     for y = 10, 11 do
       local i = ((x + (11 - y) * 8) + kit_root_note) % 16
-      if kit_mode == 1 and shift then
+      if kit_mode == 1 and shift and pageNum == 4 then
         g:led(x + 3, y + off, gkey[x + 3][y].active and 15 or (params:get("drmfm_perf_mod_"..i) == 2 and 6 or 2))
         g:led(x + 5, y + off, gkey[x + 5][y].active and 15 or (params:get("drmfm_perf_mod_"..(i + 2)) == 2 and 6 or 2))
         g:led(x + 7, y + off, gkey[x + 7][y].active and 15 or (params:get("drmfm_perf_mod_"..(i + 4)) == 2 and 6 or 2))
