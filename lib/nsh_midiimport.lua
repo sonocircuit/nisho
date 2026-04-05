@@ -1,24 +1,24 @@
 -- midi import // convert midi to reflection patterns
 
-local midim = {}
-
-local ml = include 'lib/midilib'
+local mu = require 'musicutil'
+local ml = include 'lib/nsh_midilib'
 
 local STEP_RES = 64 -- nishos reflection runs at 64ppqn
 local tick_res = 0
+local midi_files = {}
+local midi_dir = ""
+local map_to_scale = false
+local meter_values = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 
 local t = {} -- temp storage for pattern data
 t.count = 0
-t.step = 0
+t.step = 1
 t.event = {}
 t.endpoint = 0
+t.ptn = 0
+t.bank = 0
+t.beats = 0
 
-local midi_files = {}
-local midi_dir = ""
-local active_bank = 0
-local active_pattern = 0
-
-local meter_values = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 
 
 --------- utilities ----------
@@ -93,8 +93,12 @@ end
 -- format event
 function format_event(msg, note, vel)
   local msg = msg == "noteOn" and "note_on" or "note_off" -- transform string
-  local e = {t = eKEYS, i = active_pattern, note = note, vel = vel, action = msg}
-  return e
+  if map_to_scale then
+    local note = tab.key(notes.scale, mu.snap_note_to_array(note, notes.scale))
+    return {t = eSCALE, i = t.ptn, note = note, vel = vel, action = msg}
+  else
+    return {t = eCHROM, i = t.ptn, note = note, vel = vel, action = msg}
+  end
 end
 
 -- handler for note on/off messages
@@ -125,13 +129,14 @@ function to_pattern(msg, ...)
   elseif msg == "noteOn" or msg == "noteOff" then
     parse_notes(msg, ...)
   elseif msg == "endOfTrack" then
-    copy_to_slot(active_pattern, active_bank, active_length)
+    copy_to_slot(t.ptn, t.bank, t.beats)
   end
 end
 
--- convert data
-function midim.convert_all(filename)
-  --local filename = filename or norns.state.data.."midi_files/testr/testr_P11_8B.mid"
+local midim = {}
+
+function midim.convert_all(filename, map)
+  map_to_scale = map or false
   local dir, files = get_files(filename)
   for i = 1, #files do
     local ptn = tonumber(files[i]:match("[P%d+](%d+)"))
@@ -140,19 +145,22 @@ function midim.convert_all(filename)
     if ptn and bank and beats then
       -- clear temp file
       t.count = 0
-      t.step = 0
+      t.step = 1 -- important! start at 1
       t.event = {}
       t.endpoint = 0
       -- set current bank and pattern
-      active_bank = bank
-      active_pattern = ptn
-      active_length = beats
+      t.ptn = ptn
+      t.bank = bank
+      t.beats = beats
       -- read midi and convert
       local file = assert(io.open(dir..files[i], "rb"))
       ml.processHeader(file, get_ticks)
       assert(file:seek("set"))
       ml.processTrack(file, to_pattern, 1)
+      -- add coroutine yield and resume by copy_to_slot?
       file:close()
+    else
+      print("wrong format: "..files[i])
     end
   end
   for i = 1, 8 do
