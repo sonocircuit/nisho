@@ -1,7 +1,7 @@
 --- clocked pattern recorder library
 --
 -- @module lib.reflection
--- @author rylee & dan & sacha
+-- @author robbie & dani & sacha
 -- modified @sonocircuit for nisho
 
 local reflection = {}
