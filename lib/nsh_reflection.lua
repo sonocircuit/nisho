@@ -2,7 +2,7 @@
 --
 -- @module lib.reflection
 -- @author robbie & dani & sacha
--- modified @sonocircuit for nisho
+-- modified @sonoCircuit for nisho
 
 local reflection = {}
 reflection.__index = reflection
@@ -81,13 +81,12 @@ end
 
 --- stop transport
 function reflection:stop(beat_sync)
+  if self.stop_clock or self.play == 0 then return end
   local beat_sync = beat_sync or self.quantize
-  if self.clock then
-    clock.cancel(self.clock)
-  end
-  self.clock = clock.run(function()
+  self.stop_clock = clock.run(function()
     clock.sync(beat_sync)
     self:end_playback()
+    self.stop_clock = nil
   end)
 end
 
@@ -154,12 +153,9 @@ end
 
 --- reset
 function reflection:clear()
-  if self.clock then
-    clock.cancel(self.clock)
-  end
+  self.play = 0
   self.rec = 0
   self.rec_enabled = 0
-  self.play = 0
   self.event = {}
   self.event_prev = {}
   self.step = 0
@@ -171,11 +167,11 @@ function reflection:clear()
   self.step_max = 0
   self.position = 1
   self.manual_length = false
+  self.clock = nil
 end
 
 --- watch
 function reflection:watch(event, step)
-  local step = step
   local offset = 0
   if self.queued_rec ~= nil then
     if self.queued_rec.state then
@@ -297,9 +293,6 @@ function reflection:begin_playback()
 end
 
 function reflection:end_playback()
-  if self.clock then
-    clock.cancel(self.clock)
-  end
   self.play = 0
   self.rec = 0
   self.rec_enabled = 0
