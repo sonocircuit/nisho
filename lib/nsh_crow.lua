@@ -1,11 +1,9 @@
--- arc for nisho v.2.0
+-- crow/ii & arc for nisho v.2.0
 
-local lo = include 'lib/nsh_lfo'
 local vx = require 'voice'
+local lo = include 'lib/nsh_lfo'
 
 local a = arc.connect()
-
-local NUM_VOICES = 6
 
 local crow_detected = false
 local arc_detected = false
@@ -14,10 +12,7 @@ local wsyn_jack = {"ramp", "curve", "fm env", "fm index", "lpg time", "lpg symme
 caw = {}
 
 caw.ansi_view = false
-caw.viz_ansi_trig = {}
-for i = 1, 4 do
-  caw.viz_ansi_trig[i] = false
-end
+caw.viz_ansi_trig = {false, false, false, false}
 
 -- crow
 local cw = {}
@@ -44,17 +39,19 @@ end
 
 -- jf
 local jf = {}
-jf.num_mono = 0
+jf.addr = 1
+jf.mode = 1
+jf.vox_mono = 1
+jf.num_poly = 6
 jf.poly_alloc = vx.new(6, 2)
-jf.poly_low = 1
 jf.poly_notes = {}
+jf.count = 0
+jf.amp = 5
+jf.detune = 0
+jf.detune_array = {-0.11002313, -0.06288439, -0.01952356, 0.01991221, 0.06216538, 0.10745242}
+jf.pb_depth = 7
 for i = 1, 6 do
   jf[i] = {}
-  jf[i].ch = i
-  jf[i].mode = 1
-  jf[i].count = 0
-  jf[i].amp = 5
-  jf[i].pb_depth = 7
   jf[i].pb_v8 = 0
   jf[i].v8 = 0
 end
@@ -74,7 +71,7 @@ for i = 1, 4 do
 end
 
 -- ansible
-ansi_cv = {}
+local ansi_cv = {}
 for i = 1, 4 do
   ansi_cv[i] = {}
   ansi_cv[i].lvl = 0
@@ -85,18 +82,6 @@ for i = 1, 4 do
   ansi_cv[i].lfo = {}
 end
 
--------- jf helpers --------
-function set_jf_levels(i, level)
-  if jf[i].mode == 2 then
-    for i = 1, 6 do
-      if voice[i].output == 6 and jf[i].mode == 2 then
-        jf[i].amp = level
-      end
-    end
-  else
-    jf[i].amp = level
-  end
-end
 
 -------- ansible cv out --------
 function display_output_volt(i)
@@ -232,50 +217,66 @@ function caw.crow_panic(i)
   cw[i].count = 0
 end
 
-function caw.jf_note_on(i, note_num, velocity)
-  local vel = util.linlin(0, 127, 0, 1, (velocity or 127))
+function caw.jf_note_on(note_num, velocity)
+  local vel = util.linlin(0, 127, 0, 1, (velocity or 127)) * jf.amp
   local v = (note_num - 60) / 12
-  if jf[i].mode == 1 then
-    local v8 = v + jf[jf[i].ch].pb_v8
-    jf[jf[i].ch].v8 = v
-    crow.ii.jf.play_voice(jf[i].ch, v8, jf[i].amp * vel)
-    jf[i].count = jf[i].count + 1
-  else
+  if jf.mode == 1 then
+    local v8 = v + jf[jf.vox_mono].pb_v8
+    jf[jf.vox_mono].v8 = v
+    crow.ii.jf[jf.addr].play_voice(jf.vox_mono, v8, vel)
+    jf.count = jf.count + 1
+  elseif jf.mode == 2 then
     local slot = jf.poly_notes[note_num]
     if slot == nil then
       slot = jf.poly_alloc:get()
       slot.count = 1
     end
     slot.on_release = function()
-      crow.ii.jf.trigger(slot.id + jf.num_mono, 0)
+      crow.ii.jf[jf.addr].trigger(slot.id, 0)
     end
     jf.poly_notes[note_num] = slot
-    local v8 = v + jf[slot.id + jf.num_mono].pb_v8
-    jf[slot.id + jf.num_mono].v8 = v
-    crow.ii.jf.play_voice(slot.id + jf.num_mono, v8, jf[i].amp * vel)
+    local v8 = v + jf[slot.id].pb_v8
+    jf[slot.id].v8 = v
+    crow.ii.jf[jf.addr].play_voice(slot.id, v8, vel)
+  elseif jf.mode == 3 then
+    for n = 1, 6 do
+      local v8 = v + jf[n].pb_v8 + (jf.detune_array[n] * (jf.detune/120))
+      jf[n].v8 = v
+      crow.ii.jf[jf.addr].play_voice(n, v8, vel * 0.707)
+    end
+    jf.count = jf.count + 1
   end
 end
 
 function caw.jf_note_off(i, note_num)
-  if jf[i].mode == 1 then
-    jf[i].count = jf[i].count - 1
-    if jf[i].count < 0 then jf[i].count = 0 end
-    if jf[i].count == 0 then
-      crow.ii.jf.trigger(jf[i].ch, 0)
+  if jf.mode == 1 then
+    jf.count = jf.count - 1
+    if jf.count < 0 then jf.count = 0 end
+    if jf.count == 0 then
+      crow.ii.jf[jf.addr].trigger(jf.vox_mono, 0)
     end
-  else
+  elseif jf.mode == 2 then
     local slot = jf.poly_notes[note_num]
     if slot ~= nil then
       jf.poly_alloc:release(slot)
     end
     jf.poly_notes[note_num] = nil
+  elseif jf.mode == 3 then
+    jf.count = jf.count - 1
+    if jf.count < 0 then jf.count = 0 end
+    if jf.count == 0 then
+      for n = 1, 6 do
+        crow.ii.jf[jf.addr].trigger(n, 0)
+      end
+    end
   end
 end
 
-function caw.jf_panic()
-  for i = 1, 6 do
-    crow.ii.jf.trigger(i, 0)
-    jf[i].count = 0
+function caw.jf_panic(i)
+  local addr = i or jf.addr
+  for n = 1, 6 do
+    crow.ii.jf[jf.addr][addr].trigger(n, 0)
+    jf.count = 0
   end
 end
 
@@ -333,17 +334,16 @@ function caw.crow_pitchbend(n, val, dir)
 end
 
 function caw.jf_pitchbend(i, val, dir)
-  if jf[i].mode == 1 then
-    local pb = (jf[i].pb_depth / 12) * val * dir
-    local v8 = jf[jf[i].ch].v8 + pb
-    jf[jf[i].ch].pb_v8 = pb
-    crow.ii.jf.pitch(jf[i].ch, v8)
+  local pb = (jf.pb_depth / 12) * val * dir
+  if jf.mode == 1 then
+    local v8 = jf[jf.vox_mono].v8 + pb
+    jf[jf.vox_mono].pb_v8 = pb
+    crow.ii.jf[jf.addr].pitch(jf.vox_mono, v8)
   else
-    for n = jf.poly_low, 6 do
-      local pb = (jf[i].pb_depth / 12) * val * dir
+    for n = 1, jf.num_poly do
       local v8 = jf[n].v8 + pb
       jf[n].pb_v8 = pb
-      crow.ii.jf.pitch(n, v8)
+      crow.ii.jf[jf.addr].pitch(n, v8)
     end
   end
 end
@@ -387,72 +387,29 @@ function caw.detected()
 end
 
 function caw.manage_ii()
-  local num_ii = 0
-  local crow_1 = 0
-  local crow_2 = 0
+  local ii, crow_1, crow_2 = 0, 0, 0
   for i = 1, NUM_VOICES do
-    if voice[i].output == 6 then
-      num_ii = num_ii + 1
-    end
-    if voice[i].output == 7 then
-      crow.ii.wsyn.voices(4)
-    end
     if voice[i].output == 4 then
       crow_1 = crow_1 + 1
-    end
-    if voice[i].output == 5 then
+    elseif voice[i].output == 5 then
       crow_2 = crow_2 + 1
+    elseif voice[i].output == 6 then
+      ii = ii + 1
+    elseif voice[i].output == 7 then
+      crow.ii.wsyn.voices(4)
     end
   end
-  crow.ii.jf.mode(num_ii > 0 and 1 or 0)
+  crow.ii.jf[jf.addr].mode(ii > 0 and 1 or 0)
   cw[1].active = crow_1 > 0 and true or false
   cw[2].active = crow_2 > 0 and true or false
-end
-
-function caw.alloc_jf_voices()
-  local num = 0
-  for i = 1, 6 do
-    if voice[i].output == 6 and jf[i].mode == 1 then
-      num = num + 1
-    end
-  end
-  jf.num_mono = num
-  -- set mono voice channel
-  for i = 1, 6 do
-    if voice[i].output == 6 and jf[i].mode == 1 then
-      if jf.num_mono > 0 and jf[i].ch > jf.num_mono then
-        params:set("jf_voice_"..i, jf.num_mono)
-      end
-    end
-  end
-  -- re-allocate poly voices
-  local alloc_num = 6 - jf.num_mono
-  jf.poly_alloc = nil
-  jf.poly_alloc = vx.new(alloc_num, 2)
-  jf.poly_low = jf.num_mono + 1
 end
 
 function caw.redraw()
   if arc_detected and crow_detected then arc_redraw() end
 end
 
-function caw.add_jf_params(i)
-  -- jf params
-  params:add_option("jf_mode_"..i, "mode", {"mono", "poly"}, 1)
-  params:set_action("jf_mode_"..i, function(mode) jf[i].mode = mode caw.alloc_jf_voices() caw.jf_panic() end)
-
-  params:add_number("jf_voice_"..i, "voice", 1, 6, i, function(param) return jf[i].mode == 1 and param:get() or "-" end)
-  params:set_action("jf_voice_"..i, function(vox) jf[i].ch = vox caw.alloc_jf_voices()  end)
-
-  params:add_control("jf_amp_"..i, "level", controlspec.new(0.1, 10, "lin", 0.1, 8.0, "vpp"))
-  params:set_action("jf_amp_"..i, function(level) set_jf_levels(i, level) end)
-
-  params:add_number("jf_pitchbend_"..i, "pitchbend", 1, 12, 7, function(param) return param:get().."st" end)
-  params:set_action("jf_pitchbend_"..i, function(value) jf[i].pb_depth = value end)
-end
-
-function caw.add_crow_params()
-local crow_options = {"crow [out 1+2]", "crow [out 3+4]"}
+function caw.init()
+  local crow_options = {"crow [out 1+2]", "crow [out 3+4]"}
   for i = 1, 2 do
     params:add_group("crow_out_"..i, crow_options[i], 15)
     if not crow_detected then params:hide("crow_out_"..i) end
@@ -500,18 +457,48 @@ local crow_options = {"crow [out 1+2]", "crow [out 3+4]"}
 
     params:add_control("crow_mw_depth_"..i, "modwheel "..mwout[i], controlspec.new(-5, 10, "lin", 0.1, 5), function(param) return round_form(param:get(), 0.01, "v") end)
     params:set_action("crow_mw_depth_"..i, function(value) cw[i].mw_depth = value end)
-
   end
 
   -- jf params
-  params:add_group("jf_params", "crow [jf]", 2)
+  params:add_group("jf_params", "crow [jf]", 9)
   if not crow_detected then params:hide("jf_params") end
 
-  params:add_option("jf_run_mode", "jf run mode", {"off", "on"}, 1)
-  params:set_action("jf_run_mode", function(mode) crow.ii.jf.run_mode(mode - 1) end)
+  params:add_option("jf_address", "address", {"jf[one]", "jf[two]"}, 1)
+  params:set_action("jf_address", function(selected) jf.addr = selected
+    local other = selected == 1 and 2 or 1
+    caw.jf_panic(other)
+    crow.ii.jf[selected].mode(1)
+    crow.ii.jf[other].mode(0)
+  end)
 
-  params:add_control("jf_run", "jf run", controlspec.new(-5, 5, "lin", 0, 0, "v"))
-  params:set_action("jf_run", function(volts) crow.ii.jf.run(volts) end)
+  params:add_option("jf_mode", "mode", {"mono", "poly", "unison"}, 1)
+  params:set_action("jf_mode", function(val) jf.mode = val caw.jf_panic() end)
+
+  params:add_number("jf_mono_voice", "voice", 1, 6, 1, function(param) return jf.mode == 1 and param:get() or "-" end)
+  params:set_action("jf_mono_voice", function(val) jf.vox_mono = val caw.jf_panic() end)
+
+  params:add_number("jf_poly_voices", "polyphony", 2, 6, 6, function(param) return jf.mode == 2 and param:get() or "-" end)
+  params:set_action("jf_poly_voices", function(val)
+    caw.jf_panic()
+    jf.num_poly = val
+    jf.poly_alloc = nil
+    jf.poly_alloc = vx.new(val, 2)
+  end)
+
+  params:add_number("jf_detune", "detune", 1, 100, 12, function(param) return jf.mode == 3 and param:get().."%" or "-" end)
+  params:set_action("jf_detune", function(val) jf.detune = val end)
+
+  params:add_number("jf_pitchbend", "pitchbend", 1, 12, 7, function(param) return param:get().."st" end)
+  params:set_action("jf_pitchbend", function(val) jf.pb_depth = val end)
+
+  params:add_control("jf_amp", "level", controlspec.new(0.1, 10, "lin", 0.1, 8.0), function(param) return round_form(param:get(), 0.1, "vpp") end)
+  params:set_action("jf_amp", function(val) jf.amp = val end)
+
+  params:add_option("jf_run_mode", "run mode", {"off", "on"}, 1)
+  params:set_action("jf_run_mode", function(mode) crow.ii.jf[jf.addr].run_mode(mode - 1) end)
+
+  params:add_control("jf_run_voltage", "run voltage", controlspec.new(-5, 5, "lin", 0, 0), function(param) return round_form(param:get(), 0.1, "v") end)
+  params:set_action("jf_run_voltage", function(v) crow.ii.jf[jf.addr].run(v) end)
 
   -- wsyn params
   params:add_group("wsyn_params", "crow [wsyn]", 15)
@@ -522,13 +509,8 @@ local crow_options = {"crow [out 1+2]", "crow [out 3+4]"}
   params:add_option("wysn_mode", "wsyn mode", {"hold", "lpg"}, 2)
   params:set_action("wysn_mode", function(mode)
     crow.ii.wsyn.ar_mode(mode - 1)
-    if mode == 1 then
-      params:hide("wsyn_lpg_time")
-      params:hide("wsyn_lpg_sym")
-    else
-      params:show("wsyn_lpg_time")
-      params:show("wsyn_lpg_sym")
-    end
+    params[mode == 2 and "show" or "hide"](params, "wsyn_lpg_time")
+    params[mode == 2 and "show" or "hide"](params, "wsyn_lpg_sym")
     _menu.rebuild_params()
   end)
 
