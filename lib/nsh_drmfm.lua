@@ -3,7 +3,6 @@
 local fs = require 'fileselect'
 local tx = require 'textentry'
 local mu = require 'musicutil'
-local md = require 'core/mods'
 
 local NUM_VOICES = 16
 local MAX_LENGTH = math.pow(2, 24)
@@ -26,60 +25,57 @@ for i = 1, NUM_VOICES do
   vox[i] = {}
   vox[i].model = "UW"
   vox[i].uw_mode = 1
+  vox[i].loaded = ""
   vox[i].sample_name = ""
   vox[i].sample_len = 0
   vox[i].sample_ch = ""
+  vox[i].key_mod = false
   vox[i].midi_dev = 0
   vox[i].midi_ch = 1
+  vox[i].midi_mode = 1
   vox[i].midi_note = 48
   vox[i].midi_vel = 100
-  vox[i].midi_rise = 4
-  vox[i].midi_fall = 0.5
   vox[i].midi_ccA_num = 0
   vox[i].midi_ccB_num = 0
-  vox[i].midi_ccA_min = 0
-  vox[i].midi_ccA_max = 127
-  vox[i].midi_ccB_min = 0
-  vox[i].midi_ccB_max = 127
   vox[i].midi_ccA_mod = 0
   vox[i].midi_ccB_mod = 0
 end
 
 local prms = {}
 prms.kit = {
-  "model", "uw_sample", "uw_mode", "uw_pitch", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "pitch", "tune", "decay", "decay_drift",
-  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "lpf_cutoff", "lpf_resonance", "hpf_cutoff", "hpf_resonance",
-  "midi_device", "midi_channel", "midi_note", "midi_vel", "midi_ccA_num", "midi_ccB_num", "dist_pmc", "send_a_pmc", "send_b_pmc", "decay_pmc",
-  "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "lpf_cutoff_pmc", "hpf_cutoff_pmc", "midi_ccA_pmc", "midi_ccB_pmc"
+  "model", "choke", "uw_sample", "uw_mode", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "pitch", "tune", "decay", "decay_drift",
+  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "mod7", "mod8",
+  "midi_device", "midi_channel", "midi_mode", "midi_note", "midi_vel", "midi_ccA_num", "midi_ccB_num", "dist_pmc", "send_a_pmc", "send_b_pmc", "decay_pmc",
+  "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "mod7_pmc", "mod8_pmc", "midi_ccA_pmc", "midi_ccB_pmc"
 }
 
 prms.hide = {
-  "model", "uw_params", "uw_sample", "uw_clear", "uw_mode", "uw_pitch", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "synthesis",
-  "pitch", "tune", "decay", "decay_drift", "sample_params", "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "filters", "lpf_cutoff", "lpf_resonance",
-  "hpf_cutoff", "hpf_resonance", "midi", "midi_device", "midi_note", "midi_channel", "midi_ccA_num", "midi_ccB_num", "dist_pmc",
-  "send_a_pmc", "send_b_pmc", "decay_pmc", "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "lpf_cutoff_pmc", "hpf_cutoff_pmc",
+  "model", "choke", "uw_params", "uw_sample", "uw_clear", "uw_mode", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "synthesis",
+  "pitch", "tune", "decay", "decay_drift", "sample_params", "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "mod7", "mod8",
+  "midi", "midi_device", "midi_mode", "midi_note", "midi_vel", "midi_channel", "midi_ccA_num", "midi_ccB_num", "dist_pmc",
+  "send_a_pmc", "send_b_pmc", "decay_pmc", "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "mod7_pmc", "mod8_pmc",
   "midi_ccA_pmc", "midi_ccB_pmc"
 }
 
 prms.vox = {
-  "model", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "synthesis", "pitch", "tune", "decay", "decay_drift",
-  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "filters", "lpf_cutoff", "lpf_resonance", "hpf_cutoff", "hpf_resonance",
-  "dist_pmc", "send_a_pmc", "send_b_pmc", "decay_pmc", "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "lpf_cutoff_pmc", "hpf_cutoff_pmc"
+  "model", "choke", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "synthesis", "pitch", "tune", "decay", "decay_drift",
+  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "mod7", "mod8",
+  "dist_pmc", "send_a_pmc", "send_b_pmc", "decay_pmc", "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "mod7_pmc", "mod8_pmc"
 }
 
 prms.uw = {
-  "model", "uw_params", "uw_sample", "uw_clear", "uw_mode", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "sample_params", "uw_pitch",
-  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "filters", "lpf_cutoff", "lpf_resonance", "hpf_cutoff", "hpf_resonance", "dist_pmc",
-  "send_a_pmc", "send_b_pmc", "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "lpf_cutoff_pmc", "hpf_cutoff_pmc"
+  "model", "choke", "uw_params", "uw_sample", "uw_clear", "uw_mode", "levels", "level", "dist", "pan", "pan_drift", "send_a", "send_b", "sample_params", "pitch",
+  "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "mod7", "mod8", "dist_pmc", "send_a_pmc", "send_b_pmc",
+  "mod1_pmc", "mod2_pmc", "mod3_pmc", "mod4_pmc", "mod5_pmc", "mod6_pmc", "mod7_pmc", "mod8_pmc"
 }
 
 prms.midi = {
-  "model", "midi", "midi_device", "midi_note", "midi_vel", "midi_channel", "midi_ccA_num", "midi_ccB_num", "midi_ccA_pmc", "midi_ccB_pmc"
+  "model", "midi", "midi_device", "midi_mode", "midi_note", "midi_vel", "midi_channel", "midi_ccA_num", "midi_ccB_num", "midi_ccA_pmc", "midi_ccB_pmc"
 }
 
 prms.specs = {
   BD = {
-    names = {"sweep depth", "sweep decay", "mod depth", "mod ratio", "mod decay", "mod feedback"},
+    names = {"sweep depth", "sweep decay", "mod depth", "mod ratio", "mod decay", "mod feedback", "punch", "tone"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
@@ -87,116 +83,136 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 1, 5, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, -100, 100, param:get()), 1, "%") end,
     },
-    default = {pitch = 24, decay = 0.1, mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {pitch = 0, decay = 0.1, mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
   },
   SD = {
-    names = {"noise level", "noise decay", "noise colour", "mod depth", "mod ratio", "mod decay"},
+    names = {"mix [body/noise]", "tone", "noise colour", "noise floor", "body decay", "mod depth", "mod ratio", "mod decay"},
     formatters = {
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
+      function(param)  val = math.floor(param:get() * 100) return ((100 - val).."/"..val) end,
+      function(param) return round_form(util.linexp(0, 1, 400, 1200, param:get()), 1, "hz") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 1, 10, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end
+      function(param) return round_form(util.linlin(0, 1, 20, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 8, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
   },
   XT = {
-    names = {"sweep depth", "sweep decay", "transients", "mod depth", "mod ratio", "mod decay"},
+    names = {"sweep depth", "sweep decay", "transients", "mod depth", "mod ratio", "mod decay", "tone freq", "tone amp"},
     formatters = {
-      function(param) return round_form(util.linlin(0, 1, -100, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 2, 200, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 1, 6, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end
+      function(param) return round_form(util.linlin(0, 1, 0.5, 8, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 80, 2200, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linlin(0, 1, -6, 18, param:get()), 1, "dB") end
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
   CP = {
-    names = {"num claps", "clap decay", "noise level", "mod depth", "mod ratio", "mod decay"},
+    names = {"num claps", "clap decay", "mod depth", "mod ratio", "mod decay", "eq freq", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 1, 12, param:get()), 1, "") end,
+      function(param) return round_form(util.linexp(0, 1, 0.01, 0.1, param:get()), 0.01, "s") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 1, 10, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end
+      function(param) return round_form(util.linlin(0, 1, 2, 8, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 200, 12000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 60, 800, param:get()), 1, "hz") end
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
   RS = {
-    names = {"rim mod", "rim ratio", "snr level", "snr decay", "snr mod", "snr ratio"},
+    names = {"rim mod", "rim ratio", "snr level", "snr decay", "snr mod", "snr ratio", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 1, 5, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 40, 600, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 10, param:get()), 0.1, "*") end
+      function(param) return round_form(util.linlin(0, 1, 0, 10, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linexp(0, 1, 600, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 120, 600, param:get()), 1, "hz") end
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
   CB = {
-    names = {"snap", "feedback", "detune", "mod depth", "mod ratio", "mod decay"},
+    names = {"snap", "feedback", "detune", "mod depth", "mod ratio", "mod decay", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 2, 98, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 10, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end
+      function(param) return round_form(util.linlin(0, 1, 0.01, 1, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 600, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 60, 600, param:get()), 1, "hz") end
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
-  },
-  CY = {
-    names = {"hold", "noise level", "tone", "mod depth", "mod ratio", "mod decay"},
-    formatters = {
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 2200, 8800, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 1.8, 2.2, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 100, 400, param:get()), 1, "%") end
-    },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
   HH = {
-    names = {"hold", "feedback", "tone", "mod depth", "mod ratio", "mod decay"},
+    names = {"hold", "feedback", "tone", "mod depth", "mod ratio", "mod decay", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 2200, 8800, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 4000, 12000, param:get()), 1, "hz") end,
       function(param) return round_form(util.linlin(0, 1, 20, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 2, 12, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 240, param:get()), 1, "%") end
+      function(param) return round_form(util.linexp(0, 1, 0.5, 1.5, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 50, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 1200, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 1200, 3200, param:get()), 1, "hz") end
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
+  },
+  CY = {
+    names = {"hold", "noise level", "mod depth", "mod ratio", "mod decay", "tone", "lpf freq", "hpf freq"},
+    formatters = {
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 20, 60, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linlin(0, 1, 2, 6, param:get()), 0.1, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 80, 200, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 3600, 8200, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 1200, 3200, param:get()), 1, "hz") end
+    },
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
   OC = {
-    names = {"noise level", "wave fold", "dest [car/mod]", "mod depth", "mod ratio", "mod decay"},
+    names = {"noise level", "wave fold", "dest [car/mod]", "mod depth", "mod ratio", "mod decay", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param)  val = math.floor(param:get() * 100) return ((100 - val).."/"..val) end,
       function(param) return round_form(util.linlin(0, 1, -100, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 1, 10, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end
+      function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 20, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 20, 18000, param:get()), 1, "hz") end      
     },
-    default = {mod1 = 0, mod2 = 0, mod3 = 0, mod4 = 0.7, mod5 = 0.1, mod6 = 0.05}
+    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
   UW = {
-    names = {"tune", "direction", "start", "end", "fade in", "fade out"},
+    names = {"tune", "direction", "start", "end", "fade in", "fade out", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, -100, 100, param:get()), 1, "ct") end,
       function(param) return param:get() > 0.5 and "fwd" or "rev" end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 0.01, 2, param:get()), 0.01, "s") end,
-      function(param) return round_form(util.linexp(0, 1, 0.01, 2, param:get()), 0.01, "s") end
+      function(param) return round_form(util.linexp(0, 1, 0.001, 2, param:get()), 0.001, "s") end,
+      function(param) return round_form(util.linexp(0, 1, 0.001, 2, param:get()), 0.001, "s") end,
+      function(param) return round_form(util.linexp(0, 1, 20, 20000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 20, 20000, param:get()), 1, "hz") end  
     },
-    default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0}
+    default = {mod1 = 0.5, mod2 = 0.6, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
   MIDI = {
     names = {"-", "-", "-", "-", "-", "-"},
@@ -252,7 +268,7 @@ end
 
 local function update_modparams(i)
   local t = prms.specs[vox[i].model]
-  for n = 1, 6 do
+  for n = 1, 8 do
     local p = params:lookup_param("drmfm_mod"..n.."_"..i)
     p.name = t.names[n]
     p.formatter = t.formatters[n]
@@ -280,12 +296,12 @@ local function set_model(i, idx)
 end
 
 local function set_param(i, key, val)
-  engine.set_drmfm(i - 1, key, val)
+  engine.drmfm_set_param(i - 1, key, val)
   page_redraw(2)
 end
 
 local function set_perf_macros(val)
-  engine.drmfm_perf(val)
+  engine.drmfm_kit_mod(val)
   for i = 1, NUM_VOICES do
     if vox[i].model == "MIDI" then
       if vox[i].midi_ccA_mod ~= 0 and vox[i].midi_ccA_num > 0 then
@@ -328,6 +344,7 @@ local function save_drmfm_kit(txt)
     kit.loaded = txt
     build_kit_list()
     print("saved drmfm kit: "..txt)
+    dirtyscreen = true
   end
 end
 
@@ -358,7 +375,6 @@ local function load_drmfm_kit(path)
       print("error: not a kit file")
     end
   end
-  screenredrawtimer:start()
 end
 
 local function save_drmfm_voice(txt)
@@ -368,7 +384,9 @@ local function save_drmfm_voice(txt)
       t[v] = params:get("drmfm_"..v.."_"..vox.selected)
     end
     tab.save(t, kit.voice_path.."/"..txt..".kvox")
+    vox[vox.selected].loaded = txt
     print("saved drmfm voice: "..txt)
+     dirtyscreen = true
   end
 end
 
@@ -383,6 +401,7 @@ local function load_drmfm_voice(path)
           end
         end
         local name = path:match("[^/]*$"):gsub(".kvox", "")
+        vox[vox.selected].loaded = name
         print("loaded drmfm voice: "..name)
       else
         print("error: could not find voice", path)
@@ -391,7 +410,6 @@ local function load_drmfm_voice(path)
       print("error: not a voice file")
     end
   end
-  screenredrawtimer:start()
 end
 
 local function load_sample(i, path)
@@ -411,7 +429,6 @@ local function load_sample(i, path)
       print("file not supported: "..path)
     end
   end
-  screenredrawtimer:start()
 end
 
 local function clear_sample(i)
@@ -433,26 +450,23 @@ local function viz_pulse(i)
 end
 
 local function add_params()
-  local send_a_name = md.is_loaded("fx") and "send a" or "delay send"
-  local send_b_name = md.is_loaded("fx") and "send b" or "reverb send" 
-
-  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 51) + 14))
+  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 49) + 14))
 
   params:add_separator("drmfm_kits", "drmFM kit")
 
   params:add_trigger("drmfm_load_kit", ">> load", "")
-  params:set_action("drmfm_load_kit", function(path) fs.enter(kit.preset_path, function(path) load_drmfm_kit(path) end) screenredrawtimer:stop() end)
+  params:set_action("drmfm_load_kit", function(path) fs.enter(kit.preset_path, load_drmfm_kit) end)
 
   params:add_trigger("drmfm_save_kit", "<< save")
-  params:set_action("drmfm_save_kit", function() tx.enter(save_drmfm_kit, kit.loaded)  end)
+  params:set_action("drmfm_save_kit", function() tx.enter(save_drmfm_kit, kit.loaded) end)
    
   params:add_separator("drmfm_settings", "drmFM settings")
 
-  params:add_control("drmfm_main_level", "main level", controlspec.new(0, 1, "lin", 0, 1), function(param) return round_form(param:get() * 100, 1, "%") end)
-  params:set_action("drmfm_main_level", function(val) engine.set_drmfm_level(val) end)
+  params:add_control("drmfm_main_level", "main level", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return round_form(param:get() * 100, 1, "%") end)
+  params:set_action("drmfm_main_level", function(val) engine.drmfm_set_level(val) end)
 
   params:add_trigger("drmfm_load_voice", "> load voice")
-  params:set_action("drmfm_load_voice", function() fs.enter(kit.voice_path, function(path) load_drmfm_voice(path) end) screenredrawtimer:stop() end)
+  params:set_action("drmfm_load_voice", function() fs.enter(kit.voice_path, load_drmfm_voice) end)
 
   params:add_trigger("drmfm_save_voice", "< save voice")
   params:set_action("drmfm_save_voice", function() tx.enter(save_drmfm_voice, vox[vox.selected].model.."_") end)
@@ -465,6 +479,9 @@ local function add_params()
   for i = 1, NUM_VOICES do
     params:add_option("drmfm_model_"..i, "model", vox.models, tab.key(vox.models, "UW"))
     params:set_action("drmfm_model_"..i, function(idx) set_model(i, idx) end)
+
+    params:add_number("drmfm_choke_"..i, "choke group", 1, 8, ((i - 1) % 8 + 1), function(param) return vox[i].model == "MIDI" and  "-" or param:get() end)
+    params:set_action("drmfm_choke_"..i, function(val) engine.drmfm_set_choke(i - 1, val - 1) end)
   end
 
   params:add_trigger("drmfm_set_defaults", "set default >>")
@@ -487,7 +504,7 @@ local function add_params()
     params:add_control("drmfm_level_"..i, "level", controlspec.new(0, 2, "lin", 0, 1, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_level_"..i, function(val) set_param(i, "amp", val) end)
 
-    params:add_control("drmfm_dist_"..i, "distortion", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("drmfm_dist_"..i, "drive", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_dist_"..i, function(val) set_param(i, "dist", val) end)
 
     params:add_control("drmfm_pan_"..i, "pan", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return pan_display(param:get()) end)
@@ -496,15 +513,16 @@ local function add_params()
     params:add_control("drmfm_pan_drift_"..i, "pan drift", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_pan_drift_"..i, function(val) set_param(i, "panRnd", val) end)
     
-    params:add_control("drmfm_send_a_"..i, send_a_name, controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("drmfm_send_a_"..i, "delay send", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_send_a_"..i, function(val) set_param(i, "sendA", val) end)
     
-    params:add_control("drmfm_send_b_"..i, send_b_name, controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("drmfm_send_b_"..i, "reverb send" , controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_send_b_"..i, function(val) set_param(i, "sendB", val) end)
 
     params:add_separator("drmfm_synthesis_"..i, "synthesis")
-    params:add_number("drmfm_pitch_"..i, "pitch", 12, 95, 24, function(param) return mu.note_num_to_name(param:get(), true) end)
-    params:set_action("drmfm_pitch_"..i, function(val) set_param(i, "note", val) end)
+    params:add_separator("drmfm_sample_params_"..i, "sample settings")
+    params:add_number("drmfm_pitch_"..i, "pitch", -24, 24, 0, function(param) return param:get().."st" end)
+    params:set_action("drmfm_pitch_"..i, function(val) set_param(i, "pitch", val) end)
 
     params:add_number("drmfm_tune_"..i, "tune", -100, 100, 0, function(param) return round_form(param:get(), 1, "ct") end)
     params:set_action("drmfm_tune_"..i, function(val) set_param(i, "tune", math.floor(val / 100)) end)
@@ -515,27 +533,10 @@ local function add_params()
     params:add_control("drmfm_decay_drift_"..i, "decay drift", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_decay_drift_"..i, function(val) set_param(i, "decRnd", val) end)
 
-    params:add_separator("drmfm_sample_params_"..i, "sample settings")
-    params:add_number("drmfm_uw_pitch_"..i, "pitch", -24, 24, 0, function(param) return param:get().."st" end)
-    params:set_action("drmfm_uw_pitch_"..i, function(val) set_param(i, "pitch", val) end)
-
-    for n = 1, 6 do
-      params:add_control("drmfm_mod"..n.."_"..i, "mod"..n, controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    for n = 1, 8 do
+      params:add_control("drmfm_mod"..n.."_"..i, "mod"..n, controlspec.new(0, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
       params:set_action("drmfm_mod"..n.."_"..i, function(val) set_param(i, "mod"..n, val) end)
     end
-
-    params:add_separator("drmfm_filters_"..i, "filters")
-    params:add_control("drmfm_lpf_cutoff_"..i, "lpf cutoff", controlspec.new(20, 18000, "exp", 0, 18000, "", 1/200), function(param) return round_form(param:get(), 1, " hz") end)
-    params:set_action("drmfm_lpf_cutoff_"..i, function(val) set_param(i, "lpfHz", val)  end)
-
-    params:add_control("drmfm_lpf_resonance_"..i, "lpf resonance", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("drmfm_lpf_resonance_"..i, function(val) set_param(i, "lpfRz", val) end)
-    
-    params:add_control("drmfm_hpf_cutoff_"..i, "hpf cutoff", controlspec.new(20, 18000, "exp", 0, 20, "", 1/200), function(param) return round_form(param:get(), 1, " hz") end)
-    params:set_action("drmfm_hpf_cutoff_"..i, function(val) set_param(i, "hpfHz", val) end)
-
-    params:add_control("drmfm_hpf_resonance_"..i, "hpf resonance", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("drmfm_hpf_resonance_"..i, function(val) set_param(i, "hpfRz", val) end)
 
     ----- MIDI model params -----
     params:add_separator("drmfm_midi_"..i, "midi")
@@ -544,6 +545,9 @@ local function add_params()
 
     params:add_number("drmfm_midi_channel_"..i, "midi channel", 1, 16, 1)
     params:set_action("drmfm_midi_channel_"..i, function(val) vox[i].midi_ch = val end)
+
+    params:add_option("drmfm_midi_mode_"..i, "midi mode", {"trig", "gate"}, 1)
+    params:set_action("drmfm_midi_mode_"..i, function(val) vox[i].midi_mode = val end)
 
     params:add_number("drmfm_midi_note_"..i, "midi note", 0, 127, 60 + i, function(param) return mu.note_num_to_name(param:get(), true) end)
     params:set_action("drmfm_midi_note_"..i, function(val) vox[i].midi_note = val end)
@@ -558,12 +562,12 @@ local function add_params()
     params:set_action("drmfm_midi_ccB_num_"..i, function(val) vox[i].midi_ccB_num = val end)
   end
 
-  params:add_separator("drmfm_modulation_settings", "mod settings")
+  params:add_separator("drmfm_modulation_settings", "morph settings")
 
-  params:add_control("drmfm_perf_depth", "mod depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+  params:add_control("drmfm_perf_depth", "morph depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("drmfm_perf_depth", function(val) set_perf_macros(val) end)
 
-  params:add_number("drmfm_perf_time", "mod duration", 2, 32, 8, function(param) return param:get().." beats" end)
+  params:add_number("drmfm_perf_time", "morph time", 2, 32, 8, function(param) return param:get().." beats" end)
 
   params:add_separator("drmfm_modulation_depth", "mod dest")
 
@@ -571,25 +575,19 @@ local function add_params()
     params:add_control("drmfm_dist_pmc_"..i, "distortion", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_dist_pmc_"..i, function(val) set_param(i, "distM", val)  end)
 
-    params:add_control("drmfm_send_a_pmc_"..i, send_a_name, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("drmfm_send_a_pmc_"..i, "delay send" , controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_send_a_pmc_"..i, function(val) set_param(i, "sendAM", val) end)
 
-    params:add_control("drmfm_send_b_pmc_"..i, send_b_name, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("drmfm_send_b_pmc_"..i, "reverb send" , controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_send_b_pmc_"..i, function(val) set_param(i, "sendBM", val) end)
     
     params:add_control("drmfm_decay_pmc_"..i, "decay", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("drmfm_decay_pmc_"..i, function(val) set_param(i, "decayM", val) end)
 
-    for n = 1, 6 do
+    for n = 1, 8 do
       params:add_control("drmfm_mod"..n.."_pmc_"..i, "mod"..n, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
       params:set_action("drmfm_mod"..n.."_pmc_"..i, function(val) local key = ("mod"..n.."M") set_param(i, key, val)  end)
     end
-
-    params:add_control("drmfm_lpf_cutoff_pmc_"..i, "lpf cutoff", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("drmfm_lpf_cutoff_pmc_"..i, function(val) set_param(i, "lpfM", val) end)
-
-    params:add_control("drmfm_hpf_cutoff_pmc_"..i, "hpf cutoff", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("drmfm_hpf_cutoff_pmc_"..i, function(val) set_param(i, "hpfM", val) end)
 
     ----- MIDI model params -----
     params:add_number("drmfm_midi_ccA_pmc_"..i, "cc A depth", -127, 127, 0)
@@ -606,10 +604,8 @@ end
 drmfm = {}
 drmfm.copy_data = false
 drmfm.viz = {}
-drmfm.model = {}
 for i = 1, NUM_VOICES do
   drmfm.viz[i] = false
-  drmfm.model[i] = ""
 end
 
 function drmfm.init()
@@ -629,12 +625,20 @@ function drmfm.get_model(i)
   return vox[i].model
 end
 
+function drmfm.get_kit()
+  return kit.loaded
+end
+
 function drmfm.get_file_info(i)
   local info = {}
   info.name = vox[i].sample_name
   info.len = vox[i].sample_len
   info.ch = vox[i].sample_ch
   return info
+end
+
+function drmfm.get_copy_state()
+  return drmfm.copy_data
 end
 
 function drmfm.print_params(i) -- 4 debug
@@ -645,7 +649,7 @@ end
 
 function drmfm.init_model(i)
   set_default(i)
-  show_message(i..":  set  to  default")
+  show_message("voice  "..i..":  set  to  default")
 end
 
 function drmfm.load_default()
@@ -658,19 +662,36 @@ function drmfm.load_default()
   end
 end
 
+function drmfm.save_kit()
+  tx.enter(save_drmfm_kit, kit.loaded)
+end
+
+function drmfm.save_voice()
+  tx.enter(save_drmfm_voice, vox[vox.selected].model.."_")
+end
+
 function drmfm.load_kit()
-  fs.enter(kit.preset_path, function(path) load_drmfm_kit(path) end)
   screenredrawtimer:stop()
+  fs.enter(kit.preset_path, function(path)
+    load_drmfm_kit(path)
+    screenredrawtimer:start()
+  end)
 end
 
 function drmfm.load_voice()
-  fs.enter(kit.voice_path, function(path) load_drmfm_voice(path) end)
   screenredrawtimer:stop()
+  fs.enter(kit.voice_path, function(path)
+    load_drmfm_voice(path)
+    screenredrawtimer:start()
+  end)
 end
 
 function drmfm.load_sample(i)
-  fs.enter(_path.audio, function(path) load_sample(i, path) end)
   screenredrawtimer:stop()
+  fs.enter(_path.audio, function(path)
+    load_sample(i, path)
+    screenredrawtimer:start()
+  end)
 end
 
 function drmfm.clear_sample(i)
@@ -707,7 +728,12 @@ function drmfm.exec_copy(i)
   end
 end
 
-function drmfm.perf_ramp(action)
+function drmfm.key_mod(i, z)
+  vox[i].key_mod = z == 1 and true or false
+  engine.drmfm_set_param(i - 1, "keyMod", z)
+end
+
+function drmfm.kit_mod(action)
   if action == "run" then
     if perf_clk ~= nil then
       clock.cancel(perf_clk)
@@ -725,8 +751,14 @@ function drmfm.perf_ramp(action)
   else
     if perf_clk ~= nil then
       clock.cancel(perf_clk)
+      perf_clk = nil
     end
     params:set("drmfm_perf_depth", 0)
+    for i = 1, NUM_VOICES do
+      if vox[i].key_mod then
+        engine.drmfm_set_param(i - 1, "keyMod", 0)
+      end
+    end
   end
 end
 
@@ -735,8 +767,16 @@ function drmfm.trig(i, vel)
     local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
     if vox[i].model == "MIDI" then
       vox[i].midi_dev:note_on(vox[i].midi_note, math.floor(vox[i].midi_vel * vel), vox[i].midi_ch)
-      drmfm.viz[i] = true
-      dirtygrid = true
+      if vox[i].midi_mode == 1 then
+        clock.run(function()
+          clock.sync(1/4)
+          vox[i].midi_dev:note_off(vox[i].midi_note, 0, vox[i].midi_ch)
+        end)
+        viz_pulse(i)
+      else
+        drmfm.viz[i] = true
+        dirtygrid = true
+      end
     elseif vox[i].model == "UW" then
       engine.drmfm_trig(i - 1, vel)
       if vox[i].uw_mode == 1 then
@@ -754,8 +794,10 @@ end
 
 function drmfm.stop(i)
   if vox[i].model == "MIDI" then
-    vox[i].midi_dev:note_off(vox[i].midi_note, 0, vox[i].midi_ch)
-    drmfm.viz[i] = false
+    if vox[i].midi_mode == 2 then
+      vox[i].midi_dev:note_off(vox[i].midi_note, 0, vox[i].midi_ch)
+      drmfm.viz[i] = false
+    end
   elseif vox[i].model == "UW" then
     if vox[i].uw_mode == 2 then
       engine.drmfm_stop(i - 1)
