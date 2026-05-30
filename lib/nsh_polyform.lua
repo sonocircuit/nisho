@@ -2,8 +2,8 @@
 
 local tx = require 'textentry'
 local mu = require 'musicutil'
-local md = require 'core/mods'
 local vx = require 'voice'
+
 
 local ptch = {}
 ptch.preset_path = norns.state.data.."polyform_patches"
@@ -13,10 +13,10 @@ ptch.loaded = {"", ""}
 ptch.synth = 1
 ptch.list = {}
 ptch.prms = {
-  "main_amp", "pan", "send_a", "send_b", "unison_mode", "unison_detune", "ptichbend_range", "mix",
+  "main_amp", "drive", "pan", "send_a", "send_b", "ptichbend_range", "mix",
   "saw_tune","saw_shape", "saw_fm_index", "saw_fm_ratio", "swm_rate", "swm_depth", "pulse_tune", "pulse_width", "pwm_rate", 
-  "pwm_depth", "noise_mix", "noise_type", "lpf_cutoff", "lpf_resonance", "lpf_env_depth", "lpf_keytrack", "hpf_cutoff",
-  "hpf_resonance", "hpf_env_depth", "hpf_keytrack", "env_curve", "attack", "decay", "sustain", "release",
+  "pwm_depth", "noise_mix", "noise_type", "lpf_cutoff", "lpf_resonance", "lpf_env_depth", "lpf_keytrack",
+  "hpf_cutoff", "hpf_resonance", "hpf_env_depth", "hpf_keytrack", "env_curve", "attack", "decay", "sustain", "release",
   "mod_env_amp", "mod_env_curve", "mod_delay", "mod_attack", "mod_decay", "mod_sustain", "mod_release", "mod_osc_mix",
   "mod_noise_level", "mod_send_a", "mod_send_b", "mod_saw_shape", "mod_swm_depth","mod_fm_ratio", "mod_fm_index",
   "mod_pulse_width", "mod_pwm_depth", "mod_cutoff_lpf", "mod_cutoff_hpf", "vib_freqmod", "vib_depthmod",
@@ -28,9 +28,6 @@ for i = 1, 2 do
   local alloc_num = i == 1 and 1 or 6
   syn[i] = {}
   syn[i].vox = 1
-  syn[i].unison = false
-  syn[i].detune = 1
-  syn[i].count = 0
   syn[i].alloc = vx.new(alloc_num, 2) -- 2 is LRU
   syn[i].slot = {}
   syn[i].prev_note = 0
@@ -38,41 +35,6 @@ for i = 1, 2 do
   syn[i].vib_rate_mod = 0
   syn[i].vib_depth_mod = 0
   syn[i].noise_type = 0
-end
-
--- JP800 supersaw emulation based on adam szbao's thesis,
--- ported to supercollider by eric skogan and adapted by zack scholl
--- ported to lua and adapted for nisho by sonocircuit
-local function get_detune_val(x)
-  local detune_val = 
-  (10028.7312891634 * math.pow(11, x)) -
-  (50818.8652045924 * math.pow(10, x)) +
-  (111363.4808729368 * math.pow(9, x)) -
-  (138150.6761080548 * math.pow(8, x)) +
-  (106649.6679158292 * math.pow(7, x)) -
-  (53046.9642751875 * math.pow(6, x)) +
-  (17019.9518580080 * math.pow(5, x)) -
-  (3425.0836591318 * math.pow(4, x)) +
-  (404.2703938388 * math.pow(3, x)) -
-  (24.1878824391 * math.pow(2, x)) +
-  (0.6717417634 * x) +
-  0.0030115596
-  return detune_val
-end
-
--- bad idea to call get_detune_val() each time a note is triggered so we'll populate a table at init with 100 values (depth).
-local detune_curve = {}
-local function build_detune_values()
-  for i = 1, 100 do
-    table.insert(detune_curve, get_detune_val(i / 100))
-  end
-end
-
--- detune array for six voices
-local detune_array = {-0.11002313, -0.06288439, -0.01952356, 0.01991221, 0.06216538, 0.10745242}
-
-local function detune_freq(voice, freq, depth)
-  return freq + (freq * detune_curve[depth] * detune_array[voice] * 0.1)
 end
 
 -- display utilities
@@ -118,14 +80,25 @@ end
 
 local function set_value(i, key, val)
   local t = {"mono", "poly"}
-  engine.set_polyform(t[i], key, val)
+  engine.polyform_set_param(t[i], key, val)
+  page_redraw(2)
+end
+
+local function set_stage(i, key, val)
+  local t = {"mono", "poly"}
+  engine.polyform_set_stage(t[i], key, val)
+  page_redraw(2)
+end
+
+local function set_morph(i, val)
+  local t = {"mono", "poly"}
+  engine.polyform_morph(t[i], val)
   page_redraw(2)
 end
 
 local function dont_panic(i)
   local t = {"mono", "poly"}
   engine.polyform_panic(t[i])
-  syn[i].count = 0
 end
 
 local function build_patch_list()
@@ -185,7 +158,7 @@ end
 local function add_params()
    for i = 1, 2 do
     local name = i == 1 and "mono" or "poly"
-    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 79)
+    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 78)
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
@@ -197,27 +170,22 @@ local function add_params()
 
     params:add_separator("polyform_levels_"..i, "levels")
     -- main amp
-    params:add_control("polyform_main_amp_"..i, "main level", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:add_control("polyform_main_amp_"..i, "level", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_main_amp_"..i, function(x) set_value(i, "level", x) end)
+    -- main amp
+    params:add_control("polyform_drive_"..i, "drive", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:set_action("polyform_drive_"..i, function(x) set_stage(i, "drive", x) end)
     -- pan
     params:add_control("polyform_pan_"..i, "pan", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return pan_display(param:get()) end)
     params:set_action("polyform_pan_"..i, function(x) set_value(i, "pan", x) end)
     -- send a
-    local send_a_name = md.is_loaded("fx") and "send a" or "delay send"
-    params:add_control("polyform_send_a_"..i, send_a_name, controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_send_a_"..i, function(x) set_value(i, "sendA", x) end)
+    params:add_control("polyform_send_a_"..i, "delay send", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:set_action("polyform_send_a_"..i, function(x) set_stage(i, "sendA", x) end)
     -- send b
-    local send_b_name = md.is_loaded("fx") and "send b" or "reverb send"
-    params:add_control("polyform_send_b_"..i, send_b_name, controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_send_b_"..i, function(x) set_value(i, "sendB", x) end)
+    params:add_control("polyform_send_b_"..i, "reverb send", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:set_action("polyform_send_b_"..i, function(x) set_stage(i, "sendB", x) end)
 
     params:add_separator("polyform_voice_"..i, "voice")
-    -- unison mode
-    params:add_option("polyform_unison_mode_"..i, "unison", {"off", "on"}, 1)
-    params:set_action("polyform_unison_mode_"..i, function(mode) syn[i].unison = mode == 2 and true or false dont_panic(i) end)
-    -- detune amt
-    params:add_number("polyform_unison_detune_"..i, "detune", 1, 100, 10, function(param) return round_form(param:get(), 1, "%") end)
-    params:set_action("polyform_unison_detune_"..i, function(x) syn[i].detune = x end)
     -- pitchbend range
     params:add_number("polyform_ptichbend_range_"..i, "pitchbend", 1, 12, 7, function(param) return param:get().."st" end)
     params:set_action("polyform_ptichbend_range_"..i, function(x) set_value(i, "pb_range", x) end)
@@ -264,7 +232,7 @@ local function add_params()
     params:add_control("polyform_noise_mix_"..i, "noise level", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_noise_mix_"..i, function(x) set_value(i, "noise_amp", x) end)
     -- noise crackle
-    params:add_option("polyform_noise_type_"..i, "noise type", {"white", "static", "redux", "brown"}, 1)
+    params:add_option("polyform_noise_type_"..i, "noise type", {"white", "gray", "static hi", "static lo"}, 1)
     params:set_action("polyform_noise_type_"..i, function(x) syn[i].noise_type = x - 1 end)
     
     params:add_separator("polyform_filter_lpf_"..i, "low pass filter")
@@ -315,7 +283,7 @@ local function add_params()
     params:add_separator("polyform_mod_src_"..i, "mod source")
     -- depth
     params:add_control("polyform_modwheel_amt_"..i, "modwheel amt", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_modwheel_amt_"..i, function(x) set_value(i, "mod_wheel", x) syn[i].modwheel = x end)
+    params:set_action("polyform_modwheel_amt_"..i, function(x) set_morph(i, x) syn[i].modwheel = x end)
     -- mod env level
     params:add_control("polyform_mod_env_amp_"..i, "mod env amt", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_mod_env_amp_"..i, function(x) set_value(i, "menv_amp", x) end)
@@ -346,11 +314,11 @@ local function add_params()
     params:add_control("polyform_mod_noise_level_"..i, "noise level", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_mod_noise_level_"..i, function(x) set_value(i, "mod_noiseamp", x) end)
     -- send A mod
-    params:add_control("polyform_mod_send_a_"..i, send_a_name, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_mod_send_a_"..i, function(x) set_value(i, "mod_sendA", x) end)
+    params:add_control("polyform_mod_send_a_"..i, "delay send", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:set_action("polyform_mod_send_a_"..i, function(x) set_stage(i, "mod_sendA", x) end)
     -- send B mod
-    params:add_control("polyform_mod_send_b_"..i, send_b_name, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
-    params:set_action("polyform_mod_send_b_"..i, function(x) set_value(i, "mod_sendB", x) end)
+    params:add_control("polyform_mod_send_b_"..i, "reverb send", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
+    params:set_action("polyform_mod_send_b_"..i, function(x) set_stage(i, "mod_sendB", x) end)
     -- saw shape mod
     params:add_control("polyform_mod_saw_shape_"..i, "saw shape", controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_mod_saw_shape_"..i, function(x) set_value(i, "mod_sawshape", x) end)
@@ -424,7 +392,6 @@ function polyform.init()
     util.make_dir(ptch.preset_path)
     os.execute('cp '.. norns.state.path .. 'data/polyform_patches/*.patch '.. ptch.preset_path)
   end
-  build_detune_values()
   build_patch_list()
   add_params()
 end
@@ -445,63 +412,44 @@ function polyform.note_on(i, note_num, vel)
   local t = {"mono", "poly"}
   local freq = mu.note_num_to_freq(note_num)
   local vel = vel and util.linlin(0, 127, 0, 1, vel) or 1
-  if syn[i].unison then
-    -- unsion on
-    local max = i == 1 and 2 or 6
-    local off = i == 1 and 2 or 0
-    local att = i == 1 and 0.704 or 0.501
-    for vox = 1, max do
-      engine.polyform_on(t[i], vox - 1, detune_freq(vox + off, freq, syn[i].detune), vel * att, syn[i].noise_type)
+  local slot = syn[i].slot[note_num]
+  if slot == nil then
+    if i == 1 then
+      syn[i].slot[syn[i].prev_note] = nil
+      syn[i].prev_note = note_num
     end
-    syn[i].count = syn[i].count + 1
-  else
-    local slot = syn[i].slot[note_num]
-    if slot == nil then
-      if i == 1 then
-        syn[i].slot[syn[i].prev_note] = nil
-        syn[i].prev_note = note_num
-      end
-      slot = syn[i].alloc:get()
-      slot.count = 1
-    end
-    slot.on_release = function()
-      engine.polyform_off(t[i], slot.id - 1)
-    end
-    syn[i].slot[note_num] = slot
-    engine.polyform_on(t[i], slot.id - 1, freq, vel, syn[i].noise_type)
+    slot = syn[i].alloc:get()
+    slot.count = 1
   end
+  slot.on_release = function()
+    engine.polyform_off(t[i], slot.id - 1)
+  end
+  syn[i].slot[note_num] = slot
+  engine.polyform_on(t[i], slot.id - 1, freq, vel, syn[i].noise_type)
 end
 
 function polyform.note_off(i, note_num)
-  if syn[i].unison then
-    syn[i].count = syn[i].count - 1
-    if syn[i].count <= 0 then
-      dont_panic(i) -- unison off
-    end
-  else
-    local slot = syn[i].slot[note_num]
-    if slot ~= nil then
-      syn[i].alloc:release(slot)
-    end
-    syn[i].slot[note_num] = nil
+  local slot = syn[i].slot[note_num]
+  if slot ~= nil then
+    syn[i].alloc:release(slot)
   end
+  syn[i].slot[note_num] = nil
 end
 
 function polyform.set_pitchbend(i, val)
   local t = {"mono", "poly"}
-  engine.set_polyform(t[i], "pb_depth", val)
+  engine.polyform_set_param(t[i], "pb_depth", val)
 end
 
 function polyform.set_modwheel(i, val)
-  local t = {"mono", "poly"}
   local amt = util.clamp(0, 1, syn[i].modwheel + val)
-  engine.set_polyform(t[i], "mod_wheel", amt)
+  set_morph(i, amt)
 end
 
 function polyform.set_aftertouch(i, val)
   local t = {"mono", "poly"}
-  engine.set_polyform(t[i], "mod_vibrate", syn[i].vib_rate_mod * val)
-  engine.set_polyform(t[i], "mod_vibdepth", syn[i].vib_depth_mod * val)
+  engine.polyform_set_param(t[i], "mod_vibrate", syn[i].vib_rate_mod * val)
+  engine.polyform_set_param(t[i], "mod_vibdepth", syn[i].vib_depth_mod * val)
 end
 
 return polyform
