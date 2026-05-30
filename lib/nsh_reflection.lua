@@ -15,6 +15,7 @@ function reflection.new(id)
   p.rec                  = 0
   p.rec_enabled          = 0
   p.play                 = 0
+  p.play_queued          = 0
   p.event                = {}
   p.event_prev           = {}
   p.step                 = 0
@@ -73,6 +74,7 @@ function reflection:start(beat_sync)
   if self.clock then
     clock.cancel(self.clock)
   end
+  self.play_queued = 1
   self.clock = clock.run(function()
     clock.sync(beat_sync)
     self:begin_playback()
@@ -195,6 +197,7 @@ end
 -- must be called from within a clock.run
 function reflection:begin_playback()
   self.step = self.step_min
+  self.play_queued = 0
   self.play = 1
   self.start_callback()
   local queued_start_callback = false
