@@ -1,9 +1,7 @@
-local drmfm = include 'lib/nsh_drmfm'
-local caw = include 'lib/nsh_crow'
+-- grid for nisho - v2.0.0
 
 local g = grid.connect()
 
--- local variables
 local GRIDSIZE = 0
 
 local mod = {}
@@ -26,9 +24,10 @@ end
 
 local held = {} -- track num held keys
 held.int = 0
-held.key = 0
 held.kit = 0
+held.keys = 0
 held.cmem = 0
+held.chrd = 0
 held.ccnf = 0
 held.trig = 0
 held.ptn = {}
@@ -41,6 +40,8 @@ for i = 1, 8 do
 end
 
 local rk = {0, 0, 0, 0}
+
+local kit_morph = false
 
 
 -------------------------- note management functions --------------------------
@@ -58,52 +59,97 @@ local function table_remove(t, note)
   end
 end
 
-function add_note(n_key, n_val)
+function add_scale_note(n_key, n_val)
   table.insert(notes.keys, n_key)
+  if not tab.contains(notes.active, n_key) then
+    table.insert(notes.active, n_key)
+  end
   if seq.collecting and not seq.appending then
     table.insert(seq.collected, n_key)
   elseif seq.appending and not seq.collecting then
     table.insert(seq.notes, n_key)
     seq.notes_added = true
   elseif seq.active and not seq.polyseq then
-    if seq.hold and (held.key + held.cmem) == 1 then seq.notes = {} end
+    if seq.hold and (held.keys + held.cmem) == 1 then seq.notes = {} end
     table.insert(seq.notes, n_key)
   end
   if seq.active or rep.active then
-    reset_trig_step(held.key + held.cmem)
+    reset_trig_step(held.keys + held.cmem)
   else
     local e = {t = eSCALE, i = voice.keys, note = n_val, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
   end
   notes.last = n_val + notes.scale_oct * notes.int_oct[voice.int]
 end
 
-function remove_note(n_key, n_val)
+function remove_scale_note(n_key, n_val)
   local i = voice.keys
   if (voice[i].sustaining and not tab.contains(voice[i].sustained, n_val)) or not voice[i].sustaining then
     if seq.active and not (seq.collecting or seq.appending or seq.hold or seq.polyseq) then
       table_remove(seq.notes, n_key)
-    elseif not rep.active then
+    elseif not (rep.active or (held.cmem > 0 and tab.contains(notes.cmem, n_val))) then
       local e = {t = eSCALE, i = i, note = n_val, action = "note_off"} event(e)
     end
-    table_remove(notes.keys, n_key)
+  end
+  table_remove(notes.keys, n_key)
+  if not tab.contains(notes.cmem, n_val) then
+    table_remove(notes.active, n_key)
   end
 end
 
-function sustain_notes(i, sustain)
-  if sustain then
-     if i == voice.keys and #notes.keys > 0 and voice[i].keys_option < 4 then
-      for idx, note in ipairs(notes.keys) do
-        local note = note + notes.trsp_int
-        voice[i].sustained[idx] = note
-      end
-      voice[i].sustaining = true
+function add_cmem_notes(i, n_keys)
+  for _, note in ipairs(n_keys) do
+    if not tab.contains(notes.active, note) then
+      table.insert(notes.active, note)
+    end
+  end
+  if seq.collecting and not seq.appending then
+    for _, note in ipairs(n_keys) do
+      table.insert(seq.collected, note)
+    end
+  elseif seq.appending and not seq.collecting then
+    for _, note in ipairs(n_keys) do
+      table.insert(seq.notes, note)
+    end
+    seq.notes_added = true
+  elseif seq.active then
+    if (seq.hold and (held.keys + held.cmem) == 1) or seq.polyseq then seq.notes = {} end
+    for _, note in ipairs(n_keys) do
+      table.insert(seq.notes, note)
+    end
+  end
+  if seq.active or rep.active then
+    reset_trig_step(held.keys + held.cmem)
+    if cmem[i].trigs > 0 then
+      trigs.focus = cmem[i].trigs
     end
   else
-    for _, note in ipairs(voice[i].sustained) do
-      local e = {t = eSCALE, i = i, note = note, action = "note_off"} event(e)
+    notes.cmem = {}
+    for _, note in ipairs(n_keys) do
+      local note = note + notes.trsp_int
+      local e = {t = eSCALE, i = voice.keys, note = note, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
+      table.insert(notes.cmem, note)
     end
-    voice[i].sustained = {}
-    voice[i].sustaining = false
+  end
+  notes.last = n_keys[1] + notes.scale_oct * (notes.int_oct[voice.int])
+end
+
+function remove_cmem_notes(n_keys, n_vals)
+  local i = voice.keys
+  if seq.active and not (seq.collecting or seq.appending or seq.hold or seq.polyseq) then
+    for _, note in ipairs(n_keys) do
+      table_remove(seq.notes, note)
+    end
+  elseif not rep.active then
+    for id, note in ipairs(n_vals) do
+      if not tab.contains(notes.keys, n_keys[id]) then
+        local e = {t = eSCALE, i = i, note = note, action = "note_off"} event(e)
+      end
+    end
+  end
+  for _, note in ipairs(n_keys) do
+    if not tab.contains(notes.keys, note) then
+      table_remove(notes.active, note)
+    end
   end
 end
 
@@ -164,7 +210,7 @@ function clear_chord()
     end
   end
   notes.chrd = {}
-  notes.keys = {}
+  notes.active = {}
   chrd.name = ""
   page_redraw(1)
 end
@@ -182,7 +228,7 @@ function play_chord(i)
     local octave = notes.scale_oct * (notes.key_oct[voice.keys] + 3)
     for _, note in ipairs(chrd.nts[i][t][chrd.inv]) do
       table.insert(notes.chrd, note + octave + notes.trsp_int)
-      table.insert(notes.keys, note + octave)
+      table.insert(notes.active, note + octave)
     end
     -- play chord
     if chrd.mode and not rep.active then
@@ -201,11 +247,11 @@ function play_chord(i)
     end
     -- collect or append notes to seq
     if seq.collecting and not seq.appending then
-      for _, note in ipairs(notes.keys) do
+      for _, note in ipairs(notes.active) do
         table.insert(seq.collected, note)
       end
     elseif seq.appending and not seq.collecting then
-      for _, note in ipairs(notes.keys) do
+      for _, note in ipairs(notes.active) do
         table.insert(seq.notes, note)
       end
       seq.notes_added = true
@@ -264,8 +310,8 @@ end
 
 -------------------------- pattern functions --------------------------
 function set_pattern_loop(i)
-  local dur = ptn.loop_set_q == 2 and 1 or (ptn.loop_set_q == 3 and quant.bar or ptn[ptn.focus].quantize)
-  clock.sync(dur)
+  local beat_sync = ptn.loop_set_q == 2 and 1 or (ptn.loop_set_q == 3 and quant.bar or ptn[ptn.focus].quantize)
+  clock.sync(beat_sync)
   local first = held.ptn[ptn.focus].first
   local second = ptn.duplicating and held.ptn[ptn.focus].first or held.ptn[ptn.focus].second
   local segment = math.floor(ptn[ptn.focus].endpoint / 16)
@@ -279,8 +325,8 @@ function set_pattern_loop(i)
 end
 
 function clear_pattern_loop(i)
-  local dur = ptn.loop_clr_q == 2 and 1 or (ptn.loop_clr_q == 3 and quant.bar or ptn[ptn.focus].quantize)
-  clock.sync(dur)
+  local beat_sync = ptn.loop_clr_q == 2 and 1 or (ptn.loop_clr_q == 3 and quant.bar or ptn[ptn.focus].quantize)
+  clock.sync(beat_sync)
   ptn[i].step = 0
   ptn[i].step_min = 0
   ptn[i].step_max = ptn[i].endpoint
@@ -293,7 +339,13 @@ function pattern_keys(i)
   if not (ptn.pasting or ptn.copying) then
     if ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
       if ptn[i].count > 0 then
-        clear_pattern_bank(i, p[i].bank)
+        if ui.popup_view then
+          popup_exec("yes")
+        else
+          local msg = "clear   pattern  "..i.."  bank  "..p[i].bank
+          local pop = {func = clear_pattern_bank, args = {i, p[i].bank}}
+          popup_set(msg, pop)
+        end
       end
     else
       if ptn[i].play == 0 then
@@ -352,10 +404,12 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
   local y = off and (y - off) or y
   local bank = y + ptn.page * 3
   if (x == 4 or x == 13) and y < 4 and z == 1 then
+    send_mutes_change(bank, quant.bar)
     for i = 1, 8 do
       p[i].load = bank
       if ptn[i].play == 0 then
         update_pattern_bank(i)
+        send_program_change(i)
         if ptn.overdub_active and p[i].count[bank] > 0 then
           ptn[i]:start(quant.bar)
         end
@@ -363,6 +417,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
         clock.run(function()
           clock.sync(quant.bar)
           update_pattern_bank(i)
+          send_program_change(i)
           ptn[i].step = 0
         end)
       end
@@ -382,6 +437,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
             p[i].prc_num[bank] = 0
           end
         end
+        dirtyscreen = true
       end
     else
       if y < 4 then
@@ -426,20 +482,31 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
               show_message("pattern   empty")
             end
           elseif ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
-            clear_pattern_bank(i, bank)
+            if ui.popup_view then
+              popup_exec("yes")
+            else
+              local msg = "clear   pattern  "..i.."  bank  "..bank
+              local pop = {func = clear_pattern_bank, args = {i, bank}}
+              popup_set(msg, pop)
+            end
           -- load pattern
           elseif not (ptn.copying or ptn.pasting) then
             if p[i].bank ~= bank then
+              local beat_sync = 1
               if p[i].load ~= nil then
+                send_mutes_change(bank, beat_sync)
                 clock.run(function()
-                  clock.sync(1)
+                  clock.sync(beat_sync)
                   update_pattern_bank(i)
+                  send_program_change(i)
                   ptn[i].step = 0
                 end)
               else
                 p[i].load = bank
                 if ptn[i].play == 0 then
                   update_pattern_bank(i)
+                  send_program_change(i)
+                  send_mutes_change(bank, beat_sync)
                 end
               end
             elseif p[i].load then
@@ -592,10 +659,20 @@ local function nudge_trigs(t, step, size)
   return nt
 end
 
+function nudge_trig_pattern(i, step)
+  local size = trigs[i].step_max
+  trigs[i].pattern = nudge_trigs(trigs[i].pattern, step, size)
+  trigs[i].prob = nudge_trigs(trigs[i].prob, step, size)
+  trigs[i].vel = nudge_trigs(trigs[i].vel, step, size)
+  trigs[i].ratnum = nudge_trigs(trigs[i].ratnum, step, size)
+  trigs[i].ratvel = nudge_trigs(trigs[i].ratvel, step, size)
+end
+
 function reset_trig_pattern(i)
   trigs[i].step_max = 16
   trigs[i].pattern = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
   trigs[i].prob = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+  trigs[i].skip = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
   trigs[i].vel = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
   trigs[i].ratnum = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
   trigs[i].ratvel = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -612,7 +689,7 @@ function copy_trig(i)
     trigs.copy_data = {}
   else
     trigs.copy_data = {
-      step_max = trigs[i].step_max
+      step_max = trigs[i].step_max,
       pattern = {table.unpack(trigs[i].pattern)},
       prob = {table.unpack(trigs[i].prob)},
       vel = {table.unpack(trigs[i].vel)},
@@ -658,13 +735,8 @@ function trigs_grid(x, y, z, grid)
         if z == 1 then trigs[trigs.focus].step_max = i end
       elseif trigs.nudging then
         if z == 1 then
-          local step = x > 8 and (17 - x) or -x
-          local size = trigs[trigs.focus].step_max
-          trigs[trigs.focus].pattern = nudge_trigs(trigs[trigs.focus].pattern, step, size)
-          trigs[trigs.focus].prob = nudge_trigs(trigs[trigs.focus].prob, step, size)
-          trigs[trigs.focus].vel = nudge_trigs(trigs[trigs.focus].vel, step, size)
-          trigs[trigs.focus].ratnum = nudge_trigs(trigs[trigs.focus].ratnum, step, size)
-          trigs[trigs.focus].ratvel = nudge_trigs(trigs[trigs.focus].ratvel, step, size)
+          local step = x > 8 and 1 or -1
+          nudge_trig_pattern(trigs.focus, step)
         end
       else
         trig_logic(i, z)
@@ -707,12 +779,20 @@ function trigs_grid(x, y, z, grid)
         end
       elseif x == 12 then
         if y == 3 then
-          trigs.set_end = z == 1 and true or false
-        elseif y == 4 then
           trigs.pattern_reset = z == 1 and true or false
+        elseif y == 4 then
+          trigs.set_end = z == 1 and true or false
+          if trigs.pattern_reset then
+            trigs.copy_data = {}
+          end
         end
       elseif x == 13 and z == 1 then
-        if held.cmem > 0 then
+        if trigs.pattern_reset then
+          copy_trig(trigs.focus)
+        elseif trigs.set_end then
+          local step = y == 3 and -1 or 1
+          nudge_trig_pattern(trigs.focus, step)
+        elseif held.cmem > 0 then
           cmem[cmem.active].trigs = cmem[cmem.active].trigs == trigs.focus and 0 or trigs.focus
           local msg = cmem[cmem.active].trigs ~= 0 and ("  >  trig   pattern:  "..trigs.focus) or "   unassigned"
           show_message("mem-slot  "..cmem.active..msg)
@@ -746,9 +826,11 @@ function modifier_keys(x, y, z, off) -- grid one: off = -6
   end
 end
 
+local ktype = {"keys", "cmem", "chrd", "keys"}
 function voice_settings(x, y, z, off) -- grid one: off = -6
   local y = off and (y - off) or y
   if x < 4 or x > 13 then
+    local ksrc = ktype[voice[voice.keys].keys_option]
     local i = x < 4 and x or x - 10
     if y == 7 then
       if z == 1 then
@@ -760,9 +842,12 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
           end
         elseif (mod.a or mod.b) then
           params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
+          clear_held_notes(voice.int, "int")
+          clear_held_notes(voice.keys, ksrc)
         elseif not voice[i].mute then
           if held.int > 0 and i ~= voice.int then
-            clear_held_notes(voice.int)
+            clear_held_notes(voice.int, "int")
+            held.int = 0
           end
           voice.int = i
         end
@@ -771,14 +856,15 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
       if z == 1 then
         if ui.shift then
           ui.voice_focus = i
-        elseif (mod.a or mod.b) then
-          params:set("voice_mute_"..i, voice[i].mute and 1 or 2)
         elseif (mod.c or mod.d) then
-          dont_panic(voice[i].output)
-          held.key = 0
+          dont_panic(i)
+          held[ksrc] = 0
+          notes[ksrc] = {}
+          notes.active = {}
         elseif not voice[i].mute then
-          if held.key > 0 and i ~= voice.keys then
-            clear_held_notes(voice.keys)
+          if held[ksrc] > 0 and i ~= voice.keys then
+            clear_held_notes(voice.keys, ksrc)
+            held[ksrc] = 0
           end
           voice.keys = i
           ui.voice_focus = i
@@ -802,7 +888,21 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
         dirtyscreen = true
       end
     elseif y == 9 and z == 1 then
-      sustain_notes(i, not voice[i].sustaining)
+      if voice[i].sustaining then
+        for _, note in ipairs(voice[i].sustained) do
+          local e = {t = eSCALE, i = i, note = note, action = "note_off"} event(e)
+        end
+        voice[i].sustained = {}
+        voice[i].sustaining = false
+      else
+        if i == voice.keys and #notes.keys > 0 and voice[i].keys_option < 3 then
+          for idx, note in ipairs(notes.keys) do
+            local note = note + notes.trsp_int
+            voice[i].sustained[idx] = note
+          end
+          voice[i].sustaining = true
+        end
+      end
     end
   end
 end
@@ -810,18 +910,12 @@ end
 function voice_options(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   if z == 1 then
-    if y == 10 then
-      if x == 1 then
-        params:set("keys_option_"..voice.keys, 1)
-      elseif x == 2 then
-        params:set("keys_option_"..voice.keys, 3)
-      end
-    elseif y == 11 then
-      if x == 1 then
-        params:set("keys_option_"..voice.keys, 2)
-      elseif x == 2 then
-        params:set("keys_option_"..voice.keys, 4)
-      end
+    local n = x + (y - 10) * 2
+    local k = voice[voice.keys].keys_option
+    if n ~= k then
+      clear_held_notes(voice.keys, ktype[k])
+      held[ktype[k]] = 0
+      params:set("keys_option_"..voice.keys, n)
     end
   end
 end
@@ -840,6 +934,12 @@ function grid_options(x, y, z, off) -- grid one: off = -7
       ui.kit_view = not ui.kit_view
       if ui.kit_view then
         focus_page(4)
+      elseif #notes.kit > 0 then
+        for _, note in ipairs(notes.kit) do
+          drmfm.stop(note)
+        end
+        notes.kit = {}
+        held.kit = 0
       end
     elseif x == 16 and z == 1 then
       if rep.active and rep.view and off ~= nil then
@@ -868,36 +968,34 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
   if x > 3 and x < 12 then
     if y > 9 and y < 12 then
       track_num_held("kit", z)
-      --held.kit = held.kit + (z * 2 - 1)
       local i = ((x - 3) + (11 - y) * 8)
-      ui.kit_focus = i
-      params:set("drmfm_selected_voice", i)
       if z == 1 then
         table.insert(notes.kit, i)
-        if mute.edit then
-          edit_kit_mutes(i)
-        elseif ui.kit_options then
-          if ui.kit_action == 1 then
-            drmfm.exec_copy(i)
-          elseif ui.kit_action == 3 then
-            drmfm.init_model(i)
-          end
-        elseif rep.active then
-          if held.kit == 1 then
-            reset_trig_step()
-          end
-        elseif ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
-          clear_kit_voice(ptn.focus, i)
-        else
-          local e = {t = eKIT, note = i, vel = 127, action = "note_on"} event(e)
-        end
+        ui.kit_focus = i
+        params:set("drmfm_selected_voice", i)
         focus_page(4)
       else
-        if not (mute.edit or ui.kit_options or rep.active) then
-          local e = {t = eKIT, note = i, action = "note_off"} event(e)
-        end
         table_remove(notes.kit, i)
-      end       
+      end
+      if mute.edit then
+        if z == 1  then edit_kit_mutes(i) end
+      elseif ui.kit_options and ui.kit_action == 2 then
+        if z == 1 then drmfm.exec_copy(i) end
+      elseif rep.active then
+        if held.kit == 1 and z == 1 then
+          reset_trig_step()
+        end
+      elseif (ptn.clear or (mod.a and mod.c) or (mod.b and mod.d)) then
+        if z == 1 then clear_kit_voice(ptn.focus, i) end
+      elseif kit_morph then
+        drmfm.key_mod(i, z)
+      else
+        if z == 1 then
+          local e = {t = eKIT, i = 7, note = i, vel = 127, action = "note_on"} event(e)
+        else
+          local e = {t = eKIT, i = 7, note = i, action = "note_off"} event(e)
+        end
+      end     
     elseif y == 9 and mute.edit then
       if x > 5 and x < 12 then
         if z == 1 then
@@ -912,28 +1010,31 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
     end
   elseif x == 12 then
     if y == 10 then
-      ui.kit_options = z == 1 and true or false
-      drmfm.init_copy(z)
-      autofocus_timer()
-      focus_page(4)
+      if kit_morph and z == 1 then
+        drmfm.kit_mod("run")
+      else
+        if ui.kit_action < 3 then
+          ui.kit_options = z == 1 and true or false
+          drmfm.init_copy(z)
+        else
+          if z == 1 then
+            ui.kit_options = not ui.kit_options
+          end
+        end
+        dirtyscreen = true
+      end
     elseif y == 11 then
       mute.edit = z == 1 and true or false
     end
   elseif x == 13 then
-    gk[x][y].held = z == 1 and true or false
     if y == 10 then
-      if z == 1 then
-        drmfm.perf_ramp("run")
-      else
-        if not mod.any then
-          drmfm.perf_ramp("stop")
-        end
+      kit_morph = z == 1 and true or false
+      if z == 0 then
+        drmfm.kit_mod("stop")
       end
     elseif y == 11 then
-      if mute.edit then
-        if z == 1 then
-          clear_mutes()
-        end
+      if mute.edit and z == 1 then
+        clear_mutes()
       else
         mute_all(z)
       end
@@ -946,8 +1047,6 @@ function int_grid(x, y, z, off) -- grid one: off = -7
   -- detect key hold
   if ((y == 9 or y == 11) and x > 7 and x < 9) or (y == 10 and ((x > 3 and x < 8) or (x > 9 and x < 14))) then
     track_num_held("int", z)
-    --held.int = held.int + (z * 2 - 1)
-    --if held.int < 0 then held.int = 0 end
   end
   if z == 1 then
     if y == 9 and x > 7 and x < 10 then
@@ -958,6 +1057,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
         local e = {t = eSCALE, i = voice.int, note = notes.home, vel = voice[voice.int].velocity, action = "note_on"} event(e)
         gk[x][y].n_val = notes.home
         notes.last = notes.home
+        table.insert(notes.int, notes.home)
       end
     elseif y == 10 then
       if ((x > 3 and x < 8) or (x > 9 and x < 14)) then
@@ -982,6 +1082,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
           local e = {t = eSCALE, i = voice.int, note = new_note, vel = voice[voice.int].velocity, action = "note_on"} event(e)
           gk[x][y].n_val = new_note
           notes.last = new_note
+          table.insert(notes.int, new_note)
         end        
       elseif x > 7 and x < 10 then
         if trsp_clk ~= nil then
@@ -1015,6 +1116,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
         else
           local e = {t = eSCALE, i = voice.int, note = notes.last, vel = voice[voice.int].velocity, action = "note_on"} event(e)
           gk[x][y].n_val = notes.last
+          table.insert(notes.int, notes.last)
         end
       end
     end
@@ -1022,6 +1124,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
     if ((y == 9 or y == 11) and x > 7 and x < 10) or (y == 10 and ((x > 3 and x < 8) or (x > 9 and x < 14))) then
       if not notes.trsp_active then
         local e = {t = eSCALE, i = voice.int, note = gk[x][y].n_val, action = "note_off"} event(e)
+        table_remove(notes.int, gk[x][y].n_val)
       end
     elseif x > 7 and x < 10 then
       if trsp_clk ~= nil then
@@ -1034,7 +1137,11 @@ end
 
 function seq_settings(x, z)
   if x == 1 then
-    hrmy.config = z == 1 and true or false
+    hrmy.latch = z == 1 and true or false
+    if z == 1 then
+      hrmy.config = not hrmy.config
+    end
+    if z == 1 then seq.config = false end
     ui.page = 1
     dirtyscreen = true
   elseif x == 2 then
@@ -1044,6 +1151,7 @@ function seq_settings(x, z)
       hrmy.active = x - 4
       params:set("scale", hrmy.slot[hrmy.active].scale)
       params:set("notes_root_scale", hrmy.slot[hrmy.active].root)
+      if not hrmy.latch then hrmy.config = false end
     elseif seq.config then
       params:set("key_seq_rate", x - 4)
       show_message("seq   rate:  "..seq.rate_ids[x - 4])
@@ -1060,6 +1168,7 @@ function seq_settings(x, z)
       seq.config = false
     else
       seq.config = z == 1 and true or false
+      if z == 1 then hrmy.config = false end
     end
   end
 end
@@ -1173,6 +1282,9 @@ function event_options(x, y, z, off) -- off -8 for grid one
             seq.polyseq = not seq.polyseq
             seq.hold = false
             seq.mode_shortpress = false
+            if not seq.polyseq then
+              seq.notes = {}
+            end
           end)
         elseif z == 0 then
           if seq.mode_shortpress then
@@ -1182,11 +1294,14 @@ function event_options(x, y, z, off) -- off -8 for grid one
             seq.step = 0
             if seq.active then
               set_trig_start()
+              if #seq.notes == 0 and #notes.active > 0 then
+                seq.notes = {table.unpack(notes.active)}
+              end
             else
               seq.notes = {}
               if seq.polyseq and seq.hold then
                 seq.hold = false
-                sustain_notes(i, false)
+                seq.sustained = {}
               end
             end
           end
@@ -1220,9 +1335,9 @@ function event_options(x, y, z, off) -- off -8 for grid one
       elseif y == 16 and z == 1 then
         seq.hold = not seq.hold
         if seq.polyseq then
-          sustain_notes(voice.keys, seq.hold)
+          seq.sustained = seq.hold and {table.unpack(notes.keys)} or {}
         elseif not seq.hold then
-          seq.notes = {table.unpack(notes.keys)}
+          seq.notes = {table.unpack(notes.active)}
         end
       end
     end
@@ -1231,22 +1346,21 @@ end
 
 function scale_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
-  track_num_held("key", z)
-  gk[x][y].held = z == 1 and true or false
+  track_num_held("keys", z)
   if z == 1 then
     local note = (x - 2) + ((16 - y) * ui.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
     gk[x][y].n_val = note + notes.trsp_int
     gk[x][y].n_key = note
-    add_note(note, gk[x][y].n_val)
+    add_scale_note(note, gk[x][y].n_val)
   elseif z == 0 then
-    remove_note(gk[x][y].n_key, gk[x][y].n_val)
+    remove_scale_note(gk[x][y].n_key, gk[x][y].n_val)
   end
 end
 
 function chord_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if y < 16 then
-    track_num_held("key", z)
+    track_num_held("chrd", z)
     gk[x][y].held = z == 1 and true or false
     local i = x - 2
     local s = y - 12
@@ -1254,7 +1368,7 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
     if z == 1 then
       play_chord(i)
     elseif z == 0 then
-      if held.key < 1 then
+      if held.chrd < 1 then
         clear_chord()
         if not (seq.hold or seq.collecting or seq.appending or seq.polyseq) then
           seq.notes = {}
@@ -1282,7 +1396,7 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
     if chrd.strm_len_edit and z == 1 then
       if x > 5 and x < 15 then
         params:set("strm_length", x - 2)
-        if held.key > 0 then
+        if held.chrd > 0 then
           play_chord(chrd.current)
         end
       end
@@ -1316,31 +1430,37 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
         local d = z == 1 and (-1 * s) or (1 * s)
         gk[x][y].held = z == 1 and true or false
         params:delta("keys_octaves_"..voice.keys, d)
-        if held.key > 0 and chrd.preview and z == 1 then
+        if held.chrd > 0 and chrd.preview and z == 1 then
           play_chord(chrd.current)
         end
       elseif x == 10 then
+        chrd.edit_inv = z == 1 and true or false
         if z == 1 then
+          chrd.shortpress = true
           if chord_preview_clock ~= nil then
             clock.cancel(chord_preview_clock)
           end
           chord_preview_clock = clock.run(function()
-            clock.sleep(0.5)
-            chrd.preview = not chrd.preview
+            clock.sleep(0.2)
+            chrd.shortpress = false
           end)
         else
           if chord_preview_clock ~= nil then
             clock.cancel(chord_preview_clock)
+            chord_preview_clock = nil
+          end
+          if chrd.shortpress then
+            chrd.preview = not chrd.preview
           end
         end
       elseif x > 10 and x < 15 then
         track_num_held("ccnf", z)
         if z == 1 then
-          if mod.any then
+          if chrd.edit_inv then
             chrd.prev_inv = x - 10
           end
           chrd.inv = x - 10
-          if held.key > 0 and chrd.preview then
+          if held.chrd > 0 and chrd.preview then
             play_chord(chrd.current)
           end
         else
@@ -1370,99 +1490,103 @@ function cmem_grid(x, y, z, off) -- off -8 for grid one
     else
       if cmem.rec then
         if z == 1 then
-          if held.cmem > 1 and next(cmem[i].notes) then
-            for _, note in ipairs(cmem[cmem.focus].notes) do
-              local note_num = notes.scale[util.clamp(note, 1, #notes.scale)]
-              voice_note_off(voice.keys, note_num)
-            end
+          if held.cmem > 1 then -- and next(cmem[i].notes)
+            voice_notes_off(voice.keys, cmem[cmem.focus].notes)
           end
           if next(cmem[i].notes) then
-            for _, note in ipairs(cmem[i].notes) do
-              local note_num = notes.scale[util.clamp(note, 1, #notes.scale)]
-              voice_note_on(voice.keys, note_num, voice[voice.keys].velocity)
-            end
+            voice_notes_on(voice.keys, cmem[i].notes)
           end
           cmem.focus = i
         elseif z == 0 then
           if held.cmem < 1 and next(cmem[cmem.focus].notes) then
-            for _, note in ipairs(cmem[cmem.focus].notes) do
-              local note_num = notes.scale[util.clamp(note, 1, #notes.scale)]
-              voice_note_off(voice.keys, note_num)
-            end
+            voice_notes_off(voice.keys, cmem[cmem.focus].notes)
           end
         end
       else
-        if z == 1 then
-          -- reset trigs / clear current notes
-          if (held.cmem > 1 or seq.hold or seq.polyseq) and next(cmem[i].notes) then
-            for _, note in ipairs(cmem[cmem.active].notes) do
-              if seq.active or seq.polyseq then table_remove(seq.notes, note) end
-              if not seq.polyseq then table_remove(notes.keys, note) end
-            end
-            if not (seq.active or rep.active) then
-              for _, note in ipairs(cmem.mem) do
-                if not tab.contains(notes.keys, note) then
-                  local e = {t = eSCALE, i = voice.keys, note = note, action = "note_off"} event(e)
-                end
-              end
+        if seq.appending then
+          if #cmem[i].notes == 0 and #seq.notes > 0 then
+            if not tab.contains(seq.notes, 0) then
+              cmem[i].notes = {table.unpack(seq.notes)}
             end
           end
-          -- play cmem
-          if next(cmem[i].notes) then
-            cmem.active = i
-            -- add seq/rep notes
-            if held.key < 1 then seq.notes = {} end
-            for _, note in ipairs(cmem[cmem.active].notes) do
-              if seq.active or seq.polyseq then table.insert(seq.notes, note) end
-              if not seq.polyseq then table.insert(notes.keys, note) end
+        else
+          if z == 1 then
+            -- reset trigs / clear current notes
+            if (held.cmem > 1 or seq.hold or seq.polyseq) and next(cmem[i].notes) then
+              remove_cmem_notes(cmem[cmem.active].notes, notes.cmem)
             end
-            if (rep.active or seq.active) then
-              reset_trig_step()
-              seq.step = 0
-              if cmem[i].trigs > 0 then
-                trigs.focus = cmem[i].trigs
-              end
-            else
-              cmem.mem = {}
-              for _, note in ipairs(cmem[i].notes) do
-                local note = note + notes.trsp_int
-                local e = {t = eSCALE, i = voice.keys, note = note, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
-                table.insert(cmem.mem, note)
-              end
+            -- play cmem
+            if next(cmem[i].notes) then
+              cmem.active = i
+              add_cmem_notes(i, cmem[i].notes)
             end
-            notes.last = cmem[i].notes[1] + notes.scale_oct * (notes.int_oct[voice.int])
+          elseif z == 0 then
+            if held.cmem < 1 and next(cmem[cmem.active].notes) then
+              remove_cmem_notes(cmem[cmem.active].notes, notes.cmem)
+              notes.cmem = {}
+            end      
           end
-        elseif z == 0 then
-          if held.cmem < 1 and next(cmem[cmem.active].notes) then
-            for _, note in ipairs(cmem[cmem.active].notes) do
-              if seq.active and not (seq.hold or seq.polyseq) then table_remove(seq.notes, note) end
-              if not seq.polyseq then table_remove(notes.keys, note) end
-            end
-            if not (seq.active or rep.active) then
-              for _, note in ipairs(cmem.mem) do
-                if not tab.contains(notes.keys, note) then
-                  local e = {t = eSCALE, i = voice.keys, note = note, action = "note_off"} event(e)
-                end
-              end
-            end
-          end      
         end
       end
     end
   elseif x == 7 then
-    if y == 13 and z == 1 then
-      cmem.rec = not cmem.rec
-    elseif y == 14 and cmem.rec then
-      cmem.copying = z == 1 and true or false
-      if z == 0 then cmem.copy_src = 0 end
+    if y == 13 then
+      if cmem.link then
+        if z == 1 then
+          cmem.rec = not cmem.rec
+        end
+      else
+        local at_coro = z == 1 and at_ramp_up or at_ramp_down
+        if at[voice.int].timer ~= nil then
+          clock.cancel(at[voice.int].timer)
+        end
+        at[voice.int].timer = clock.run(at_coro, voice.int)
+      end
+    elseif y == 14 then
+      if cmem.link then
+        if cmem.rec then
+          cmem.copying = z == 1 and true or false
+          if z == 0 then cmem.copy_src = 0 end
+        end
+      else
+        local mw_coro = z == 1 and mw_ramp_up or mw_ramp_down
+        if mw[voice.int].timer ~= nil then
+          clock.cancel(mw[voice.int].timer)
+        end
+        mw[voice.int].timer = clock.run(mw_coro, voice.int)
+      end
     elseif y == 15 and cmem.rec then
       cmem.clear = z == 1 and true or false
     elseif y == 16 and z == 1 then
       cmem.link = not cmem.link
+      if cmem.link then
+        for _, note in ipairs(notes.kmem) do
+          local e = {t = eSCALE, i = voice.int, note = note, action = "note_off"} event(e)
+        end
+        notes.kmem = {}
+      else
+        if #notes.keys > 0 then
+          if seq.active then
+            if seq.polyseq then
+              seq.sustained = {table.unpack(notes.keys)}
+              seq.hold = true
+              notes.active = {}
+            end
+          else
+            for idx, note in ipairs(notes.keys) do
+              voice[voice.keys].sustained[idx] = note + notes.trsp_int
+              if not tab.contains(cmem[cmem.active].notes, note) then
+                table_remove(notes.active, note)
+              end
+            end
+            voice[voice.keys].sustaining = true
+          end
+          notes.keys = {}
+          held.keys = 0
+        end
+      end
     end
   elseif x > 7 then
-    track_num_held("key", z)
-    gk[x][y].held = z == 1 and true or false
     local note = (x - 7) + ((16 - y) * ui.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
     if cmem.rec then
       local note_num = notes.scale[util.clamp(note, 1, #notes.scale)]
@@ -1480,19 +1604,22 @@ function cmem_grid(x, y, z, off) -- off -8 for grid one
         end
       end
     else
+      if cmem.link then track_num_held("keys", z) end
       if z == 1 then
         gk[x][y].n_val = note + notes.trsp_int
         gk[x][y].n_key = note
         if cmem.link then
-          add_note(note, gk[x][y].n_val)
+          add_scale_note(note, gk[x][y].n_val)
         else
           local e = {t = eSCALE, i = voice.int, note = gk[x][y].n_val, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
+          table.insert(notes.kmem, gk[x][y].n_val)
         end
       elseif z == 0 then
         if cmem.link then
-          remove_note(gk[x][y].n_key, gk[x][y].n_val)
+          remove_scale_note(gk[x][y].n_key, gk[x][y].n_val)
         else
           local e = {t = eSCALE, i = voice.int, note = gk[x][y].n_val, action = "note_off"} event(e)
+          table_remove(notes.kmem, gk[x][y].n_val)
         end
       end
     end
@@ -1502,22 +1629,22 @@ end
 function drum_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if y > 13 and x > 2 and x < 15 then
-    track_num_held("key", z)
+    track_num_held("keys", z)
     local note = (x - 3) + drm.root + 12 * notes.key_oct[voice.keys]
     drm.vel = y == 16 and drm.vel_hi or (y == 15 and drm.vel_mid or drm.vel_lo)
     gk[x][y].held = z == 1 and true or false
     if z == 1 then
       gk[x][y].n_val = note
-      table.insert(notes.keys, note)
+      table.insert(notes.active, note)
       if rep.active then
-        if held.key == 1 then
+        if held.keys == 1 then
           reset_trig_step()
         end
       else
         local e = {t = eDRUMS, i = voice.keys, note = note, vel = drm.vel} event(e)
       end
     elseif z == 0 then
-      table_remove(notes.keys, gk[x][y].n_val)
+      table_remove(notes.active, gk[x][y].n_val)
     end
   elseif y == 13 and z == 1 and mute.edit then
     local i = x - 2
@@ -1534,6 +1661,8 @@ function pattern_key_draw(off)
       g:led(i + 4, 7 + off, viz.key_fast)
     elseif ptn[i].rec_enabled == 1 then
       g:led(i + 4, 7 + off, 15)
+    elseif ptn[i].play_queued == 1 then
+      g:led(i + 4, 7 + off, viz.key_slow)
     elseif ptn[i].play == 1 then
       g:led(i + 4, 7 + off, ptn[i].pulse_key and 15 or 12)
     elseif ptn[i].count > 0 then
@@ -1640,7 +1769,7 @@ function trigs_draw(grid)
   if grid == 256 then
     for x = 1, 16 do
       if x <= trigs[trigs.focus].step_max then
-        g:led(x, 5, (trigs.step == x and (seq.active or rep.active)) and 14 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].prob[x] * 5) + 1) or 1))
+        g:led(x, 5, (trigs.step == x and (seq.active or rep.active)) and 14 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 1) or 1))
       end
     end
     for i = 1, 8 do
@@ -1654,16 +1783,16 @@ function trigs_draw(grid)
   elseif grid == 128 then
     for x = 1, 8 do
       if x <= trigs[trigs.focus].step_max then
-        g:led(x + 3, 3, (trigs.step == x and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x] == 1 and 6 or 2))
+        g:led(x + 3, 3, (trigs.step == x and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 1) or 2))
       end
       if x + 8 <= trigs[trigs.focus].step_max then
-        g:led(x + 3, 4, (trigs.step == x + 8 and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x + 8] == 1 and 6 or 2))
+        g:led(x + 3, 4, (trigs.step == x + 8 and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x + 8] == 1 and (math.ceil(trigs[trigs.focus].vel[x + 8] * 5) + 1) or 2))
       end
     end
     g:led(13, 3, trigs.focus > 4 and 3 or (cmemviz and viz.key_slow or (15 - trigs.focus * 2)))
     g:led(13, 4, trigs.focus < 5 and 3 or (cmemviz and viz.key_slow or (trigs.focus * 2 - 3)))
-    g:led(12, 3, trigs.set_end and 15 or 1)
-    g:led(12, 4, trigs.pattern_reset and 15 or 1)
+    g:led(12, 3, trigs.pattern_reset and (next(trigs.copy_data) and viz.key_slow or 15) or 1)
+    g:led(12, 4, trigs.set_end and 15 or 1)
     g:led(15, 5, viz.key_mid)
   end
 end
@@ -1704,8 +1833,8 @@ end
 function voice_options_draw(off)
   local off = off and off or 0
   g:led(1, 10 + off, voice[voice.keys].keys_option == 1 and 8 or 4)
-  g:led(2, 10 + off, voice[voice.keys].keys_option == 3 and 8 or 4)
-  g:led(1, 11 + off, voice[voice.keys].keys_option == 2 and 8 or 4)
+  g:led(2, 10 + off, voice[voice.keys].keys_option == 2 and 8 or 4)
+  g:led(1, 11 + off, voice[voice.keys].keys_option == 3 and 8 or 4)
   g:led(2, 11 + off, voice[voice.keys].keys_option == 4 and 8 or 4)
 end
 
@@ -1719,10 +1848,20 @@ function kit_grid_draw(off)
       g:led(x + 7, y + off, drmfm.viz[i + 4] and 15 or (mute.kit_key[i + 4] and 0 or 2))
       g:led(x + 9, y + off, drmfm.viz[i + 6] and 15 or (mute.kit_key[i + 6] and 0 or 4))
     end
-    g:led(13, x + 9 + off, gk[13][x + 9].held and 15 or 8)
   end
-  g:led(12, 10 + off, drmfm.copy_data and viz.key_mid or 1)
-  g:led(12, 11 + off, gk[12][11].held and 15 or (mute.active and viz.key_mid or 1))
+  if kit_morph then
+    local perf_depth = math.floor(params:get("drmfm_perf_depth") * 15)
+    g:led(12, 10 + off, perf_depth > 0 and perf_depth or 1)
+  else
+    if ui.kit_options and ui.kit_action > 2 then
+      g:led(12, 10 + off, viz.key_slow)
+    else
+      g:led(12, 10 + off, drmfm.copy_data and viz.key_mid or 1)
+    end
+  end
+  g:led(12, 11 + off, mute.active and viz.key_mid or 1)
+  g:led(13, 10 + off, kit_morph and 15 or 8)
+  g:led(13, 11 + off, mute.all and viz.key_fast or 8)
   if mute.edit then
     for i = 1, 6 do
       g:led(i + 5, 9 + off, (mute.active and mute.focus == i) and 15 or 6)
@@ -1771,6 +1910,19 @@ end
 
 function event_options_draw(off)
   local off = off and off or 0
+  if off == 0 then
+    g:led(1, 12, hrmy.config and viz.key_mid or 0)
+    g:led(16, 12, seq.config and viz.key_slow or 0)
+    if hrmy.config then
+      for x = 1, 8 do
+        g:led(x + 4, 12, hrmy.active == x and viz.key_mid or 2)
+      end
+    elseif seq.config then
+      for x = 1, 8 do
+        g:led(x + 4, 12, params:get("key_seq_rate") == x and 6 or 1)
+      end
+    end
+  end
   if rep.view then
     for i = 1, 4 do
       g:led(16, i + 12 + off, rk[i] == 1 and 15 or i * 2)
@@ -1779,22 +1931,15 @@ function event_options_draw(off)
       g:led(16, 12, rep.hold and viz.key_slow or 0)     
     end
   else
-    if off == 0 then
-      g:led(1, 12, hrmy.config and viz.key_mid or 0)
-      g:led(16, 12, seq.config and viz.key_slow or 0)
-      if hrmy.config then
-        for x = 1, 8 do
-          g:led(x + 4, 12, hrmy.active == x and viz.key_mid or 2)
-        end
-      elseif seq.config then
-        for x = 1, 8 do
-          g:led(x + 4, 12, params:get("key_seq_rate") == x and 6 or 1)
-        end
-      end
+    if seq.polyseq then
+      g:led(16, 13 + off, seq.active and viz.key_slow or 6)
+      g:led(16, 14 + off, seq.collecting and 15 or (#seq.notes > 0 and 8 or 4))
+      g:led(16, 15 + off, seq.appending and 10 or 0)
+    else
+      g:led(16, 13 + off, seq.active and 12 or 6)
+      g:led(16, 14 + off, seq.collecting and 15 or (#seq.notes > 0 and 8 or 2))
+      g:led(16, 15 + off, seq.appending and 10 or 2)
     end
-    g:led(16, 13 + off, seq.active and (seq.polyseq and viz.key_slow or 12) or 6)
-    g:led(16, 14 + off, seq.collecting and 10 or (seq.polyseq and 4 or 2))
-    g:led(16, 15 + off, seq.appending and 10 or (seq.polyseq and 0 or 2))
     g:led(16, 16 + off, seq.hold and 15 or 2)
   end
   g:led(15, 15 + off, vl[voice.keys].baseline == vl[voice.keys].hi and 2 or 0)
@@ -1808,7 +1953,7 @@ function keyboard_draw(off)
       for y = 13, 16 do
         local key = i + ui.iso_y * (16 - y)
         local note = key + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
-        g:led(i + 2, y + off, tab.contains(notes.keys, note) and 12 or ((key % notes.scale_oct) == 1 and 8 or 2))
+        g:led(i + 2, y + off, tab.contains(notes.active, note) and 12 or ((key % notes.scale_oct) == 1 and 8 or 2))
       end
     end
   elseif voice[voice.keys].keys_option == 2 then
@@ -1822,15 +1967,20 @@ function keyboard_draw(off)
         end
       end
     end
-    g:led(7, 13 + off, cmem.rec and 12 or 0)
-    g:led(7, 14 + off, cmem.copy_src > 0 and viz.key_mid or (cmem.copying and 15 or 0))
+    if cmem.link then
+      g:led(7, 13 + off, cmem.rec and 12 or 0)
+      g:led(7, 14 + off, cmem.copy_src > 0 and viz.key_mid or (cmem.copying and 15 or 0))
+    else
+      g:led(7, 13 + off, math.floor(at[voice.int].value * 15))
+      g:led(7, 14 + off, math.floor(mw[voice.int].value * 15))
+    end
     g:led(7, 15 + off, cmem.clear and 15 or 0)
     g:led(7, 16 + off, cmem.link and 0 or viz.key_slow)
     for i = 1, 7 do
       for y = 13, 16 do
         local key = i + ui.iso_y * (16 - y)
         local note = key + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
-        local check = cmem.rec and cmem[cmem.focus].notes or notes.keys
+        local check = cmem.rec and cmem[cmem.focus].notes or notes.active
         g:led(i + 7, y + off, tab.contains(check, note) and 12 or ((key % notes.scale_oct) == 1 and 8 or 2))
       end
     end
