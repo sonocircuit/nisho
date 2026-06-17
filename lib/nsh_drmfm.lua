@@ -120,7 +120,7 @@ prms.specs = {
     names = {"num claps", "clap decay", "mod depth", "mod ratio", "mod decay", "eq freq", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 1, 12, param:get()), 1, "") end,
-      function(param) return round_form(util.linexp(0, 1, 0.01, 0.1, param:get()), 0.01, "s") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 2, 8, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
@@ -163,26 +163,26 @@ prms.specs = {
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 4000, 12000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linlin(0, 1, 20, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 0.5, 1.5, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 50, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 1200, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 1200, 3200, param:get()), 1, "hz") end
+      function(param) return round_form(util.linexp(0, 1, 3600, 8600, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 0.1, 0.8, param:get()), 0.01, "*") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linexp(0, 1, 800, 3600, param:get()), 1, "hz") end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
   CY = {
-    names = {"hold", "noise level", "mod depth", "mod ratio", "mod decay", "tone", "lpf freq", "hpf freq"},
+    names = {"hold", "noise level", "tone", "mod depth", "mod ratio", "mod decay", "lpf freq", "hpf freq"},
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 20, 60, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
+      function(param) return round_form(util.linexp(0, 1, 2200, 8600, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 2, 6, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linlin(0, 1, 80, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 3600, 8200, param:get()), 1, "hz") end,
+      function(param) return round_form(util.linlin(0, 1, 1, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 1200, 3200, param:get()), 1, "hz") end
+      function(param) return round_form(util.linexp(0, 1, 800, 3200, param:get()), 1, "hz") end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
