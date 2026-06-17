@@ -131,7 +131,11 @@ end
 function a.delta(n, d)
   if arc_lfo_view then
     if arc_longpress then
-      params:delta("lfo_rate_ansi_cv_"..n, d / 16)
+      if params:get("lfo_mode_ansi_cv_"..n) == 1 then
+        params:delta("lfo_clocked_ansi_cv_"..n, d / 16)
+      elseif params:get("lfo_mode_ansi_cv_"..n) == 2 then
+        params:delta("lfo_free_ansi_cv_"..n, d / 16)
+      end
     else
       params:delta("lfo_depth_ansi_cv_"..n, d / 16)
       if ansi_cv[n].lfo.depth == 0 then
@@ -158,20 +162,21 @@ function a.delta(n, d)
 end
 
 function arc_redraw()
+  local off = -16
   a:all(0)
   for n = 1, 4 do
     local level = math.ceil(ansi_cv[n].lvl * 56) - 27
-    a:led(n, 29, 8)
-    a:led(n, -27, 8)
+    a:led(n, 29 + off, 8)
+    a:led(n, -27 + off, 8)
     for i = -26, 28 do
       if i < level then
-        a:led(n, i, 4)
+        a:led(n, i + off, 4)
       end
     end
-    a:led(n, level, 15)
-    a:led(n, 32, arc_lfo_view and 15 or 0)
-    a:led(n, 33, ansi_cv[n].viz)
-    a:led(n, 34, arc_lfo_view and 15 or 0)
+    a:led(n, level + off, 15)
+    a:led(n, 32 + off, arc_lfo_view and 15 or 0)
+    a:led(n, 33 + off, ansi_cv[n].viz)
+    a:led(n, 34 + off, arc_lfo_view and 15 or 0)
   end
   a:refresh()
 end
