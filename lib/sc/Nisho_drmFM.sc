@@ -3,35 +3,7 @@ Nisho_drmFM {
 	*initClass {
 
 		StartUp.add {
-
-			CroneDefs.add(
-				SynthDef.new(\drmFM_FX, {
-					arg outBus, inBus,
-					mainAmp = 1, lpfHz = 20000, hpfHz = 20, tapeSat = 1, tapeDrive = 1;
-
-					var mono, stereo, snd;
-					var xHz = 60, tapeBias = 0.5;
-
-					mainAmp = Lag.kr(mainAmp);
-					lpfHz = Lag.kr(lpfHz).clip(20, 20000);
-					hpfHz = Lag.kr(hpfHz).clip(20, 20000);
-
-					snd = In.ar(inBus, 2);
-					snd = RHPF.ar(snd, hpfHz);
-					snd = RLPF.ar(snd, lpfHz);
-
-					//snd = AnalogTape.ar(snd, tapeBias, tapeSat, tapeDrive);
-
-					//mono = LPF.ar(LPF.ar(Mix(snd), xHz), xHz);
-					//stereo = HPF.ar(HPF.ar(snd, xHz), xHz);
-					//snd = mono + stereo;
-
-					snd = snd * mainAmp;
-
-					Out.ar(outBus, snd);
-				});
-			);
-
+			
 			CroneDefs.add(
 				SynthDef(\drmFM_BD,{
 					arg outBus, sendABus, sendBBus, nWBuf, nSBuf, nGBuf, nPBuf,
@@ -539,7 +511,7 @@ Nisho_drmFM {
 
 			CroneDefs.add(
 				SynthDef(\drmFM_HH,{
-					arg outBus, sendABus, sendBBus, nWBuf, nSBuf, nGBuf, nPBuf,
+					arg outBus, sendABus, sendBBus, nWBuf, nSBuf, nRBuf, nBBuf,
 					mainAmp = 1, vel = 1, amp = 1, pan = 0, panRnd = 0, sendA = 0, sendB = 0,
 					pitch = 0, tune = 0, gate = 1, decay = 0.8, decRnd = 0, dist = 0,
 					mod1 = 0, mod2 = 0, mod3 = 0, mod4 = 0, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0,
@@ -547,7 +519,6 @@ Nisho_drmFM {
 					mod1M = 0, mod2M = 0, mod3M = 0, mod4M = 0, mod5M = 0, mod6M = 0, mod7M = 0, mod8M = 0;
 
 					var pitchOff = 84, atk = 0.0001, modCrv = -6, carCrv = -12;
-
 					var attn, gain, hzA, hzB, hzC, hzD, modA, modB, modC, modD, carA, carB, carC, carD, snd, modEnv, carEnv;
 					var envSat, carFb, bpfHz, bpfRq, modDepth, modRatio, modIndex, modDecay, lpfHz, hpfHz;
 
@@ -564,14 +535,14 @@ Nisho_drmFM {
 					mod8 = (mod8 + (mod8M * kitMod));
 
 					envSat   = mod1.linlin(0, 1, 0.8, 2.4);
-					carFb    = mod2.linlin(0, 1, 0.5, 2);
-					bpfHz    = mod3.linexp(0, 1, 4000, 12000);
-					bpfRq    = mod3.linlin(0, 1, 0.6, 0.15);
-					modDepth = mod4.linlin(0, 1, 0.2, 0.5);
-					modRatio = mod5.linexp(0, 1, 0.5, 1.5);
-					modDecay = mod6.linlin(0, 1, 0.5, 1);
-					lpfHz    = mod7.linexp(0, 1, 1200, 20000);
-					hpfHz    = mod8.linexp(0, 1, 1200, 3200);
+					carFb    = mod2.linlin(0, 1, 1, 3.2);
+					bpfHz    = mod3.linexp(0, 1, 3600, 8600);
+					bpfRq    = mod3.linlin(0, 1, 0.6, 0.32);
+					modDepth = mod4.linlin(0, 1, 0.1, 1);
+					modRatio = mod5.linexp(0, 1, 0.1, 0.8);
+					modDecay = mod6.linexp(0, 1, 0.01, 0.8);
+					lpfHz    = mod7.linexp(0, 1, 800, 18000);
+					hpfHz    = mod8.linexp(0, 1, 800, 3200);
 
 					decay = (decay + (decayM * 4 * kitMod) + (decRnd * Rand(0.2, 1.2))).clip(0.01, 4);
 					sendA = (sendA + (sendAM * kitMod)).clip(0, 1);
@@ -595,21 +566,21 @@ Nisho_drmFM {
 					hzC = hzA * 1.48;
 					hzD = hzA * 2.64;
 
-					// modulators
-					modIndex = hzA.linlin(500, 2000, 8000, 1200);
+					// modulator
+					modIndex = hzA.linlin(500, 2000, 8000, 800);
 					modA = SinOsc.ar(hzA * modRatio) * modIndex * modRatio * modEnv;
 					modB = SinOsc.ar(hzB * modRatio) * modIndex * modRatio * modEnv;
 					modC = SinOsc.ar(hzC * modRatio) * modIndex * modRatio * modEnv;
 					modD = SinOsc.ar(hzD * modRatio) * modIndex * modRatio * modEnv;
 
-					// carriers
+					// carrier
 					carA = SinOscFB.ar(hzA + modA, carFb);
-					carB = SinOscFB.ar(hzB + modB, carFb * 1.7) * -1.dbamp;
-					carC = SinOscFB.ar(hzC + modC, carFb * 1.3) * -4.dbamp;
-					carD = SinOscFB.ar(hzD + modD, carFb * 0.8) * -2.dbamp;
+					carB = SinOscFB.ar(hzB + modB, carFb * 1.7);
+					carC = SinOscFB.ar(hzC + modC, carFb * 1.3);
+					carD = SinOscFB.ar(hzD + modD, carFb * 0.8);
 
 					// mix
-					snd = (carA + carB + carC + carD).tanh * -14.dbamp * carEnv;
+					snd = (carA + carB + carC + carD).tanh * carEnv;
 
 					// filter & distortion
 					snd = HPF.ar(snd, hpfHz);
@@ -629,7 +600,7 @@ Nisho_drmFM {
 
 			CroneDefs.add(
 				SynthDef(\drmFM_CY,{
-					arg outBus, sendABus, sendBBus, nWBuf, nSBuf, nGBuf, nPBuf,
+					arg outBus, sendABus, sendBBus, nWBuf, nSBuf, nRBuf, nBBuf,
 					mainAmp = 1, vel = 1, amp = 1, pan = 0, panRnd = 0, sendA = 0, sendB = 0,
 					pitch = 0, tune = 0, gate = 1, decay = 0.8, decRnd = 0, dist = 0,
 					mod1 = 0, mod2 = 0, mod3 = 0, mod4 = 0, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0,
@@ -655,14 +626,14 @@ Nisho_drmFM {
 
 					envSat   = mod1.linlin(0, 1, 1, 2);
 					nozLevel = mod2.clip(0, 1);
-					modDepth = mod3.linlin(0, 1, 0.2, 0.6);
-					modRatio = mod4.linlin(0, 1, 2, 6);
-					modIndex = mod4.linlin(0, 1, 4000, 400);
-					modDecay = mod5.linlin(0, 1, 0.8, 2);
-					bpfHz    = mod6.linexp(0, 1, 4000, 8000);
-					bpfRq    = mod6.linlin(0, 1, 0.6, 0.3);
+					bpfHz    = mod3.linexp(0, 1, 2200, 8600);
+					bpfRq    = mod3.linlin(0, 1, 0.6, 0.3);
+					modDepth = mod4.linlin(0, 1, 0.2, 0.6);
+					modRatio = mod5.linlin(0, 1, 2, 6);
+					modIndex = mod5.linlin(0, 1, 4000, 400);
+					modDecay = mod6.linlin(0, 1, 0.8, 2);
 					lpfHz    = mod7.linexp(0, 1, 800, 18000);
-					hpfHz    = mod8.linexp(0, 1, 1200, 3200);
+					hpfHz    = mod8.linexp(0, 1, 800, 3200);
 
 					decay = (decay + (decayM * 4 * kitMod) + (decRnd * Rand(0.2, 1.2))).clip(0, 4);
 					sendA = (sendA + (sendAM * kitMod)).clip(0, 1);
@@ -699,13 +670,10 @@ Nisho_drmFM {
 					carD = SinOsc.ar(hzD + modD);
 
 					// noise
-					noz = PlayBuf.ar(1, nPBuf, startPos: IRand.new(0, 48000 * 6), loop: 1);
-					noz = noz * LFNoise0.ar(hzD).range(carEnv + 0.2, 1);
-					noz = LPF.ar(noz, bpfHz) * -9.dbamp;
-					noz = noz * nozLevel;
+					noz = LFNoise1.ar(bpfHz);
 
 					// mix
-					snd = Mix.ar(carA + carB + carC + carD + noz) * carEnv;
+					snd = Mix.ar(carA + carB + carC + carD) * noz.range(1 - nozLevel, 1) * carEnv;
 
 					// filter & distortion
 					snd = HPF.ar(snd, hpfHz);
