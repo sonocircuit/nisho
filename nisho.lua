@@ -651,21 +651,14 @@ function event_exec(e, n)
       add_active_notes(n, 8, e.note)
     end
   elseif e.t == eKIT then
-    if e.action == nil then -- TODO: remove when converted patterns
-      drmfm.trig(e.note, e.vel)
-    elseif e.action == "note_off" then
+    if e.action == "note_off" then
       drmfm.stop(e.note)
       remove_active_notes(n, 7, e.note)
+      if m.thru then m[m.out_id]:note_off(e.note - 1, 0, m.out_ch + 6) end
     elseif e.action == "note_on" then
       drmfm.trig(e.note, e.vel)
       add_active_notes(n, 7, e.note)
-    end
-    if m.thru then
-      if e.action == "note_off" then
-        m[m.out_id]:note_off(e.note, 0, m.out_ch + 6)
-      elseif e.action == "note_on" then
-        m[m.out_id]:note_on(e.note, e.vel, m.out_ch + 6)
-      end
+      if m.thru then m[m.out_id]:note_on(e.note - 1, e.vel, m.out_ch + 6) end
     end
   elseif e.t == eANSI then
     caw.ansi_trigger(e.i)
@@ -998,9 +991,9 @@ end
 
 function stop_all_patterns()
   if ptn.stop_all then
+    ptn.stop_all = false
     for i = 1, 8 do
       p[i].stop = false
-      ptn.stop_all = false
     end
     if ptn.stop_timer ~= nil then
       clock.cancel(ptn.stop_timer)
@@ -1022,6 +1015,7 @@ function stop_all_patterns()
         end
       end
       ptn.stop_all = false
+      ptn.stop_timer = nil
     end)
   end
   -- rytm mode
@@ -1312,7 +1306,7 @@ function send_mutes_change(bank, beat_sync)
   end
 end
 
-function send_program_change(i, beat_sync)
+function send_program_change(i)
   local bank = p[i].bank
   if i < 8 then
     if p[i].prc_enabled and p[i].prc_num[bank] ~= 0 then
@@ -1439,6 +1433,7 @@ function stop_callback()
     ptn[i]:stop()
     p[i].stop = false
   end
+  ptn.stop_all = false
   seq.active = false
   seq.step = 0
   dirtygrid = true
@@ -2632,7 +2627,7 @@ function init()
   params:add_option("adc_input_routing", "input > engine", {"off", "on"}, 1)
   params:set_action("adc_input_routing", function(x)
     engine.input_toggle(x - 1)
-    if x == 1 then
+    if x == 2 then
       engine.input_set_param("level", params:get("adc_input_level"))
       engine.input_set_param("drive", params:get("adc_input_drive"))
       engine.input_set_param("sendA", params:get("adc_input_send_a"))
