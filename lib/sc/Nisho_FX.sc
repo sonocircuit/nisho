@@ -7,8 +7,7 @@ Nisho_FX {
 			CroneDefs.add(
 				SynthDef.new(\synthFX, {
 					arg outBus, inBus, sendABus, sendBBus,
-					drive = 0, sendA = 0, sendB = 0,
-					mod_wheel = 0, mod_sendA = 0, mod_sendB = 0;
+					drive = 0, sendA = 0, sendB = 0, mod_wheel = 0, mod_sendA = 0, mod_sendB = 0;
 
 					var in, mono, stereo, snd, wet, gain, attn;
 					var xHz = 60;
@@ -20,20 +19,40 @@ Nisho_FX {
 					sendA = Lag.kr(sendA + (mod_sendA * mod_wheel)).clip(0, 1);
 					sendB = Lag.kr(sendB + (mod_sendB * mod_wheel)).clip(0, 1);
 
-
-					in = In.ar(inBus, 2);
 					// linkwitz–riley crossover 4 bass mono
+					in = In.ar(inBus, 2);
 					mono = LPF.ar(LPF.ar(Mix(in), xHz), xHz);
 					stereo = HPF.ar(HPF.ar(in, xHz), xHz);
-
-					// assymetric drive from princeton @robint (thanks)
-					wet = stereo * gain;
-					wet = LeakDC.ar((wet.max(0) * 1.02).tanh + (wet.min(0) * 0.96).tanh) * attn;
+					// drive
+					//wet = (stereo * gain).tanh * attn;
+					wet = (stereo * gain).softclip * attn;
 					snd = XFade2.ar(stereo, wet, (drive * 2) - 1) + mono;
 
 					Out.ar(outBus, snd);
 					Out.ar(sendABus, snd * sendA);
 					Out.ar(sendBBus, snd * sendB);
+				});
+			);
+
+			CroneDefs.add(
+				SynthDef.new(\drmFM_FX, {
+					arg outBus, inBus,
+					mainAmp = 1, lpfHz = 20000, hpfHz = 20;
+
+					var mono, stereo, snd;
+					var xHz = 60, tapeBias = 0.5;
+
+					mainAmp = Lag.kr(mainAmp);
+					lpfHz = Lag.kr(lpfHz).clip(20, 20000);
+					hpfHz = Lag.kr(hpfHz).clip(20, 20000);
+
+					snd = In.ar(inBus, 2);
+					snd = RHPF.ar(snd, hpfHz);
+					snd = RLPF.ar(snd, lpfHz);
+
+					snd = (snd * mainAmp).tanh;
+
+					Out.ar(outBus, snd);
 				});
 			);
 
@@ -51,7 +70,7 @@ Nisho_FX {
 					sendB = Lag.kr(sendB);
 					drive = Lag.kr(drive);
 					gain = drive.linlin(0, 1, 0, 32).dbamp;
-					attn = drive.linlin(0, 1, 0, -18).dbamp;
+					attn = drive.linlin(0, 1, 0, -16).dbamp;
 
 					in = [In.ar(inLBus, 1), In.ar(inRBus, 1)];
 					// linkwitz–riley crossover 4 bass mono
@@ -63,6 +82,8 @@ Nisho_FX {
 					wet = LeakDC.ar((wet.max(0) * 1.02).tanh + (wet.min(0) * 0.96).tanh) * attn;
 					snd = XFade2.ar(stereo, wet, (drive * 2) - 1) + mono;
 
+					snd = snd * level;
+
 					Out.ar(outBus, snd);
 					Out.ar(sendABus, snd * sendA);
 					Out.ar(sendBBus, snd * sendB);
@@ -72,7 +93,7 @@ Nisho_FX {
 			CroneDefs.add(
 				SynthDef(\outputFX, {
 					arg inBus, outBus, level = 1, loHz = 20, hiHz = 20000;
-					var sig, lo, mid, hi, mono, xHz = 80;
+					var snd, lo, mid, hi, mono, xHz = 80;
 
 					// slew and clamp
 					level = Lag.kr(level);
@@ -80,31 +101,29 @@ Nisho_FX {
 					hiHz = Lag.kr(hiHz).clip(20, 20000);
 
 					// sound in
-					sig = In.ar(inBus, 2) * level;
+					snd = In.ar(inBus, 2) * level;
 
 					// hp/lp filter
-					sig = RHPF.ar(sig, hiHz);
-					sig = RLPF.ar(sig, loHz);
+					snd = RHPF.ar(snd, hiHz);
+					snd = RLPF.ar(snd, loHz);
 
 					// linkwitz–riley crossover 4 bass mono
-					mono = LPF.ar(LPF.ar(Mix(sig), xHz), xHz);
-					sig = HPF.ar(HPF.ar(sig, xHz), xHz);
-					sig = mono + sig;
+					mono = LPF.ar(LPF.ar(Mix(snd), xHz), xHz);
+					snd = HPF.ar(HPF.ar(snd, xHz), xHz);
+					snd = mono + snd;
 
 					// compression
-					//sig = CompanderD.ar(in: sig, thresh: 0.7, slopeBelow: 1, slopeAbove: 0.4, clampTime: 0.008, relaxTime: 0.2);
-					sig = tanh(sig).softclip;
+					//snd = CompanderD.ar(in: snd, thresh: 0.7, slopeBelow: 1, slopeAbove: 0.4, clampTime: 0.008, relaxTime: 0.2);
+					//snd = tanh(snd).softclip;
 
-					Out.ar(outBus, sig);
+					Out.ar(outBus, snd);
 				});
 			);
 
 			CroneDefs.add(
 				SynthDef.new(\leDelay, {
 					arg inBus, outBus, sendBus,
-					amp = 1, send = 0, mod = 0, mode = 0,
-					timeL = 0.4, timeR = 0.4, fb = 0.6,
-					hzLpf = 2400, hzHpf = 80;
+					amp = 1, send = 0, mod = 0, mode = 0, timeL = 0.4, timeR = 0.4, fb = 0.6, hzLpf = 2400, hzHpf = 80;
 
 					var modT, modOsc, tL, tR, rtn, rtnL, rtnR, dry, dly, dlyL, dlyR;
 					var modHz = 12, tMax = 4, modF = 0.008;
@@ -138,10 +157,8 @@ Nisho_FX {
 				// modified version of @khoin's implementation of dattorros reverb (thank you!)
 				// https://github.com/khoin/dx463-final/blob/b863d1982d34823f8f39df9b92e3ea948c8243c0/sdefs.sc#L150
 				SynthDef(\leVerb, {
-					arg inBus = 0, outBus = 0,
-					amp = 1, preDelay = 0.1, preFilter = 0.1,
-					decayRate = 0.8, damping = 0.22,
-					modDepth = 0.2, modRate = 1;
+					arg inBus, outBus,
+					amp = 1, preDelay = 0.1, preFilter = 0.1, decayRate = 0.8, damping = 0.22, modDepth = 0.2, modRate = 1;
 
 					// signals
 					var dry = In.ar(inBus, 2);
@@ -251,7 +268,8 @@ Nisho_FX {
 			CroneDefs.add(
 				// taken and slighly adapted from princeton @robint (thank you).
 				SynthDef.new(\leSpring, {
-					arg inBus, outBus, level = 1, decayRate = 0.5;
+					arg inBus, outBus,
+					level = 1, decayRate = 0.5;
 
 					var mono, pre, twang, sp1, sp2, sp3, diff, wet, fb;
 
