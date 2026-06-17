@@ -265,52 +265,6 @@ Nisho_FX {
 				}).add;
 			);
 
-			CroneDefs.add(
-				// taken and slighly adapted from princeton @robint (thank you).
-				SynthDef.new(\leSpring, {
-					arg inBus, outBus,
-					level = 1, decayRate = 0.5;
-
-					var mono, pre, twang, sp1, sp2, sp3, diff, wet, fb;
-
-					level = Lag.kr(level);
-					decayRate = Lag.kr(decayRate).linlin(0, 1, 0.8, 3.5);
-
-					mono = Mix(In.ar(inBus, 2)) * level;
-					pre = DelayN.ar(mono, 0.008, 0.008);
-					fb = LocalIn.ar(2);
-
-					twang = BPF.ar(pre, 1350 + LFNoise1.kr(0.5, 100), 3.0);
-					twang = twang * decayRate.linlin(0.8, 3.5, 0.05, 0.22);
-
-					sp1 = OnePole.ar(pre, -0.87);
-					sp1 = AllpassN.ar(sp1, 0.04, 0.0163, 0.05);
-					sp1 = AllpassN.ar(sp1, 0.04, 0.0271, 0.08);
-					sp1 = CombN.ar(sp1, 0.1, 0.02974, decayRate * 0.9);
-					sp1 = LPF.ar(sp1, 2200);
-
-					sp2 = OnePole.ar(pre, -0.92);
-					sp2 = AllpassN.ar(sp2, 0.04, 0.0213, 0.06);
-					sp2 = AllpassN.ar(sp2, 0.04, 0.0347, 0.09);
-					sp2 = CombN.ar(sp2, 0.1, 0.03511, decayRate);
-					sp2 = LPF.ar(sp2, 2000);
-
-					sp3 = OnePole.ar(pre, -0.76);
-					sp3 = AllpassN.ar(sp3, 0.04, 0.0129, 0.04);
-					sp3 = CombN.ar(sp3, 0.1, 0.04423, decayRate * 1.12);
-					sp3 = LPF.ar(sp3, 1800);
-
-					diff = AllpassN.ar(sp1 + sp2 + sp3 + (twang * 0.4), 0.05, [0.0137, 0.0211], 0.4);
-					diff = AllpassN.ar(diff[0] + diff[1], 0.03, [0.0153, 0.0091, 0.0173], 0.3);
-
-					wet = Splay.ar(diff, 1, 0.35);
-
-					LocalOut.ar(wet);
-
-					Out.ar(outBus, wet);
-				});
-			);
-
 		}
 
 	}
