@@ -20,11 +20,11 @@ function reflection.new(id)
   p.event_prev           = {}
   p.step                 = 0
   p.count                = 0
-  p.loop                 = 0
+  p.loop                 = 1
   p.clock                = nil
   p.queued_rec           = nil
   p.rec_dur              = nil
-  p.quantize             = 1 / 32
+  p.quantize             = 1/32
   p.endpoint             = 0
   p.endpoint_init        = 0
   p.step_min             = 0
@@ -135,7 +135,7 @@ end
 
 --- quantize playback
 function reflection:set_quantization(q)
-  self.quantize = q == nil and 1 / 32 or q
+  self.quantize = q == nil and 1/64 or q
 end
 
 --- change pattern length in beats
