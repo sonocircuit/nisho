@@ -410,7 +410,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
       if ptn[i].play == 0 then
         update_pattern_bank(i)
         send_program_change(i)
-        if ptn.overdub_active and p[i].count[bank] > 0 then
+        if x == 13 and p[i].count[bank] > 0 then
           ptn[i]:start(quant.bar)
         end
       else
@@ -423,7 +423,11 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
       end
     end
   elseif x == 13 and y == 4 and z == 1 then
-    stop_all_patterns()
+    if ptn.overdub_active and ptn.stop_all then
+      stop_callback()
+    else
+      stop_all_patterns()
+    end 
   else
     local i = x - 4
     if ui.prgchg_view then
@@ -494,7 +498,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
             if p[i].bank ~= bank then
               local beat_sync = 1
               if p[i].load ~= nil then
-                send_mutes_change(bank, beat_sync)
+                if i == 8 then send_mutes_change(bank, beat_sync) end
                 clock.run(function()
                   clock.sync(beat_sync)
                   update_pattern_bank(i)
@@ -506,7 +510,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
                 if ptn[i].play == 0 then
                   update_pattern_bank(i)
                   send_program_change(i)
-                  send_mutes_change(bank, beat_sync)
+                  if i == 8 then send_mutes_change(bank, beat_sync) end
                 end
               end
             elseif p[i].load then
