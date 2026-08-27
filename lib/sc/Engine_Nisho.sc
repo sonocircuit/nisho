@@ -21,12 +21,10 @@ Engine_Nisho : CroneEngine {
 
 	var monoBus;
 	var polyBus;
-	var kitBus;
 	var sumBus;
 
 	var monoStage;
 	var polyStage;
-	var kitStage;
 	var extStage;
 	var finalStage;
 
@@ -184,20 +182,24 @@ Engine_Nisho : CroneEngine {
 		context.server.sync;
 
 		// add groups
-		mainGroup = Group.new(context.xg);
-		monoGroup = Group.tail(mainGroup); // polyForm mono
-		polyGroup = Group.tail(mainGroup); // polyForm poly
-		kitGroup = Group.tail(mainGroup);  // drmFM
+		//mainGroup = Group.new(context.xg);
+		monoGroup = Group.tail(context.xg); // polyForm mono
+		polyGroup = Group.tail(context.xg); // polyForm poly
+		kitGroup = Group.tail(context.xg);  // drmFM
 
 		context.server.sync;
 
 		// add busses
 		monoBus = Bus.audio(context.server, 2);
 		polyBus = Bus.audio(context.server, 2);
-		//kitBus = Bus.audio(context.server, 2);
 		delayBus = Bus.audio(context.server, 2);
 		reverbBus = Bus.audio(context.server, 2);
 		sumBus = Bus.audio(context.server, 2);
+
+		// add globals for nb players
+		~nishoDelayBus = delayBus;
+		~nishoReverbBus = reverbBus;
+		~nishoSumBus = sumBus;
 
 		context.server.sync;
 
@@ -209,7 +211,7 @@ Engine_Nisho : CroneEngine {
 				\sendABus, delayBus,
 				\sendBBus, reverbBus
 			],
-			mainGroup, 'addToTail'
+			context.og, 'addToTail'
 		);
 
 		polyStage = Synth.new(\synthFX,
@@ -219,16 +221,8 @@ Engine_Nisho : CroneEngine {
 				\sendABus, delayBus,
 				\sendBBus, reverbBus
 			],
-			mainGroup, 'addToTail'
+			context.og, 'addToTail'
 		);
-
-		// kitStage = Synth.new(\drmFM_FX,
-		// 	[
-		// 		\inBus, kitBus,
-		// 		\outBus, sumBus
-		// 	],
-		// 	mainGroup, 'addToTail'
-		// );
 
 		delayFx = Synth.new(\leDelay,
 			[
@@ -236,7 +230,7 @@ Engine_Nisho : CroneEngine {
 				\sendBus, reverbBus,
 				\outBus, sumBus
 			],
-			mainGroup, 'addToTail'
+			context.og, 'addToTail'
 		);
 
 		reverbFx = Synth.new(\leVerb,
@@ -244,7 +238,7 @@ Engine_Nisho : CroneEngine {
 				\inBus, reverbBus,
 				\outBus, sumBus
 			],
-			mainGroup, 'addToTail'
+			context.og, 'addToTail'
 		);
 
 		finalStage = Synth.new(\outputFX,
@@ -252,7 +246,7 @@ Engine_Nisho : CroneEngine {
 				\inBus, sumBus,
 				\outBus, context.out_b
 			],
-			mainGroup, 'addToTail'
+			context.og, 'addToTail'
 		);
 
 		context.server.sync;
@@ -286,13 +280,9 @@ Engine_Nisho : CroneEngine {
 			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
 		}).play(args: [\buf, nozBuf[2]]);
 
-		SynthDef(\renderStaticLo, { |buf|
-			var sig = PinkNoise.ar(1);
-			sig = sig * LFNoise2.ar(440).range(0.3, 1);
-			sig = LeakDC.ar(sig);
-			sig = HPF.ar(sig, 60);
-			sig = sig * 16.dbamp;
-			sig = sig.tanh;
+		SynthDef(\renderPiDust, { |buf|
+			var sig = Mix.new([PinkNoise.ar(0.5), Dust.ar(5, 1)]);
+			sig = HPF.ar(sig, 1600) * 24.dbamp;
 			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
 		}).play(args: [\buf, nozBuf[3]]);
 
@@ -330,7 +320,6 @@ Engine_Nisho : CroneEngine {
 		};
 	}
 
-	// commands
 	addCommands {
 
 		// polyForm /////////////////////////////////////////////////////////////////////////////////
@@ -479,12 +468,6 @@ Engine_Nisho : CroneEngine {
 			kitDef[vox] = def;
 		});
 
-		// this.addCommand(\drmfm_set_stage, "sf", { arg msg;
-		// 	var key = msg[1].asSymbol;
-		// 	var val = msg[2].asFloat;
-		// 	kitStage.set(key, val);
-		// });
-
 		this.addCommand(\drmfm_set_level, "f", { arg msg;
 			var val = msg[1].asFloat;
 			kitGroup.set(\mainAmp, val);
@@ -537,21 +520,6 @@ Engine_Nisho : CroneEngine {
 
 		// FX /////////////////////////////////////////////////////////////////////////////////
 
-		this.addCommand(\fx_toggle, "s", { arg msg;
-			var state = msg[1].asSymbol;
-			if (state == \on) {
-				delayBus = Bus.audio(context.server, 2);
-				reverbBus = Bus.audio(context.server, 2);
-				delayFx = Synth.new(\leDelay, [\inBus, delayBus, \sendBus, reverbBus, \outBus, context.out_b], mainGroup, 'addToTail');
-				reverbFx = Synth.new(\leVerb, [\inBus, reverbBus, \outBus, context.out_b], mainGroup, 'addToTail');
-			}{
-				delayBus.free;
-				reverbBus.free;
-				delayFx.free;
-				reverbFx.free;
-			};
-		});
-
 		this.addCommand(\fx_set_param, "ssf", { arg msg;
 			var fx = msg[1].asSymbol;
 			var key = msg[2].asSymbol;
@@ -575,7 +543,7 @@ Engine_Nisho : CroneEngine {
 							\sendABus, delayBus,
 							\sendBBus, reverbBus,
 						],
-						mainGroup, 'addToHead'
+						context.ig, 'addToTail'
 					);
 				};
 			}{
@@ -600,17 +568,27 @@ Engine_Nisho : CroneEngine {
 
 	}
 
+	// free resources
+
 	free {
-		monoGroup.set(\gate, -1.05);
-		polyGroup.set(\gate, -1.05);
-		kitGroup.set(\gate, -1.05);
 		numKit.do{ |vox| this.clearSample(vox) };
 		nozBuf.do{_.free};
-		mainGroup.free;
+		monoGroup.free;
+		polyGroup.free;
+		kitGroup.free;
+		monoStage.free;
+		polyStage.free;
+		delayFx.free;
+		reverbFx.free;
+		finalStage.free;
 		monoBus.free;
 		polyBus.free;
 		delayBus.free;
 		reverbBus.free;
+		sumBus.free;
+		~nishoDelayBus = nil;
+		~nishoReverbBus = nil;
+		~nishoSumBus = nil;
 	}
 
 }
