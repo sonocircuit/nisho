@@ -40,8 +40,8 @@ for i = 1, 8 do
 end
 
 local rk = {0, 0, 0, 0}
-
 local kit_morph = false
+local rec_modes = {"queued", "synced", "free"}
 
 
 -------------------------- note management functions --------------------------
@@ -310,7 +310,7 @@ end
 
 -------------------------- pattern functions --------------------------
 function set_pattern_loop(i)
-  local beat_sync = ptn.loop_set_q == 2 and 1 or (ptn.loop_set_q == 3 and quant.bar or ptn[ptn.focus].quantize)
+  local beat_sync = quant.loop_set == 2 and 1 or (quant.loop_set == 3 and quant.bar or ptn[ptn.focus].quantize)
   clock.sync(beat_sync)
   local first = held.ptn[ptn.focus].first
   local second = ptn.duplicating and held.ptn[ptn.focus].first or held.ptn[ptn.focus].second
@@ -325,7 +325,7 @@ function set_pattern_loop(i)
 end
 
 function clear_pattern_loop(i)
-  local beat_sync = ptn.loop_clr_q == 2 and 1 or (ptn.loop_clr_q == 3 and quant.bar or ptn[ptn.focus].quantize)
+  local beat_sync = quant.loop_clr == 2 and 1 or (quant.loop_clr == 3 and quant.bar or ptn[ptn.focus].quantize)
   clock.sync(beat_sync)
   ptn[i].step = 0
   ptn[i].step_min = 0
@@ -336,7 +336,7 @@ function pattern_keys(i)
   if ptn.focus ~= i and num_rec_enabled() == 0 then
     ptn.focus = i
   end
-  if not (ptn.pasting or ptn.copying) then
+  if not ptn.copying then
     if ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
       if ptn[i].count > 0 then
         if ui.popup_view then
@@ -404,18 +404,23 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
   local y = off and (y - off) or y
   local bank = y + ptn.page * 3
   if (x == 4 or x == 13) and y < 4 and z == 1 then
-    send_mutes_change(bank, quant.bar)
+    local beat_sync = quant.scene == 2 and 1 or (quant.scene == 3 and quant.bar or ptn[ptn.focus].quantize)
+    send_mutes_change(bank, beat_sync)
     for i = 1, 8 do
       p[i].load = bank
+      local launch = ptn.overdub_active or p[i].scene[bank]
       if ptn[i].play == 0 then
         update_pattern_bank(i)
         send_program_change(i)
-        if x == 13 and p[i].count[bank] > 0 then
-          ptn[i]:start(quant.bar)
+        if x == 13 and p[i].count[bank] > 0 and launch then
+          ptn[i]:start(beat_sync)
         end
       else
+        if not launch then
+          ptn[i]:stop(beat_sync)
+        end
         clock.run(function()
-          clock.sync(quant.bar)
+          clock.sync(beat_sync)
           update_pattern_bank(i)
           send_program_change(i)
           ptn[i].step = 0
@@ -452,31 +457,35 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
             ptn.focus = i
             held.ptn[ptn.focus].num = 0
           end
-          -- copy/paste/append/duplicate
-          if ptn.pasting and ptn.copy.state then
-            copy_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank)
-            show_message("pasted  to  pattern  "..i.."  bank  "..bank)
-            ptn.copy = {state = false, pattern = nil, bank = nil}
-          elseif ptn.appending and ptn.copy.state then
-            local src_s = nil
-            local src_e = nil
-            if p[ptn.copy.pattern].looping then
-              src_s = ptn[ptn.copy.pattern].step_min
-              src_e = ptn[ptn.copy.pattern].step_max
-            end
-            append_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank, src_s, src_e)
-            show_message("appended  to  pattern  "..i.."  bank  "..bank)
-            ptn.copy = {state = false, pattern = nil, bank = nil}
-          elseif (ptn.pasting or ptn.appending) and not ptn.copy.state then
-            show_message("clipboard   empty")
-          elseif ptn.copying and not ptn.copy.state then
-            if p[i].count[bank] > 0 then
-              ptn.copy.pattern = i
-              ptn.copy.bank = bank
-              ptn.copy.state = true
-              show_message("pattern  "..ptn.copy.pattern.."  bank  "..ptn.copy.bank.."  selected")
+          -- copy/append/merge/duplicate
+          if ptn.copying then
+            if ptn.copy.state then
+              local src_s = nil
+              local src_e = nil
+              if p[ptn.copy.pattern].looping then
+                src_s = ptn[ptn.copy.pattern].step_min
+                src_e = ptn[ptn.copy.pattern].step_max
+              end
+              if ptn.appending then
+                append_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank, src_s, src_e)
+                show_message("appended  to  pattern  "..i.."  bank  "..bank)
+              elseif ptn.merging then
+                merge_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank, src_s, src_e)
+                show_message("merged  to  pattern  "..i.."  bank  "..bank)
+              else
+                copy_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank)
+                show_message("pasted  to  pattern  "..i.."  bank  "..bank)
+              end
+              ptn.copy = {state = false, pattern = nil, bank = nil}
             else
-              show_message("pattern   empty")
+              if p[i].count[bank] > 0 then
+                ptn.copy.pattern = i
+                ptn.copy.bank = bank
+                ptn.copy.state = true
+                show_message("pattern  "..ptn.copy.pattern.."  bank  "..ptn.copy.bank.."  selected")
+              else
+                show_message("pattern   empty")
+              end
             end
           elseif ptn.duplicating then
             if p[i].count[bank] > 0 then
@@ -494,7 +503,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
               popup_set(msg, pop)
             end
           -- load pattern
-          elseif not (ptn.copying or ptn.pasting) then
+          else
             if p[i].bank ~= bank then
               local beat_sync = 1
               if p[i].load ~= nil then
@@ -530,17 +539,16 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
   end
 end
 
-local rec_modes = {"queued", "synced", "free"}
 function pattern_options(x, y, z)
   if y == 1 and x == 1 then
     ptn.copying = z == 1 and true or false
-    if z == 1 then
+    if z == 0 then
       ptn.copy = {state = false, pattern = nil, bank = nil}
     end
   elseif y == 1 and x == 2 then
-    ptn.pasting = z == 1 and true or false
-  elseif y == 1 and x == 3 then
     ptn.appending = z == 1 and true or false
+  elseif y == 1 and x == 3 then
+    ptn.merging = z == 1 and true or false
   elseif y == 1 and x > 13 and z == 1 then
     if ptn.rec_mode == rec_modes[x - 13] then
       ptn.oneshot_overdub = not ptn.oneshot_overdub
@@ -606,7 +614,7 @@ function pattern_playhead(x, z)
         clock.run(set_pattern_loop, ptn.focus)
       else
         clock.run(function()
-          clock.sync(quant.rate)
+          clock.sync(quant.keys)
           local segment = math.floor(ptn[ptn.focus].endpoint / 16)
           ptn[ptn.focus].step = segment * (x - 1)
         end)
@@ -1157,7 +1165,7 @@ function seq_settings(x, z)
       params:set("notes_root_scale", hrmy.slot[hrmy.active].root)
       if not hrmy.latch then hrmy.config = false end
     elseif seq.config then
-      params:set("key_seq_rate", x - 4)
+      params:set("seq_rate", x - 4)
       show_message("seq   rate:  "..seq.rate_ids[x - 4])
     end
   elseif x == 15 then
@@ -1703,9 +1711,9 @@ function grid_options_draw(off)
 end
 
 function pattern_options_draw(grid)
-  g:led(1, 1, ptn.copying and viz.key_slow or (ptn.copy.state and 10 or 4))
-  g:led(2, 1, ptn.pasting and 15 or ((ptn.copy.state and not ptn.appending) and viz.key_slow or 4))
-  g:led(3, 1, ptn.appending and 15 or ((ptn.copy.state and not ptn.pasting) and viz.key_slow - 3 or 4))
+  g:led(1, 1, ptn.copying and (ptn.copy.state and viz.key_slow or 10) or 4)
+  g:led(2, 1, ptn.appending and (ptn.copy.state and viz.key_slow or 10) or 4)
+  g:led(3, 1, ptn.merging and (ptn.copy.state and viz.key_slow or 10) or 4)
   g:led(1, 2, ptn.clear and viz.key_mid or 4)
   g:led(2, 2, ptn.clear and viz.key_mid or (ptn.duplicating and 15 or 4))
   g:led(1, 3, ptn.overdub_active and 15 or 4)
@@ -1923,7 +1931,7 @@ function event_options_draw(off)
       end
     elseif seq.config then
       for x = 1, 8 do
-        g:led(x + 4, 12, params:get("key_seq_rate") == x and 6 or 1)
+        g:led(x + 4, 12, params:get("seq_rate") == x and 6 or 1)
       end
     end
   end
