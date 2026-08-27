@@ -232,7 +232,7 @@ local function add_params()
     params:add_control("polyform_noise_mix_"..i, "noise level", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_noise_mix_"..i, function(x) set_value(i, "noise_amp", x) end)
     -- noise crackle
-    params:add_option("polyform_noise_type_"..i, "noise type", {"white", "gray", "static hi", "static lo"}, 1)
+    params:add_option("polyform_noise_type_"..i, "noise type", {"white", "gray", "static", "dust"}, 1)
     params:set_action("polyform_noise_type_"..i, function(x) syn[i].noise_type = x - 1 end)
     
     params:add_separator("polyform_filter_lpf_"..i, "low pass filter")
