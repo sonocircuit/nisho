@@ -10,10 +10,10 @@ local MAX_LENGTH = math.pow(2, 24)
 local perf_clk = nil
 
 local kit = {}
-kit.preset_path = norns.state.data.."drmfm_kits"
-kit.voice_path = norns.state.data.."drmfm_voices"
-kit.default = norns.state.data.."drmfm_kits/default.kit"
-kit.failsafe = norns.state.path.."data/drmfm_kits/default.kit"
+kit.preset_path = "dust/data/nisho/drmfm_kits" 
+kit.voice_path = "dust/data/nisho/drmfm_voices"
+kit.default = "dust/data/nisho/drmfm_kits/default.kit"
+kit.failsafe = "dust/data/nisho/data/drmfm_kits/default.kit"
 kit.loaded = ""
 kit.clipboard = {}
 kit.list = {}
