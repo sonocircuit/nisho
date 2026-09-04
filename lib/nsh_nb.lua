@@ -1,3 +1,5 @@
+-- nb for nisho -  v2.0
+
 local player_lib = include 'nisho/lib/nsh_player'
 
 if note_players == nil then
