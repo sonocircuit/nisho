@@ -1,6 +1,6 @@
 # nisho
 
-#### six voices & eight patterns for performance & composition
+#### a multi-voice grid canvas for performance & composition
 
 
 nisho is a performance-oriented polyphonic instrument and pattern sequencer for norns. it is built around:
