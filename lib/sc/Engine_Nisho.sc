@@ -26,7 +26,7 @@ Engine_Nisho : CroneEngine {
 	var monoStage;
 	var polyStage;
 	var extStage;
-	var finalStage;
+	var sumStage;
 
 	var kitVoices;
 	var kitBuffers;
@@ -42,6 +42,7 @@ Engine_Nisho : CroneEngine {
 	var reverbFx;
 
 	var nozBuf;
+	var delBuf;
 
 	var loadQueue;
 	var loadingSamples = false;
@@ -202,7 +203,51 @@ Engine_Nisho : CroneEngine {
 		~nishoSumBus = sumBus;
 
 		context.server.sync;
+		
+		// add freeze buffers
+		//delBuf =Array.newClear(2);
+		//delBuf[0] = Buffer.alloc(context.server, 2.pow(18));
+		//delBuf[1] = Buffer.alloc(context.server, 2.pow(18));
+		
+		context.server.sync;
 
+		// render noise buffers
+		nozBuf = Array.newClear(4);
+		nozBuf[0] = Buffer.alloc(context.server, context.server.sampleRate * 4);
+		nozBuf[1] = Buffer.alloc(context.server, context.server.sampleRate * 4);
+		nozBuf[2] = Buffer.alloc(context.server, context.server.sampleRate * 4);
+		nozBuf[3] = Buffer.alloc(context.server, context.server.sampleRate * 4);
+
+		context.server.sync;
+
+		SynthDef(\renderWhiteNoise, { |buf|
+			var sig =  WhiteNoise.ar() * 1.2;
+			sig = sig.tanh;
+			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
+		}).play(args: [\buf, nozBuf[0]]);
+
+		SynthDef(\renderGrayNoise, { |buf|
+			var sig =  GrayNoise.ar();
+			sig = HPF.ar(sig, 120) * 0.9;
+			sig = sig.tanh;
+			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
+		}).play(args: [\buf, nozBuf[1]]);
+
+		SynthDef(\renderStaticHi, { |buf|
+			var mod = (LFNoise0.ar(44) + LFNoise0.ar(220)).range(0.5, 1.5);
+			var sig = WhiteNoise.ar() * mod;
+			sig = sig.tanh;
+			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
+		}).play(args: [\buf, nozBuf[2]]);
+
+		SynthDef(\renderPiDust, { |buf|
+			var sig = Mix.new([PinkNoise.ar(0.5), Dust.ar(5, 1)]);
+			sig = HPF.ar(sig, 1600) * 24.dbamp;
+			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
+		}).play(args: [\buf, nozBuf[3]]);
+
+		context.server.sync;
+		
 		// add synths -> all synthDefs added at startup via separate classes
 		monoStage = Synth.new(\synthFX,
 			[
@@ -241,50 +286,15 @@ Engine_Nisho : CroneEngine {
 			context.og, 'addToTail'
 		);
 
-		finalStage = Synth.new(\outputFX,
+		sumStage = Synth.new(\outputFX,
 			[
 				\inBus, sumBus,
-				\outBus, context.out_b
+				\outBus, context.out_b,
+				//\bufL, delBuf[0],
+				//\bufR, delBuf[1]
 			],
 			context.og, 'addToTail'
 		);
-
-		context.server.sync;
-
-		// render noise buffers
-		nozBuf = Array.newClear(4);
-		nozBuf[0] = Buffer.alloc(context.server, context.server.sampleRate * 4);
-		nozBuf[1] = Buffer.alloc(context.server, context.server.sampleRate * 4);
-		nozBuf[2] = Buffer.alloc(context.server, context.server.sampleRate * 4);
-		nozBuf[3] = Buffer.alloc(context.server, context.server.sampleRate * 4);
-
-		context.server.sync;
-
-		SynthDef(\renderWhiteNoise, { |buf|
-			var sig =  WhiteNoise.ar() * 1.2;
-			sig = sig.tanh;
-			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
-		}).play(args: [\buf, nozBuf[0]]);
-
-		SynthDef(\renderGrayNoise, { |buf|
-			var sig =  GrayNoise.ar();
-			sig = HPF.ar(sig, 120) * 0.9;
-			sig = sig.tanh;
-			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
-		}).play(args: [\buf, nozBuf[1]]);
-
-		SynthDef(\renderStaticHi, { |buf|
-			var mod = (LFNoise0.ar(44) + LFNoise0.ar(220)).range(0.5, 1.5);
-			var sig = WhiteNoise.ar() * mod;
-			sig = sig.tanh;
-			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
-		}).play(args: [\buf, nozBuf[2]]);
-
-		SynthDef(\renderPiDust, { |buf|
-			var sig = Mix.new([PinkNoise.ar(0.5), Dust.ar(5, 1)]);
-			sig = HPF.ar(sig, 1600) * 24.dbamp;
-			RecordBuf.ar(sig, buf, loop: 0, doneAction: 2);
-		}).play(args: [\buf, nozBuf[3]]);
 
 		context.server.sync;
 
@@ -563,7 +573,7 @@ Engine_Nisho : CroneEngine {
 		this.addCommand(\sum_set_param, "sf", { arg msg;
 			var key = msg[1].asSymbol;
 			var val = msg[2].asFloat;
-			finalStage.set(key, val);
+			sumStage.set(key, val);
 		});
 
 	}
@@ -580,7 +590,7 @@ Engine_Nisho : CroneEngine {
 		polyStage.free;
 		delayFx.free;
 		reverbFx.free;
-		finalStage.free;
+		sumStage.free;
 		monoBus.free;
 		polyBus.free;
 		delayBus.free;
