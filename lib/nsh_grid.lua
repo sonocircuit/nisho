@@ -1,4 +1,4 @@
--- grid for nisho - v2.0.0
+-- grid for nisho - v2.0
 
 local g = grid.connect()
 
@@ -30,6 +30,7 @@ held.cmem = 0
 held.chrd = 0
 held.ccnf = 0
 held.trig = 0
+held.frz = 0
 held.ptn = {}
 for i = 1, 8 do
   held.ptn[i] = {}
@@ -39,9 +40,66 @@ for i = 1, 8 do
   held.ptn[i].second = 0
 end
 
+local frz = {}
+frz.config = false
+frz.focus = 1
+
 local rk = {0, 0, 0, 0}
+local rep_mode = false
+local kit_mode = false
 local kit_morph = false
+local kit_menu = false
 local rec_modes = {"queued", "synced", "free"}
+
+
+
+-------------------------- trig/rep functions --------------------------
+local function set_trig_start()
+  trigs.lock = false
+  trigs.step = 0
+  if trigs.reset_mode > 2 then
+    if not trigs.lock then
+      local beat_sync = trigs.reset_mode == 3 and 1 or quant.bar
+      clock.run(function()
+        clock.sync(beat_sync, -1/8)
+        trigs.step = 0
+        trigs.lock = true
+      end)
+    end
+  end
+end
+
+local function reset_trig_step(held_keys)
+  local held_keys = held_keys or 0
+  if held_keys < 2 then
+    if trigs.reset_mode == 1 then
+      trigs.step = 0
+      if seq.polyseq and not seq.hold then seq.step = 0 end
+    elseif trigs.reset_mode == 2 then
+      if not trigs.lock then
+        trigs.step = 0
+        trigs.lock = true
+        if seq.polyseq then seq.step = 0 end
+      end
+    end
+  end
+end
+
+local function set_repeat_rate(t, z)
+  if not rep.active then
+    set_trig_start()
+  end
+  local idx = tonumber(tostring(t[4]..t[3]..t[2]..t[1]), 2)
+  rep.active = idx > 0 and true or false
+  if idx > 0 then
+    rep.rate = rep.rate_val[idx] * 4
+    if z == 1 then
+      ui.show_message("repeat  rate:  "..rep.rate_ids[idx])
+    end
+  else
+    trigs.lock = false
+  end
+end
 
 
 -------------------------- note management functions --------------------------
@@ -59,7 +117,7 @@ local function table_remove(t, note)
   end
 end
 
-function add_scale_note(n_key, n_val)
+local function add_scale_note(n_key, n_val)
   table.insert(notes.keys, n_key)
   if not tab.contains(notes.active, n_key) then
     table.insert(notes.active, n_key)
@@ -81,7 +139,7 @@ function add_scale_note(n_key, n_val)
   notes.last = n_val + notes.scale_oct * notes.int_oct[voice.int]
 end
 
-function remove_scale_note(n_key, n_val)
+local function remove_scale_note(n_key, n_val)
   local i = voice.keys
   if (voice[i].sustaining and not tab.contains(voice[i].sustained, n_val)) or not voice[i].sustaining then
     if seq.active and not (seq.collecting or seq.appending or seq.hold or seq.polyseq) then
@@ -96,7 +154,7 @@ function remove_scale_note(n_key, n_val)
   end
 end
 
-function add_cmem_notes(i, n_keys)
+local function add_cmem_notes(i, n_keys)
   for _, note in ipairs(n_keys) do
     if not tab.contains(notes.active, note) then
       table.insert(notes.active, note)
@@ -133,7 +191,7 @@ function add_cmem_notes(i, n_keys)
   notes.last = n_keys[1] + notes.scale_oct * (notes.int_oct[voice.int])
 end
 
-function remove_cmem_notes(n_keys, n_vals)
+local function remove_cmem_notes(n_keys, n_vals)
   local i = voice.keys
   if seq.active and not (seq.collecting or seq.appending or seq.hold or seq.polyseq) then
     for _, note in ipairs(n_keys) do
@@ -153,57 +211,9 @@ function remove_cmem_notes(n_keys, n_vals)
   end
 end
 
--------------------------- trig/rep functions --------------------------
-
-function set_trig_start()
-  trigs.lock = false
-  trigs.step = 0
-  if trigs.reset_mode > 2 then
-    if not trigs.lock then
-      local beat_sync = trigs.reset_mode == 3 and 1 or quant.bar
-      clock.run(function()
-        clock.sync(beat_sync, -1/8)
-        trigs.step = 0
-        trigs.lock = true
-      end)
-    end
-  end
-end
-
-function reset_trig_step(held_keys)
-  local held_keys = held_keys or 0
-  if held_keys < 2 then
-    if trigs.reset_mode == 1 then
-      trigs.step = 0
-      if seq.polyseq and not seq.hold then seq.step = 0 end
-    elseif trigs.reset_mode == 2 then
-      if not trigs.lock then
-        trigs.step = 0
-        trigs.lock = true
-        if seq.polyseq then seq.step = 0 end
-      end
-    end
-  end
-end
-
-function set_repeat_rate(t, z)
-  if not rep.active then
-    set_trig_start()
-  end
-  local idx = tonumber(tostring(t[4]..t[3]..t[2]..t[1]), 2)
-  rep.active = idx > 0 and true or false
-  if idx > 0 then
-    rep.rate = rep.rate_val[idx] * 4
-    if z == 1 then
-      show_message("repeat  rate:  "..rep.rate_ids[idx])
-    end
-  else
-    trigs.lock = false
-  end
-end
 
 -------------------------- chord functions --------------------------
-function clear_chord()
+local function clear_chord()
   if next(notes.chrd) and not rep.active then
     for _, note in ipairs(notes.chrd) do
       local e = {t = eSCALE, i = voice.keys, note = note, action = "note_off"} event(e)
@@ -212,13 +222,55 @@ function clear_chord()
   notes.chrd = {}
   notes.active = {}
   chrd.name = ""
-  page_redraw(1)
+  ui.draw_view(ui.SCLE)
 end
 
-function play_chord(i)
+local function autostrum(strum_notes, octave)
+  local endpoint = chrd.strm_num + chrd.inv - 1
+  -- strum loop
+  for i = chrd.inv, endpoint do
+    local step = i
+    local pos = i - chrd.inv + 1
+    -- calc index (step)
+    if chrd.strm_mode == 2 then
+      if pos % 2 == 0 then
+        step = endpoint - pos + 2
+      end
+    elseif chrd.strm_mode == 3 then
+      step = math.random(chrd.inv, endpoint)
+    elseif chrd.strm_mode == 4 then
+      if pos % 2 ~= 0 then
+        step = endpoint - pos
+      end
+    elseif chrd.strm_mode == 5 then
+      step = endpoint - pos + 1
+    end
+    if step > 15 then step = 15 end
+    if step < 1 then step = 1 end
+    -- calc rate
+    local rate_var = math.random(-12, 12) * chrd.strm_drift
+    local rate = chrd.strm_rate + rate_var
+    if chrd.strm_skew > 0 then
+      rate = chrd.strm_rate + ((endpoint - (i - 1)) * chrd.strm_skew * 0.001)
+    elseif chrd.strm_skew < 0 then
+      rate = chrd.strm_rate - (i * chrd.strm_skew * 0.001)
+    end
+    -- play notes
+    local vox = voice.strum > 0 and voice.strum or voice.keys
+    local note = strum_notes[step] + octave + (notes.scale_oct * chrd.oct_off) + notes.trsp_int
+    local e = {t = eSCALE, i = vox, note = note, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
+    clock.run(function()
+      clock.sleep(rate)
+      local e = {t = eSCALE, i = vox, note = note, action = "note_off"} event(e)
+    end)
+    clock.sleep(rate)
+  end
+end
+
+local function play_chord(i)
   chrd.current = i
   local num = tonumber(tostring(chrd.key[i][3]..chrd.key[i][2]..chrd.key[i][1]), 2)
-  local t = chrd.idx[num]
+  local t = chrd.bin[num]
   if next(chrd.nts[i][t]) then
     -- clear notes    
     clear_chord()
@@ -266,50 +318,18 @@ function play_chord(i)
   end
 end
 
-function autostrum(strum_notes, octave)
-  local endpoint = chrd.strm_num + chrd.inv - 1
-  -- strum loop
-  for i = chrd.inv, endpoint do
-    local step = i
-    local pos = i - chrd.inv + 1
-    -- calc index (step)
-    if chrd.strm_mode == 2 then
-      if pos % 2 == 0 then
-        step = endpoint - pos + 2
-      end
-    elseif chrd.strm_mode == 3 then
-      step = math.random(chrd.inv, endpoint)
-    elseif chrd.strm_mode == 4 then
-      if pos % 2 ~= 0 then
-        step = endpoint - pos
-      end
-    elseif chrd.strm_mode == 5 then
-      step = endpoint - pos + 1
-    end
-    if step > 15 then step = 15 end
-    if step < 1 then step = 1 end
-    -- calc rate
-    local rate_var = math.random(-12, 12) * chrd.strm_drift
-    local rate = chrd.strm_rate + rate_var
-    if chrd.strm_skew > 0 then
-      rate = chrd.strm_rate + ((endpoint - (i - 1)) * chrd.strm_skew * 0.001)
-    elseif chrd.strm_skew < 0 then
-      rate = chrd.strm_rate - (i * chrd.strm_skew * 0.001)
-    end
-    -- play notes
-    local vox = voice.strum > 0 and voice.strum or voice.keys
-    local note = strum_notes[step] + octave + (notes.scale_oct * chrd.oct_off) + notes.trsp_int
-    local e = {t = eSCALE, i = vox, note = note, vel = voice[voice.keys].velocity, action = "note_on"} event(e)
-    clock.run(function()
-      clock.sleep(rate)
-      local e = {t = eSCALE, i = vox, note = note, action = "note_off"} event(e)
-    end)
-    clock.sleep(rate)
-  end
-end
 
 -------------------------- pattern functions --------------------------
-function set_pattern_loop(i)
+local function rec_inactive()
+  for i = 1, 8 do
+    if ptn[i].rec_enabled > 0 then
+      return false
+    end
+  end
+  return true
+end
+
+local function set_pattern_loop(i)
   local beat_sync = quant.loop_set == 2 and 1 or (quant.loop_set == 3 and quant.bar or ptn[ptn.focus].quantize)
   clock.sync(beat_sync)
   local first = held.ptn[ptn.focus].first
@@ -324,7 +344,7 @@ function set_pattern_loop(i)
   clear_active_notes(i)
 end
 
-function clear_pattern_loop(i)
+local function clear_pattern_loop(i)
   local beat_sync = quant.loop_clr == 2 and 1 or (quant.loop_clr == 3 and quant.bar or ptn[ptn.focus].quantize)
   clock.sync(beat_sync)
   ptn[i].step = 0
@@ -332,19 +352,19 @@ function clear_pattern_loop(i)
   ptn[i].step_max = ptn[i].endpoint
 end
 
-function pattern_keys(i)
-  if ptn.focus ~= i and num_rec_enabled() == 0 then
+local function pattern_keys(i)
+  if ptn.focus ~= i and rec_inactive() then
     ptn.focus = i
   end
   if not ptn.copying then
     if ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
       if ptn[i].count > 0 then
         if ui.popup_view then
-          popup_exec("yes")
+          ui.popup_exec("yes")
         else
           local msg = "clear   pattern  "..i.."  bank  "..p[i].bank
-          local pop = {func = clear_pattern_bank, args = {i, p[i].bank}}
-          popup_set(msg, pop)
+          local yes = {func = clear_pattern_bank, args = {i, p[i].bank}}
+          ui.popup_set(msg, yes)
         end
       end
     else
@@ -354,7 +374,7 @@ function pattern_keys(i)
           if seq.appending then
             paste_seq_pattern(i)
           else
-            if num_rec_enabled() == 0 then
+            if rec_inactive() then
               local mode = ptn.rec_mode == "synced" and 1 or 2
               local dur = ptn.rec_mode ~= "free" and ptn[i].length or nil
               ptn[i]:set_rec(mode, dur, beat_sync)
@@ -400,7 +420,7 @@ function pattern_keys(i)
   end
 end
 
-function pattern_slots(x, y, z, off) -- grid one: off = 2
+local function pattern_slots(x, y, z, off) -- grid one: off = 2
   local y = off and (y - off) or y
   local bank = y + ptn.page * 3
   if (x == 4 or x == 13) and y < 4 and z == 1 then
@@ -435,7 +455,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
     end 
   else
     local i = x - 4
-    if ui.prgchg_view then
+    if ui.get_view(ui.PRCH) then
       if z == 1 then
         if y == 4 then
           p[i].prc_enabled = not p[i].prc_enabled
@@ -453,7 +473,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
         -- select active pattern bank, copy/paste/duplicate/append actions
         if z == 1 then
           -- set pattern focus
-          if ptn.focus ~= i and num_rec_enabled() == 0 then
+          if ptn.focus ~= i and rec_inactive() then
             ptn.focus = i
             held.ptn[ptn.focus].num = 0
           end
@@ -468,13 +488,13 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
               end
               if ptn.appending then
                 append_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank, src_s, src_e)
-                show_message("appended  to  pattern  "..i.."  bank  "..bank)
+                ui.show_message("appended  to  pattern  "..i.."  bank  "..bank)
               elseif ptn.merging then
                 merge_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank, src_s, src_e)
-                show_message("merged  to  pattern  "..i.."  bank  "..bank)
+                ui.show_message("merged  to  pattern  "..i.."  bank  "..bank)
               else
                 copy_pattern(ptn.copy.pattern, ptn.copy.bank, i, bank)
-                show_message("pasted  to  pattern  "..i.."  bank  "..bank)
+                ui.show_message("pasted  to  pattern  "..i.."  bank  "..bank)
               end
               ptn.copy = {state = false, pattern = nil, bank = nil}
             else
@@ -482,25 +502,25 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
                 ptn.copy.pattern = i
                 ptn.copy.bank = bank
                 ptn.copy.state = true
-                show_message("pattern  "..ptn.copy.pattern.."  bank  "..ptn.copy.bank.."  selected")
+                ui.show_message("pattern  "..ptn.copy.pattern.."  bank  "..ptn.copy.bank.."  selected")
               else
-                show_message("pattern   empty")
+                ui.show_message("pattern   empty")
               end
             end
           elseif ptn.duplicating then
             if p[i].count[bank] > 0 then
               append_pattern(i, bank, i, bank)
-              show_message("doubled   pattern")
+              ui.show_message("doubled   pattern")
             else
-              show_message("pattern   empty")
+              ui.show_message("pattern   empty")
             end
           elseif ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
-            if ui.popup_view then
-              popup_exec("yes")
+            if ui.get_view(ui.POPP) then
+              ui.popup_exec("yes")
             else
               local msg = "clear   pattern  "..i.."  bank  "..bank
-              local pop = {func = clear_pattern_bank, args = {i, bank}}
-              popup_set(msg, pop)
+              local yes = {func = clear_pattern_bank, args = {i, bank}}
+              ui.popup_set(msg, yes)
             end
           -- load pattern
           else
@@ -527,7 +547,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
             end
           end
         end
-        focus_page(3)
+        ui.set_view(ui.PPTN)
       elseif y == 4 and z == 1 then
         if ptn[i].play == 1 then
           p[i].stop = not p[i].stop
@@ -539,7 +559,7 @@ function pattern_slots(x, y, z, off) -- grid one: off = 2
   end
 end
 
-function pattern_options(x, y, z)
+local function pattern_options(x, y, z)
   if y == 1 and x == 1 then
     ptn.copying = z == 1 and true or false
     if z == 0 then
@@ -554,7 +574,7 @@ function pattern_options(x, y, z)
       ptn.oneshot_overdub = not ptn.oneshot_overdub
     end
     ptn.rec_mode = rec_modes[x - 13]
-    page_redraw(3)
+    ui.draw_view(ui.PPTN)
   elseif y == 2 and x == 1 then
     ptn.clear = z == 1 and true or false
   elseif y == 2 and x == 2 then
@@ -563,22 +583,18 @@ function pattern_options(x, y, z)
     end
   elseif y == 2 and x == 15 then
     if z == 1 then
-      ui.prgchg_view = not ui.prgchg_view
-      if ui.prgchg_view then ui.preset_view = false end
+      ui.toggle_view(ui.PRCH, ui.PPTN)
     end
-    dirtyscreen = true
   elseif y == 2 and x == 16 then
     if z == 1 then
-      ui.preset_view = not ui.preset_view
-      if ui.preset_view then ui.prgchg_view = false end
+      ui.toggle_view(ui.PSET, ui.PPTN)
     end
-    dirtyscreen = true
   elseif y == 3 and (x == 1 or x == 16) then
     ptn.overdub_active = z == 1 and true or false
   end 
 end
 
-function pattern_playhead(x, z)
+local function pattern_playhead(x, z)
   if z == 1 and held.ptn[ptn.focus].num then held.ptn[ptn.focus].max = 0 end
   held.ptn[ptn.focus].num = held.ptn[ptn.focus].num + (z * 2 - 1)
   if held.ptn[ptn.focus].num > held.ptn[ptn.focus].max then held.ptn[ptn.focus].max = held.ptn[ptn.focus].num end
@@ -635,18 +651,18 @@ local function trig_view_logic(z)
       clock.sleep(1/6)
       trigs.view_shortpress = false
       trigs.view_timer = nil
-      trigs.reset_mode_view = ui.trigs_view and true or false
-      dirtyscreen = true
+      if trigs.view_active then
+        ui.set_view(ui.RTRG)
+      end
     end)
   else
     if trigs.view_shortpress then
-      ui.trigs_view = not ui.trigs_view
-      trigs.edit_trig = false
+      trigs.view_active = not trigs.view_active
       if trigs.view_timer ~= nil then
         clock.cancel(trigs.view_timer)
         trigs.view_timer = nil
       end
-      if not ui.trigs_view then
+      if not trigs.view_active then
         if #notes.kit > 0 and GRIDSIZE == 128 then
           for _, note in ipairs(notes.kit) do
             drmfm.stop(note)
@@ -655,10 +671,9 @@ local function trig_view_logic(z)
           held.kit = 0
         end
       end
-    else
-      trigs.reset_mode_view = false
+    elseif trigs.view_active then
+      ui.set_view(ui.prev_view)
     end
-    dirtyscreen = true
   end
 end
 
@@ -671,7 +686,7 @@ local function nudge_trigs(t, step, size)
   return nt
 end
 
-function nudge_trig_pattern(i, step)
+local function nudge_trig_pattern(i, step)
   local size = trigs[i].step_max
   trigs[i].pattern = nudge_trigs(trigs[i].pattern, step, size)
   trigs[i].prob = nudge_trigs(trigs[i].prob, step, size)
@@ -680,7 +695,7 @@ function nudge_trig_pattern(i, step)
   trigs[i].ratvel = nudge_trigs(trigs[i].ratvel, step, size)
 end
 
-function reset_trig_pattern(i)
+local function reset_trig_pattern(i)
   trigs[i].step_max = 16
   trigs[i].pattern = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
   trigs[i].prob = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
@@ -690,7 +705,7 @@ function reset_trig_pattern(i)
   trigs[i].ratvel = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 end
 
-function copy_trig(i)
+local function copy_trig(i)
   if next(trigs.copy_data) then
     trigs[i].step_max = trigs.copy_data.step_max
     trigs[i].pattern = trigs.copy_data.pattern
@@ -711,7 +726,7 @@ function copy_trig(i)
   end
 end
 
-function trig_logic(i, z)
+local function trig_logic(i, z)
   track_num_held("trig", z)
   if z == 1 then
     if trigs.edit_timer ~= nil then
@@ -720,9 +735,8 @@ function trig_logic(i, z)
     trigs.edit_shortpress = true
     trigs.edit_timer = clock.run(function()
       clock.sleep(1/6)
-      trigs.edit_trig = true
       trigs.edit_shortpress = false
-      dirtyscreen = true
+      ui.set_view(ui.PTRG)
     end)
   else
     if trigs.edit_timer ~= nil then
@@ -732,17 +746,17 @@ function trig_logic(i, z)
     if trigs.edit_shortpress then
       trigs[trigs.focus].pattern[i] = 1 - trigs[trigs.focus].pattern[i]
       trigs.edit_shortpress = false
+    elseif held.trig < 1 then
+      ui.set_view(ui.prev_view)
     end
-    if held.trig < 1 then trigs.edit_trig = false end
-    dirtyscreen = true
   end
 end
 
-function trigs_grid(x, y, z, grid)
+local function trigs_grid(x, y, z, grid)
   if grid == 256 then -- grid zero
     local i = x
     if y == 5 then
-      trigs.step_focus = x
+      if z == 1 then trigs.step_focus = x end
       if trigs.set_end then
         if z == 1 then trigs[trigs.focus].step_max = i end
       elseif trigs.nudging then
@@ -807,11 +821,11 @@ function trigs_grid(x, y, z, grid)
         elseif held.cmem > 0 then
           cmem[cmem.active].trigs = cmem[cmem.active].trigs == trigs.focus and 0 or trigs.focus
           local msg = cmem[cmem.active].trigs ~= 0 and ("  >  trig   pattern:  "..trigs.focus) or "   unassigned"
-          show_message("mem-slot  "..cmem.active..msg)
+          ui.show_message("mem-slot  "..cmem.active..msg)
         else
           local inc = y == 3 and -1 or 1
           trigs.focus = util.clamp(trigs.focus + inc, 1,  8)
-          show_message("trig    pattern:  "..trigs.focus)
+          ui.show_message("trig    pattern:  "..trigs.focus)
         end
       end
     end
@@ -819,7 +833,7 @@ function trigs_grid(x, y, z, grid)
 end
 
 -------------------------- grid key functions --------------------------
-function modifier_keys(x, y, z, off) -- grid one: off = -6
+local function modifier_keys(x, y, z, off) -- grid one: off = -6
   local y = off and (y - off) or y
   local state = z == 1 and true or false
   mod.any = state
@@ -839,7 +853,7 @@ function modifier_keys(x, y, z, off) -- grid one: off = -6
 end
 
 local ktype = {"keys", "cmem", "chrd", "keys"}
-function voice_settings(x, y, z, off) -- grid one: off = -6
+local function voice_settings(x, y, z, off) -- grid one: off = -6
   local y = off and (y - off) or y
   if x < 4 or x > 13 then
     local ksrc = ktype[voice[voice.keys].keys_option]
@@ -866,8 +880,8 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
       end
     elseif y == 8 then
       if z == 1 then
-        if ui.shift then
-          ui.voice_focus = i
+        if (mod.a or mod.b) then
+          ui.set_voice(i)
         elseif (mod.c or mod.d) then
           dont_panic(i)
           held[ksrc] = 0
@@ -879,25 +893,22 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
             held[ksrc] = 0
           end
           voice.keys = i
-          ui.voice_focus = i
-          dirtyscreen = true
+          ui.set_voice(i)
           if keyedit_timer ~= nil then
             clock.cancel(keyedit_timer)
           end
           keyedit_timer = clock.run(function()
             clock.sleep(0.6)
-            ui.keyedit_view = true
-            dirtyscreen = true
+            ui.set_view(ui.EVOX)
+            keyedit_timer = nil
           end)
         end
-        focus_page(2)
       else
         if keyedit_timer ~= nil then
           clock.cancel(keyedit_timer)
           keyedit_timer = nil
         end
-        ui.keyedit_view = false
-        dirtyscreen = true
+        ui.set_view(ui.PVOX)
       end
     elseif y == 9 and z == 1 then
       if voice[i].sustaining then
@@ -919,7 +930,7 @@ function voice_settings(x, y, z, off) -- grid one: off = -6
   end
 end
 
-function voice_options(x, y, z, off) -- grid one: off = -7
+local function voice_options(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   if z == 1 then
     local n = x + (y - 10) * 2
@@ -932,20 +943,19 @@ function voice_options(x, y, z, off) -- grid one: off = -7
   end
 end
 
-function grid_options(x, y, z, off) -- grid one: off = -7
+local function grid_options(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   if y == 10 then
     if x == 15 and z == 1 then
       quant.active = not quant.active
     elseif x == 16 then
-      ui.keyquant_view = z == 1 and true or false
-      dirtyscreen = true
+      ui.toggle_view(ui.QKEY, ui.prev_view)
     end
   elseif y == 11 then
     if x == 15 and z == 1 then
-      ui.kit_view = not ui.kit_view
-      if ui.kit_view then
-        focus_page(4)
+      kit_mode = not kit_mode
+      if kit_mode then
+        ui.set_view(ui.PKIT)
       elseif #notes.kit > 0 then
         for _, note in ipairs(notes.kit) do
           drmfm.stop(note)
@@ -954,15 +964,15 @@ function grid_options(x, y, z, off) -- grid one: off = -7
         held.kit = 0
       end
     elseif x == 16 and z == 1 then
-      if rep.active and rep.view and off ~= nil then
+      if rep.active and rep_mode and off ~= nil then
         rep.hold = not rep.hold
         if not rep.hold then
           rk = {0, 0, 0, 0}
           set_repeat_rate(rk, z)
         end
       else
-        rep.view = not rep.view
-        if rep.view then
+        rep_mode = not rep_mode
+        if rep_mode then
           seq.active = false
           seq.config = false
         else
@@ -975,7 +985,7 @@ function grid_options(x, y, z, off) -- grid one: off = -7
   end
 end
 
-function kit_grid(x, y, z, off) -- grid one: off = -7
+local function kit_grid(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   if x > 3 and x < 12 then
     if y > 9 and y < 12 then
@@ -985,13 +995,13 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
         table.insert(notes.kit, i)
         ui.kit_focus = i
         params:set("drmfm_selected_voice", i)
-        focus_page(4)
+        ui.set_view(ui.PKIT)
       else
         table_remove(notes.kit, i)
       end
       if mute.edit then
         if z == 1  then edit_kit_mutes(i) end
-      elseif ui.kit_options and ui.kit_action == 2 then
+      elseif ui.get_view(ui.EKIT) and ui.kit_action == 2 then
         if z == 1 then drmfm.exec_copy(i) end
       elseif rep.active then
         if held.kit == 1 and z == 1 then
@@ -1026,11 +1036,11 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
         drmfm.kit_mod("run")
       else
         if ui.kit_action < 3 then
-          ui.kit_options = z == 1 and true or false
+          ui.set_view(z == 1 and ui.EKIT or ui.PKIT)
           drmfm.init_copy(z)
         else
           if z == 1 then
-            ui.kit_options = not ui.kit_options
+            ui.toggle_view(ui.EKIT, ui.PKIT)
           end
         end
         dirtyscreen = true
@@ -1054,7 +1064,7 @@ function kit_grid(x, y, z, off) -- grid one: off = -7
   end
 end
 
-function int_grid(x, y, z, off) -- grid one: off = -7
+local function int_grid(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   -- detect key hold
   if ((y == 9 or y == 11) and x > 7 and x < 9) or (y == 10 and ((x > 3 and x < 8) or (x > 9 and x < 14))) then
@@ -1064,7 +1074,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
     if y == 9 and x > 7 and x < 10 then
       if notes.trsp_active then
         notes.trsp_int = 0
-        page_redraw(1)
+        ui.draw_view(ui.SCLE)
       else
         local e = {t = eSCALE, i = voice.int, note = notes.home, vel = voice[voice.int].velocity, action = "note_on"} event(e)
         gk[x][y].n_val = notes.home
@@ -1088,7 +1098,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
         elseif notes.trsp_active then
           local limit = (2 * notes.scale_oct)
           notes.trsp_int = util.clamp(notes.trsp_int + interval, -limit, limit)
-          page_redraw(1)
+          ui.draw_view(ui.SCLE)
         else
           local new_note = util.clamp(notes.last + interval, 1, #notes.scale)
           local e = {t = eSCALE, i = voice.int, note = new_note, vel = voice[voice.int].velocity, action = "note_on"} event(e)
@@ -1104,7 +1114,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
           clock.sleep(0.4)
           notes.trsp_active = not notes.trsp_active
           notes.trsp_int = 0
-          page_redraw(1)   
+          ui.draw_view(ui.SCLE) 
         end)  
       end
     elseif y == 11 then
@@ -1124,7 +1134,7 @@ function int_grid(x, y, z, off) -- grid one: off = -7
           local limit = (2 * notes.scale_oct)
           local interval = (notes.scale_oct * (x - 8 == 0 and -1 or 1))
           notes.trsp_int = util.clamp(notes.trsp_int + interval, -limit, limit)
-          page_redraw(1)
+          ui.draw_view(ui.SCLE)
         else
           local e = {t = eSCALE, i = voice.int, note = notes.last, vel = voice[voice.int].velocity, action = "note_on"} event(e)
           gk[x][y].n_val = notes.last
@@ -1147,31 +1157,47 @@ function int_grid(x, y, z, off) -- grid one: off = -7
   end
 end
 
-function seq_settings(x, z)
+local function clear_freeze()
+  if not frz.config then
+    fx.freezedelay(frz.focus, 0, 0)
+     held.frz = 0
+  end
+end
+
+local function seq_settings(x, z)
   if x == 1 then
     hrmy.latch = z == 1 and true or false
     if z == 1 then
       hrmy.config = not hrmy.config
+      seq.config, frz.config = false, false
+      clear_freeze()
     end
-    if z == 1 then seq.config = false end
-    ui.page = 1
-    dirtyscreen = true
+    ui.set_view(ui.SCLE)
   elseif x == 2 then
-    -- perfscene = z == 1 and true or false
-  elseif x > 4 and x < 13 and z == 1 then
-    if hrmy.config then
-      hrmy.active = x - 4
-      params:set("scale", hrmy.slot[hrmy.active].scale)
-      params:set("notes_root_scale", hrmy.slot[hrmy.active].root)
-      if not hrmy.latch then hrmy.config = false end
-    elseif seq.config then
+    if z == 1 then
+      frz.config = not frz.config
+      hrmy.config, seq.config = false, false
+      clear_freeze()
+    end
+  elseif x > 4 and x < 13 then
+    if hrmy.config and z == 1 then
+      set_hrmy_slot(x - 4)
+      if not hrmy.latch then
+        hrmy.config = false
+        dirtyscreen = true
+      end
+    elseif frz.config then
+      track_num_held("frz", z)
+      if z == 1 then frz.focus = x - 4 end
+      fx.freezedelay(frz.focus, z, held.frz)
+    elseif seq.config and z == 1 then
       params:set("seq_rate", x - 4)
-      show_message("seq   rate:  "..seq.rate_ids[x - 4])
+      ui.show_message("seq   rate:  "..seq.rate_ids[x - 4])
     end
   elseif x == 15 then
     trig_view_logic(z)
   elseif x == 16 then
-    if rep.view and z == 1 then
+    if rep_mode and z == 1 then
       rep.hold = not rep.hold
       if not rep.hold then
         rk = {0, 0, 0, 0}
@@ -1180,12 +1206,15 @@ function seq_settings(x, z)
       seq.config = false
     else
       seq.config = z == 1 and true or false
-      if z == 1 then hrmy.config = false end
+      if z == 1 then
+        hrmy.config, frz.config = false, false
+        clear_freeze()
+      end
     end
   end
 end
 
-function octave_options(x, y, z, off) -- off -8 for grid one
+local function octave_options(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if x == 1 then
     if mod.any and z == 1 then
@@ -1243,7 +1272,7 @@ function octave_options(x, y, z, off) -- off -8 for grid one
   end  
 end
 
-function event_options(x, y, z, off) -- off -8 for grid one
+local function event_options(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if x == 15 then
     if off then
@@ -1254,7 +1283,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
     if y == 14 and z == 1 then
       if seq.collecting and not seq.appending then
         table.insert(seq.collected, 0)
-        page_redraw(1)
+        ui.draw_view(ui.SCLE)
       elseif seq.appending and not seq.collecting then
         table.insert(seq.notes, 0)
         seq.notes_added = true
@@ -1270,7 +1299,7 @@ function event_options(x, y, z, off) -- off -8 for grid one
       vl[voice.keys].timer = clock.run(vl_coro, voice.keys)
     end
   elseif x == 16 then
-    if rep.view then
+    if rep_mode then
       if y > 12 then
         local slot = y - 12
         if rep.hold then
@@ -1356,11 +1385,11 @@ function event_options(x, y, z, off) -- off -8 for grid one
   end
 end
 
-function scale_grid(x, y, z, off) -- off -8 for grid one
+local function scale_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   track_num_held("keys", z)
   if z == 1 then
-    local note = (x - 2) + ((16 - y) * ui.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
+    local note = (x - 2) + ((16 - y) * notes.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
     gk[x][y].n_val = note + notes.trsp_int
     gk[x][y].n_key = note
     add_scale_note(note, gk[x][y].n_val)
@@ -1369,7 +1398,7 @@ function scale_grid(x, y, z, off) -- off -8 for grid one
   end
 end
 
-function chord_grid(x, y, z, off) -- off -8 for grid one
+local function chord_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if y < 16 then
     track_num_held("chrd", z)
@@ -1421,12 +1450,12 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
         gk[x][y].held = z == 1 and true or false
         if z == 1 then
           params:delta("strm_rate", x == 8 and -1 or 1)
-          show_message("strum   rate:  ".. params:string("strm_rate"))
+          ui.show_message("strum   rate:  ".. params:string("strm_rate"))
         end
       elseif (x == 10 or x == 11) then
         if z == 1 then
           params:delta("strm_drift", x == 10 and -1 or 1)
-          show_message("strum   drift:  ".. params:string("strm_drift"))
+          ui.show_message("strum   drift:  ".. params:string("strm_drift"))
         end
       elseif x > 11 and x < 15 and z == 1 then
         if x == 13 then
@@ -1434,7 +1463,7 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
         else
           params:delta("strm_skew", x == 12 and - 1 or 1)
         end
-        show_message("strum   skew:  ".. params:string("strm_skew"))
+        ui.show_message("strum   skew:  ".. params:string("strm_skew"))
       end
     else
       if (x == 8 or x == 9) then
@@ -1485,7 +1514,7 @@ function chord_grid(x, y, z, off) -- off -8 for grid one
   end
 end
 
-function cmem_grid(x, y, z, off) -- off -8 for grid one
+local function cmem_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if x < 7 then
     track_num_held("cmem", z)
@@ -1599,7 +1628,7 @@ function cmem_grid(x, y, z, off) -- off -8 for grid one
       end
     end
   elseif x > 7 then
-    local note = (x - 7) + ((16 - y) * ui.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
+    local note = (x - 7) + ((16 - y) * notes.iso_y) + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
     if cmem.rec then
       local note_num = notes.scale[util.clamp(note, 1, #notes.scale)]
       if z == 1 then
@@ -1638,7 +1667,7 @@ function cmem_grid(x, y, z, off) -- off -8 for grid one
   end
 end
 
-function drum_grid(x, y, z, off) -- off -8 for grid one
+local function drum_grid(x, y, z, off) -- off -8 for grid one
   local y = off and (y - off) or y
   if y > 13 and x > 2 and x < 15 then
     track_num_held("keys", z)
@@ -1666,7 +1695,7 @@ end
 
 -------------------------- grid draw functions --------------------------
 
-function pattern_key_draw(off)
+local function pattern_key_draw(off)
   local off = off and off or 0
   for i = 1, 8 do
     if ptn[i].rec == 1 and ptn[i].play == 1 then
@@ -1684,13 +1713,13 @@ function pattern_key_draw(off)
     end
     if off == 0 then
       g:led(i + 4, 8, ptn.page + 1 == i and 1 or 0)
-    elseif ui.pattern_view then
+    elseif ui.get_view(ui.PPTN) then
       g:led(i + 4, 8 + off, ptn.page + 1 == i and 1 or 0)
     end
   end
 end
 
-function mod_key_draw(off)
+local function mod_key_draw(off)
   local off = off and off or 0
   g:led(4, 7 + off, mod.a and 15 or 0) 
   g:led(13, 7 + off, mod.b and 15 or 0)
@@ -1698,7 +1727,7 @@ function mod_key_draw(off)
   g:led(13, 8 + off, mod.d and 15 or 0)
 end
 
-function grid_options_draw(off)
+local function grid_options_draw(off)
   local off = off and off or 0
   if viz.metro then
     g:led(16, 10 + off, viz.bar and 15 or (viz.beat and 8 or 3)) -- Q flash
@@ -1706,11 +1735,11 @@ function grid_options_draw(off)
     g:led(16, 10 + off, 3)
   end
   g:led(15, 10 + off, quant.active and 8 or 4)
-  g:led(15, 11 + off, ui.kit_view and 10 or 4)
-  g:led(16, 11 + off, rep.view and ((rep.hold and off ~= 0) and viz.key_slow or 10) or 4)
+  g:led(15, 11 + off, kit_mode and 10 or 4)
+  g:led(16, 11 + off, rep_mode and ((rep.hold and off ~= 0) and viz.key_slow or 10) or 4)
 end
 
-function pattern_options_draw(grid)
+local function pattern_options_draw(grid)
   g:led(1, 1, ptn.copying and (ptn.copy.state and viz.key_slow or 10) or 4)
   g:led(2, 1, ptn.appending and (ptn.copy.state and viz.key_slow or 10) or 4)
   g:led(3, 1, ptn.merging and (ptn.copy.state and viz.key_slow or 10) or 4)
@@ -1721,8 +1750,8 @@ function pattern_options_draw(grid)
   g:led(14, 1, ptn.rec_mode == "queued" and (10 + osod) or 4)
   g:led(15, 1, ptn.rec_mode == "synced" and (10 + osod) or 4)
   g:led(16, 1, ptn.rec_mode == "free" and (10 + osod) or 4)
-  g:led(15, 2, ui.prgchg_view and 15 or 4)
-  g:led(16, 2, ui.preset_view and viz.key_mid or 4)
+  g:led(15, 2, ui.get_view(ui.PRCH) and 15 or 4)
+  g:led(16, 2, ui.get_view(ui.PSET) and viz.key_mid or 4)
   if grid == 128 then
     if viz.metro then
       g:led(16, 3, viz.bar and 15 or (viz.beat and 8 or 3)) -- Q flash
@@ -1734,10 +1763,10 @@ function pattern_options_draw(grid)
   end
 end
 
-function pattern_slot_draw(off)
+local function pattern_slot_draw(off)
   local off = off and off or 0
   local page = ptn.page * 3
-  if ui.prgchg_view then
+  if ui.get_view(ui.PRCH) then
     for i = 1, 8 do
       for j = 1, 3 do
         local bank = j + page
@@ -1776,12 +1805,12 @@ function pattern_slot_draw(off)
   end
 end
 
-function trigs_draw(grid)
+local function trigs_draw(grid)
   local cmemviz = (held.cmem > 0 and cmem[cmem.active].trigs == trigs.focus) and true or false
   if grid == 256 then
     for x = 1, 16 do
       if x <= trigs[trigs.focus].step_max then
-        g:led(x, 5, (trigs.step == x and (seq.active or rep.active)) and 14 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 1) or 1))
+        g:led(x, 5, (trigs.step == x and (seq.active or rep.active)) and 14 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 3) or 1))
       end
     end
     for i = 1, 8 do
@@ -1795,10 +1824,10 @@ function trigs_draw(grid)
   elseif grid == 128 then
     for x = 1, 8 do
       if x <= trigs[trigs.focus].step_max then
-        g:led(x + 3, 3, (trigs.step == x and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 1) or 2))
+        g:led(x + 3, 3, (trigs.step == x and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x] == 1 and (math.ceil(trigs[trigs.focus].vel[x] * 5) + 3) or 1))
       end
       if x + 8 <= trigs[trigs.focus].step_max then
-        g:led(x + 3, 4, (trigs.step == x + 8 and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x + 8] == 1 and (math.ceil(trigs[trigs.focus].vel[x + 8] * 5) + 1) or 2))
+        g:led(x + 3, 4, (trigs.step == x + 8 and (seq.active or rep.active)) and 12 or (trigs[trigs.focus].pattern[x + 8] == 1 and (math.ceil(trigs[trigs.focus].vel[x + 8] * 5) + 3) or 1))
       end
     end
     g:led(13, 3, trigs.focus > 4 and 3 or (cmemviz and viz.key_slow or (15 - trigs.focus * 2)))
@@ -1809,7 +1838,7 @@ function trigs_draw(grid)
   end
 end
 
-function pattern_playhead_draw(off)
+local function pattern_playhead_draw(off)
   local off = off and off or 0
   if p[ptn.focus].looping then
     local min = p[ptn.focus].step_min_viz[p[ptn.focus].bank]
@@ -1823,7 +1852,7 @@ function pattern_playhead_draw(off)
   end
 end
 
-function voice_settings_draw(off)
+local function voice_settings_draw(off)
   local off = off and off or 0
   for i = 1, 3 do
     if chrd.strm_edit then
@@ -1842,7 +1871,7 @@ function voice_settings_draw(off)
   end
 end
 
-function voice_options_draw(off)
+local function voice_options_draw(off)
   local off = off and off or 0
   g:led(1, 10 + off, voice[voice.keys].keys_option == 1 and 8 or 4)
   g:led(2, 10 + off, voice[voice.keys].keys_option == 2 and 8 or 4)
@@ -1850,7 +1879,7 @@ function voice_options_draw(off)
   g:led(2, 11 + off, voice[voice.keys].keys_option == 4 and 8 or 4)
 end
 
-function kit_grid_draw(off)
+local function kit_grid_draw(off)
   local off = off and off or 0
   for x = 1, 2 do
     for y = 10, 11 do
@@ -1865,7 +1894,7 @@ function kit_grid_draw(off)
     local perf_depth = math.floor(params:get("drmfm_perf_depth") * 15)
     g:led(12, 10 + off, perf_depth > 0 and perf_depth or 1)
   else
-    if ui.kit_options and ui.kit_action > 2 then
+    if ui.get_view(ui.EKIT) and ui.kit_action > 2 then
       g:led(12, 10 + off, viz.key_slow)
     else
       g:led(12, 10 + off, drmfm.copy_data and viz.key_mid or 1)
@@ -1881,7 +1910,7 @@ function kit_grid_draw(off)
   end
 end
 
-function int_grid_draw(off)
+local function int_grid_draw(off)
   local off = off and off or 0
   for i = 8, 9 do
     g:led(i, 9 + off, 6) -- home
@@ -1894,7 +1923,7 @@ function int_grid_draw(off)
   end
 end
 
-function octave_options_draw(off)
+local function octave_options_draw(off)
   local off = off and off or 0
   if caw.ansi_view then
     for i = 1, 4 do
@@ -1920,14 +1949,21 @@ function octave_options_draw(off)
   end
 end
 
-function event_options_draw(off)
+local frz_key_led = {4, 1, 4, 1, 4, 1, 4, 1}
+local function event_options_draw(off)
   local off = off and off or 0
   if off == 0 then
     g:led(1, 12, hrmy.config and viz.key_mid or 0)
+    g:led(2, 12, frz.config and 15 or 0)
     g:led(16, 12, seq.config and viz.key_slow or 0)
     if hrmy.config then
       for x = 1, 8 do
         g:led(x + 4, 12, hrmy.active == x and viz.key_mid or 2)
+      end
+    elseif frz.config then
+      for x = 1, 8 do
+        local active = frz.focus == x and held.frz > 0
+        g:led(x + 4, 12, active and 15 or frz_key_led[x])
       end
     elseif seq.config then
       for x = 1, 8 do
@@ -1935,7 +1971,7 @@ function event_options_draw(off)
       end
     end
   end
-  if rep.view then
+  if rep_mode then
     for i = 1, 4 do
       g:led(16, i + 12 + off, rk[i] == 1 and 15 or i * 2)
     end
@@ -1958,12 +1994,12 @@ function event_options_draw(off)
   g:led(15, 16 + off, math.floor(vl[voice.keys].value * 14) + 1)
 end
 
-function keyboard_draw(off)
+local function keyboard_draw(off)
   local off = off and off or 0
   if voice[voice.keys].keys_option == 1 then
     for i = 1, 12 do
       for y = 13, 16 do
-        local key = i + ui.iso_y * (16 - y)
+        local key = i + notes.iso_y * (16 - y)
         local note = key + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
         g:led(i + 2, y + off, tab.contains(notes.active, note) and 12 or ((key % notes.scale_oct) == 1 and 8 or 2))
       end
@@ -1990,7 +2026,7 @@ function keyboard_draw(off)
     g:led(7, 16 + off, cmem.link and 0 or viz.key_slow)
     for i = 1, 7 do
       for y = 13, 16 do
-        local key = i + ui.iso_y * (16 - y)
+        local key = i + notes.iso_y * (16 - y)
         local note = key + (notes.key_oct[voice.keys] + 3) * notes.scale_oct
         local check = cmem.rec and cmem[cmem.focus].notes or notes.active
         g:led(i + 7, y + off, tab.contains(check, note) and 12 or ((key % notes.scale_oct) == 1 and 8 or 2))
@@ -2051,16 +2087,16 @@ end
 
 -------------------------- grid module --------------------------
 
-grd = {}
+local grd = {}
 
 -- grid keys and redraw
-function zero_keys(x, y, z)
+local function zero_keys(x, y, z)
   if (x < 4 or x > 13) and y < 4 then
     pattern_options(x, y, z)
   elseif x > 3 and x < 14 and y < 5 then
     pattern_slots(x, y, z)
   elseif (y == 5 or y == 6) then
-    if ui.trigs_view then
+    if trigs.view_active then
       trigs_grid(x, y, z, 256)
     elseif y == 5 then
       pattern_playhead(x, z)
@@ -2078,7 +2114,7 @@ function zero_keys(x, y, z)
   elseif x > 14 and y > 9 and y < 12 then
     grid_options(x, y, z)
   elseif x > 3 and x < 14 and y > 8 and y < 12 then
-    if ui.kit_view then
+    if kit_mode then
       kit_grid(x, y, z)
     else
       int_grid(x, y, z)
@@ -2104,7 +2140,7 @@ function zero_keys(x, y, z)
   screen.ping()
 end
 
-function one_keys(x, y, z)
+local function one_keys(x, y, z)
   if x > 4 and x < 13 and y == 1 and z == 1 then
     pattern_keys(x - 4)
   end
@@ -2112,10 +2148,9 @@ function one_keys(x, y, z)
     modifier_keys(x, y, z, -6)
   end
   if x == 16 and y == 3 and z == 1 then
-    ui.pattern_view = not ui.pattern_view
-    dirtyscreen = true
+    ui.toggle_view(ui.PPTN)
   end
-  if ui.pattern_view then
+  if ui.get_view(ui.PPTN) then
     if (x < 4 or x > 13) and y < 4 then
       pattern_options(x, y, z)
     elseif x > 4 and x < 13 and y == 2 and z == 1 then
@@ -2129,9 +2164,9 @@ function one_keys(x, y, z)
     if (x < 4 or x > 13) and y < 3 then
       voice_settings(x, y, z, -6)
     elseif x > 3 and x < 14 and y > 1 and y < 5 then
-      if ui.trigs_view then
+      if trigs.view_active then
         trigs_grid(x, y, z, 128)
-      elseif ui.kit_view then
+      elseif kit_mode then
         kit_grid(x, y, z, -7)
       else
         int_grid(x, y, z, -7)
@@ -2160,18 +2195,18 @@ function one_keys(x, y, z)
   screen.ping()
 end
 
-function zero_draw()
+local function zero_draw()
   g:all(0)
   pattern_options_draw()
   pattern_slot_draw()
   pattern_key_draw()
   mod_key_draw()
-  if ui.trigs_view then
+  if trigs.view_active then
     trigs_draw(256)
   else
     pattern_playhead_draw()
   end
-  if ui.kit_view then
+  if kit_mode then
     kit_grid_draw()
   else
     int_grid_draw()
@@ -2185,18 +2220,18 @@ function zero_draw()
   g:refresh()
 end
 
-function one_draw()
+local function one_draw()
   g:all(0)
   pattern_key_draw(-6)
   mod_key_draw(-6)
-  if ui.pattern_view then
+  if ui.get_view(ui.PPTN) then
     pattern_options_draw(128)
     pattern_slot_draw(2)
     pattern_playhead_draw(3)
   else
-    if ui.trigs_view then
+    if trigs.view_active then
       trigs_draw(128)
-    elseif ui.kit_view then
+    elseif kit_mode then
       kit_grid_draw(-7)
     else
       int_grid_draw(-7)
