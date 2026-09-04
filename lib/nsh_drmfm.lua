@@ -1,4 +1,4 @@
--- drmfm for nisho - v2.0.0
+-- drmfm for nisho - v2.0
 
 local fs = require 'fileselect'
 local tx = require 'textentry'
@@ -9,11 +9,15 @@ local MAX_LENGTH = math.pow(2, 24)
 
 local perf_clk = nil
 
+local function round_form(param, quant, form)
+  return(util.round(param, quant)..form)
+end
+
 local kit = {}
-kit.preset_path = "dust/data/nisho/drmfm_kits" 
-kit.voice_path = "dust/data/nisho/drmfm_voices"
-kit.default = "dust/data/nisho/drmfm_kits/default.kit"
-kit.failsafe = "dust/data/nisho/data/drmfm_kits/default.kit"
+kit.preset_path = "/home/we/dust/data/nisho/drmfm_kits" 
+kit.voice_path = "/home/we/dust/data/nisho/drmfm_voices"
+kit.default = "/home/we/dust/data/nisho/drmfm_kits/default.kit"
+kit.failsafe = "/home/we/dust/code/nisho/data/drmfm_kits/default.kit"
 kit.loaded = ""
 kit.clipboard = {}
 kit.list = {}
@@ -227,10 +231,7 @@ prms.specs = {
     default = {}
   },
 }
-  
-local function round_form(param, quant, form)
-  return(util.round(param, quant)..form)
-end
+
 
 local function pan_display(param)
   if param < -0.01 then
@@ -297,7 +298,7 @@ end
 
 local function set_param(i, key, val)
   engine.drmfm_set_param(i - 1, key, val)
-  page_redraw(2)
+  ui.draw_view(ui.PKIT)
 end
 
 local function set_perf_macros(val)
@@ -343,7 +344,7 @@ local function save_drmfm_kit(txt)
     tab.save(t, kit.preset_path.."/"..txt..".kit")
     kit.loaded = txt
     build_kit_list()
-    print("saved drmfm kit: "..txt)
+    print("saved drmfm [kit]: "..txt)
     dirtyscreen = true
   end
 end
@@ -364,7 +365,7 @@ local function load_drmfm_kit(path)
         end
         local name = path:match("[^/]*$")
         kit.loaded = name:gsub(".kit", "")
-        print("loaded drmfm kit: "..kit.loaded)
+        print("loaded drmfm [kit]: "..kit.loaded)
       else
         if util.file_exists(kit.failsafe) then
           load_drmfm_kit(kit.failsafe)
@@ -455,7 +456,7 @@ local function add_params()
   params:add_separator("drmfm_kits", "drmFM kit")
 
   params:add_trigger("drmfm_load_kit", ">> load", "")
-  params:set_action("drmfm_load_kit", function(path) fs.enter(kit.preset_path, load_drmfm_kit) end)
+  params:set_action("drmfm_load_kit", function() fs.enter(kit.preset_path, load_drmfm_kit) end)
 
   params:add_trigger("drmfm_save_kit", "<< save")
   params:set_action("drmfm_save_kit", function() tx.enter(save_drmfm_kit, kit.loaded) end)
@@ -540,7 +541,7 @@ local function add_params()
 
     ----- MIDI model params -----
     params:add_separator("drmfm_midi_"..i, "midi")
-    params:add_option("drmfm_midi_device_"..i, "midi device", midi_devices, 1)
+    params:add_option("drmfm_midi_device_"..i, "midi device", m.device_names, 1)
     params:set_action("drmfm_midi_device_"..i, function(val) vox[i].midi_dev = midi.connect(val) end)
 
     params:add_number("drmfm_midi_channel_"..i, "midi channel", 1, 16, 1)
@@ -599,9 +600,9 @@ local function add_params()
 end
 
 
-------------------- drmfm -------------------
+-------------------------- drmfm --------------------------
 
-drmfm = {}
+local drmfm = {}
 drmfm.copy_data = false
 drmfm.viz = {}
 for i = 1, NUM_VOICES do
@@ -611,11 +612,11 @@ end
 function drmfm.init()
   if util.file_exists(kit.preset_path) == false then
     util.make_dir(kit.preset_path)
-    os.execute('cp '.. norns.state.path .. 'data/drmfm_kits/*.kit '.. kit.preset_path)
+    os.execute('cp /home/we/dust/code/nisho/data/drmfm_kits/*.kit '.. kit.preset_path)
   end
   if util.file_exists(kit.voice_path) == false then
     util.make_dir(kit.voice_path)
-    os.execute('cp '.. norns.state.path .. 'data/drmfm_voices/*.kitvox '.. kit.voice_path)
+    os.execute('cp /home/we/dust/code/nisho/data/drmfm_voices/*.kitvox '.. kit.voice_path)
   end
   build_kit_list()
   add_params()
@@ -653,12 +654,10 @@ function drmfm.init_model(i)
 end
 
 function drmfm.load_default()
-  if kit.default ~= nil then
+  if util.file_exists(kit.default) then
     load_drmfm_kit(kit.default)
-  else
-    if util.file_exists(kit.failsafe) then
-      load_drmfm_kit(kit.failsafe)
-    end
+  elseif util.file_exists(kit.failsafe) then
+    load_drmfm_kit(kit.failsafe)
   end
 end
 
