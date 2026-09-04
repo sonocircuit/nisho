@@ -2,7 +2,7 @@
 --
 -- @module lib.reflection
 -- @author robbie & dani & sacha
--- modified @sonoCircuit for nisho
+-- modified @sonoCircuit for nisho - v2.0
 
 local reflection = {}
 reflection.__index = reflection
@@ -291,7 +291,7 @@ function reflection:begin_playback()
         end
       end
     end
-    clock.sync(1 / PPQN)
+    clock.sync(1/PPQN)
   end
 end
 
