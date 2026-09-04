@@ -1,4 +1,5 @@
--- midi import // convert midi to reflection patterns
+-- midi import for nisho -  v2.0
+-- convert midi to reflection patterns
 
 local mu = require 'musicutil'
 local ml = include 'lib/nsh_midilib'
