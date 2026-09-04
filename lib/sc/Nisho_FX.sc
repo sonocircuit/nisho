@@ -8,7 +8,6 @@ Nisho_FX {
 				SynthDef.new(\synthFX, {
 					arg outBus, inBus, sendABus, sendBBus,
 					drive = 0, sendA = 0, sendB = 0, mod_wheel = 0, mod_sendA = 0, mod_sendB = 0;
-
 					var in, mono, stereo, snd, wet, gain, attn;
 					var xHz = 60;
 
@@ -19,13 +18,12 @@ Nisho_FX {
 					sendA = Lag.kr(sendA + (mod_sendA * mod_wheel)).clip(0, 1);
 					sendB = Lag.kr(sendB + (mod_sendB * mod_wheel)).clip(0, 1);
 
-					// linkwitz–riley crossover 4 bass mono
 					in = In.ar(inBus, 2);
+					// linkwitz–riley crossover 4 bass mono
 					mono = LPF.ar(LPF.ar(Mix(in), xHz), xHz);
 					stereo = HPF.ar(HPF.ar(in, xHz), xHz);
-					// drive
-					//wet = (stereo * gain).tanh * attn;
-					wet = (stereo * gain).softclip * attn;
+
+					wet = (stereo * gain).tanh * attn;
 					snd = XFade2.ar(stereo, wet, (drive * 2) - 1) + mono;
 
 					Out.ar(outBus, snd);
@@ -35,32 +33,9 @@ Nisho_FX {
 			);
 
 			CroneDefs.add(
-				SynthDef.new(\drmFM_FX, {
-					arg outBus, inBus,
-					mainAmp = 1, lpfHz = 20000, hpfHz = 20;
-
-					var mono, stereo, snd;
-					var xHz = 60, tapeBias = 0.5;
-
-					mainAmp = Lag.kr(mainAmp);
-					lpfHz = Lag.kr(lpfHz).clip(20, 20000);
-					hpfHz = Lag.kr(hpfHz).clip(20, 20000);
-
-					snd = In.ar(inBus, 2);
-					snd = RHPF.ar(snd, hpfHz);
-					snd = RLPF.ar(snd, lpfHz);
-
-					snd = (snd * mainAmp).tanh;
-
-					Out.ar(outBus, snd);
-				});
-			);
-
-			CroneDefs.add(
 				SynthDef.new(\inputFX, {
 					arg outBus, inLBus, inRBus, sendABus, sendBBus,
-					level = 1, drive = 0, sendA = 0, sendB = 0;
-
+					level = 1, balance = 0, drive = 0, sendA = 0, sendB = 0;
 					var in, mono, stereo, snd, wet, gain, attn;
 					var xHz = 60;
 
@@ -77,12 +52,10 @@ Nisho_FX {
 					mono = LPF.ar(LPF.ar(Mix(in), xHz), xHz);
 					stereo = HPF.ar(HPF.ar(in, xHz), xHz);
 
-					// assymetric drive from princeton @robint (thanks)
-					wet = stereo * gain;
-					wet = LeakDC.ar((wet.max(0) * 1.02).tanh + (wet.min(0) * 0.96).tanh) * attn;
+					wet = (stereo * gain).tanh * attn;
 					snd = XFade2.ar(stereo, wet, (drive * 2) - 1) + mono;
 
-					snd = snd * level;
+					snd = Balance2.ar(snd[0], snd[1], balance, level);
 
 					Out.ar(outBus, snd);
 					Out.ar(sendABus, snd * sendA);
@@ -92,16 +65,23 @@ Nisho_FX {
 
 			CroneDefs.add(
 				SynthDef(\outputFX, {
-					arg inBus, outBus, level = 1, loHz = 20, hiHz = 20000;
-					var snd, lo, mid, hi, mono, xHz = 80;
+					arg inBus, outBus, compMix = 0, loHz = 20, hiHz = 20000, frzGate = 0, frzTime = 0.2;
+					var snd, cmp, frz, lo, mid, hi, mono, xHz = 80;
 
 					// slew and clamp
-					level = Lag.kr(level);
+					compMix = Lag.kr(compMix);
 					loHz = Lag.kr(loHz).clip(20, 20000);
 					hiHz = Lag.kr(hiHz).clip(20, 20000);
-
+					frzGate = Lag.kr(frzGate, 0.2);
+					//frzTime = Lag.kr(frzTime, 0.001);
+					
 					// sound in
-					snd = In.ar(inBus, 2) * level;
+					snd = In.ar(inBus, 2);
+					
+					// freez					
+					frz = DelayC.ar(LocalIn.ar(2), 4, frzTime);
+					snd = XFade2.ar(snd, frz, (frzGate * 2) - 1);
+					LocalOut.ar(snd);
 
 					// hp/lp filter
 					snd = RHPF.ar(snd, hiHz);
@@ -113,9 +93,9 @@ Nisho_FX {
 					snd = mono + snd;
 
 					// compression
-					//snd = CompanderD.ar(in: snd, thresh: 0.7, slopeBelow: 1, slopeAbove: 0.4, clampTime: 0.008, relaxTime: 0.2);
-					//snd = tanh(snd).softclip;
-
+					cmp = tanh(CompanderD.ar(snd, 0.7, 1.0, 0.4, 0.008, 0.2)).softclip;
+					snd = XFade2.ar(snd, cmp, compMix);
+					
 					Out.ar(outBus, snd);
 				});
 			);
@@ -124,7 +104,6 @@ Nisho_FX {
 				SynthDef.new(\leDelay, {
 					arg inBus, outBus, sendBus,
 					amp = 1, send = 0, mod = 0, mode = 0, timeL = 0.4, timeR = 0.4, fb = 0.6, hzLpf = 2400, hzHpf = 80;
-
 					var modT, modOsc, tL, tR, rtn, rtnL, rtnR, dry, dly, dlyL, dlyR;
 					var modHz = 12, tMax = 4, modF = 0.008;
 
@@ -159,7 +138,7 @@ Nisho_FX {
 				SynthDef(\leVerb, {
 					arg inBus, outBus,
 					amp = 1, preDelay = 0.1, preFilter = 0.1, decayRate = 0.8, damping = 0.22, modDepth = 0.2, modRate = 1;
-
+					
 					// signals
 					var dry = In.ar(inBus, 2);
 					var wetL = Silent.ar;
