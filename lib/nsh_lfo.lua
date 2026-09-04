@@ -3,7 +3,7 @@
 -- inspired by contributions from @markwheeler (changes), @justmat (hnds), and @sixolet (toolkit)
 -- added by @dndrks + @sixolet, with improvements by @Dewb and @sonoCircuit
 --
--- modified by @sonocircuit for nisho
+-- modified by @sonoCircuit for nisho - v2.0
 
 local lattice = require 'lattice'
 
