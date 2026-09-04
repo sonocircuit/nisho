@@ -1,4 +1,4 @@
--- fx for nisho v.2.0
+-- fx for nisho - v2.0
 
 local del = {}
 del.mode = 0
@@ -7,6 +7,17 @@ del.rate_l = 1/4
 del.rate_r = 1/4
 del.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
 del.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
+
+local frz = {}
+frz.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
+frz.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
+frz.defaults = {1, 6, 4, 9, 7, 10, 12, 13}
+for i = 1, 8 do
+  frz[i] = {}
+  frz[i].rate = 1/4
+end
+
+local beat_sec = clock.get_beat_sec()
 
 -- display utilities
 local function round_form(param, quant, form)
@@ -57,14 +68,16 @@ local function pan_display(param)
 end
 
 local function set_rates()
+  beat_sec = clock.get_beat_sec()
   if del.sync then
-    local beat_sec = clock.get_beat_sec()
     params:set("ledelay_time_l", del.rate_l * beat_sec * 4)
     params:set("ledelay_time_r", del.rate_r * beat_sec * 4)
   end
 end
 
 local function add_params()
+  params:add_separator("fx_params", "fx")
+  
   params:add_group("nisho_ledelay", "fx [delay]", 14)
 
   params:add_control("ledelay_level", "level", controlspec.new(0, 1, "lin", 0, 1), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -133,11 +146,26 @@ local function add_params()
   params:add_control("leverb_mod_depth", "mod depth", controlspec.new(0, 1, "lin", 0, 0.32), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("leverb_mod_depth", function(x) engine.fx_set_param("reverb", "modDepth", x) end)
 
+  params:add_group("freeze_delay", "fx [freez]", 9)
+
+  params:add_separator("freez_rate", "rate")
+  for i = 1, 8 do
+    params:add_option("freez_rate_"..i, "slot "..i, frz.rate_names, frz.defaults[i])
+    params:set_action("freez_rate_"..i, function(idx) frz[i].rate = frz.rate_values[idx] end)
+  end
+
+  --[[params:add_separator("freez_remote", "midi control")
+  
+  for i = 1, 8 do
+    params:add_binary("freez_ctrl_"..i, "> freeze "..i, "momentary")
+    params:set_action("freez_rate_"..i, function(state) fx.freezedelay(i, state, state) end)
+  end]]
+
   params:add_group("sum_stage", "fx [sum]", 3)
 
-  params:add_control("sum_level", "level", controlspec.new(0, 1, "lin", 0, 1), function(param) return round_form(param:get() * 100, 1, "%") end)
-  params:set_action("sum_level", function(x) engine.sum_set_param("level", x) end)
-
+  params:add_control("sum_compressor", "compressor", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return round_form(param:get() * 100, 1, "%") end)
+  params:set_action("sum_compressor", function(x) engine.sum_set_param("compMix", x) end)
+ 
   params:add_control("sum_hz_lo", "cutoff lpf", controlspec.new(80, 20000, "exp", 0, 20000), function(param) return round_form(param:get(), 1, "hz") end)
   params:set_action("sum_hz_lo", function(x) engine.sum_set_param("loHz", x) end)
 
@@ -152,6 +180,21 @@ local fx = {}
 
 function fx.update_rates()
   set_rates()
+end
+
+function fx.freezedelay(slot, state, num_held)
+  if state == 1 then
+    local time = frz[slot].rate * beat_sec * 4
+    engine.sum_set_param("frzTime", time)
+    if num_held == 1 then
+      clock.run(function()
+        clock.sync(quant.keys)
+        engine.sum_set_param("frzGate", 1)
+      end)
+    end
+  elseif num_held < 1 then
+    engine.sum_set_param("frzGate", 0)
+  end
 end
 
 -- initialize
