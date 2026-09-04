@@ -1,14 +1,15 @@
--- polyform for nisho v2.0
+-- polyform for nisho - v2.0
 
+local fs = require 'fileselect'
 local tx = require 'textentry'
 local mu = require 'musicutil'
 local vx = require 'voice'
 
 
 local ptch = {}
-ptch.preset_path = norns.state.data.."polyform_patches"
-ptch.default = norns.state.data.."polyform_patches/default.patch"
-ptch.failsafe = norns.state.path.."data/polyform_patches/default.patch"
+ptch.preset_path = "/home/we/dust/data/polyform_patches"
+ptch.default = "/home/we/dust/data/polyform_patches/default.patch"
+ptch.failsafe = "/home/we/dust/code/nisho/data/polyform_patches/default.patch"
 ptch.loaded = {"", ""}
 ptch.synth = 1
 ptch.list = {}
@@ -81,19 +82,19 @@ end
 local function set_value(i, key, val)
   local t = {"mono", "poly"}
   engine.polyform_set_param(t[i], key, val)
-  page_redraw(2)
+  ui.draw_view(ui.PVOX)
 end
 
 local function set_stage(i, key, val)
   local t = {"mono", "poly"}
   engine.polyform_set_stage(t[i], key, val)
-  page_redraw(2)
+  ui.draw_view(ui.PVOX)
 end
 
 local function set_morph(i, val)
   local t = {"mono", "poly"}
   engine.polyform_morph(t[i], val)
-  page_redraw(2)
+  ui.draw_view(ui.PVOX)
 end
 
 local function dont_panic(i)
@@ -122,13 +123,13 @@ local function save_synth_patch(txt)
     end
     tab.save(t, ptch.preset_path.."/"..txt..".patch")
     ptch.loaded[ptch.synth] = txt
-    params:set("polyform_load_patch_"..ptch.synth, ptch.preset_path.."/"..txt..".patch", true)
     build_patch_list()
     print("saved polyform patch "..txt)
   end
 end
 
 local function load_synth_patch(path, i)
+  local i = i or ptch.synth
   if path ~= "cancel" and path ~= "" then
     dont_panic(i)
     if path:match("^.+(%..+)$") == ".patch" then
@@ -162,8 +163,8 @@ local function add_params()
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
-    params:add_file("polyform_load_patch_"..i, ">> load", ptch.default)
-    params:set_action("polyform_load_patch_"..i, function(path) load_synth_patch(path, i) end)
+    params:add_trigger("polyform_load_patch_"..i, ">> load", "")
+    params:set_action("polyform_load_patch_"..i, function() ptch.synth = i fs.enter(ptch.preset_path, load_synth_patch) end)
 
     params:add_trigger("polyform_save_patch_"..i, "<< save")
     params:set_action("polyform_save_patch_"..i, function() ptch.synth = i tx.enter(save_synth_patch, ptch.loaded[i]) end)
@@ -396,9 +397,22 @@ function polyform.init()
   add_params()
 end
 
+function polyform.load_default()
+  if util.file_exists(ptch.default) then
+    for i = 1, 2 do
+      load_synth_patch(ptch.default, i)
+    end
+  elseif util.file_exists(ptch.failsafe) then
+    for i = 1, 2 do
+      load_synth_patch(ptch.failsafe, i)
+    end
+  end
+end
+
 function polyform.prc_load(num, i)
   if ptch.list[num] ~= nil then
-    params:set("polyform_load_patch_"..i, ptch.preset_path.."/"..ptch.list[num])
+    local path = ptch.preset_path.."/"..ptch.list[num]
+    load_synth_patch(path, i)
   else
     print("error: unvalid patch number: "..num)
   end
