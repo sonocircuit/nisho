@@ -2,7 +2,7 @@
 --
 -- @module lib.reflection
 -- @author robbie & dani & sacha
--- modified @sonoCircuit for nisho
+-- modified @sonoCircuit for nisho - v2.0
 
 local reflection = {}
 reflection.__index = reflection
@@ -15,15 +15,16 @@ function reflection.new(id)
   p.rec                  = 0
   p.rec_enabled          = 0
   p.play                 = 0
+  p.play_queued          = 0
   p.event                = {}
   p.event_prev           = {}
   p.step                 = 0
   p.count                = 0
-  p.loop                 = 0
+  p.loop                 = 1
   p.clock                = nil
   p.queued_rec           = nil
   p.rec_dur              = nil
-  p.quantize             = 1 / 32
+  p.quantize             = 1/32
   p.endpoint             = 0
   p.endpoint_init        = 0
   p.step_min             = 0
@@ -73,6 +74,7 @@ function reflection:start(beat_sync)
   if self.clock then
     clock.cancel(self.clock)
   end
+  self.play_queued = 1
   self.clock = clock.run(function()
     clock.sync(beat_sync)
     self:begin_playback()
@@ -133,7 +135,7 @@ end
 
 --- quantize playback
 function reflection:set_quantization(q)
-  self.quantize = q == nil and 1 / 32 or q
+  self.quantize = q == nil and 1/64 or q
 end
 
 --- change pattern length in beats
@@ -195,6 +197,7 @@ end
 -- must be called from within a clock.run
 function reflection:begin_playback()
   self.step = self.step_min
+  self.play_queued = 0
   self.play = 1
   self.start_callback()
   local queued_start_callback = false
@@ -288,7 +291,7 @@ function reflection:begin_playback()
         end
       end
     end
-    clock.sync(1 / PPQN)
+    clock.sync(1/PPQN)
   end
 end
 
