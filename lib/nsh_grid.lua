@@ -43,14 +43,16 @@ end
 local frz = {}
 frz.config = false
 frz.focus = 1
+frz.key_led = {4, 1, 4, 1, 4, 1, 4, 1}
 
 local rk = {0, 0, 0, 0}
+local lnc = {x = 13, y = 1}
 local rep_mode = false
+local kit_edit = false
 local kit_mode = false
 local kit_morph = false
-local kit_menu = false
 local rec_modes = {"queued", "synced", "free"}
-
+local pattern_page = false
 
 
 -------------------------- trig/rep functions --------------------------
@@ -352,21 +354,33 @@ local function clear_pattern_loop(i)
   ptn[i].step_max = ptn[i].endpoint
 end
 
-local function pattern_keys(i)
-  if ptn.focus ~= i and rec_inactive() then
+local function set_pattern_focus(i, view)
+  if ptn.focus ~= i and rec_inactive() and not ui.get_view(ui.POPP) then
     ptn.focus = i
+    held.ptn[i].num = 0
+    if view then ui.set_view(view) end
   end
+end
+
+local function queue_pattern_clear(i, bank)
+   if ptn[i].count > 0 then
+    if ui.get_view(ui.POPP) then
+      if i == ptn.focus then
+        ui.popup_exec("yes")
+      end
+    else
+      local msg = "clear   pattern  "..i.."  bank  "..bank
+      local yes = {func = clear_pattern_bank, args = {i, bank}}
+      ui.popup_set(msg, yes)
+    end
+  end
+end
+
+local function pattern_keys(i)
+  set_pattern_focus(i)
   if not ptn.copying then
     if ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
-      if ptn[i].count > 0 then
-        if ui.popup_view then
-          ui.popup_exec("yes")
-        else
-          local msg = "clear   pattern  "..i.."  bank  "..p[i].bank
-          local yes = {func = clear_pattern_bank, args = {i, p[i].bank}}
-          ui.popup_set(msg, yes)
-        end
-      end
+      queue_pattern_clear(i, p[i].bank)
     else
       if ptn[i].play == 0 then
         local beat_sync = ptn[i].launch == 2 and 1 or (ptn[i].launch == 3 and quant.bar or nil)
@@ -424,29 +438,8 @@ local function pattern_slots(x, y, z, off) -- grid one: off = 2
   local y = off and (y - off) or y
   local bank = y + ptn.page * 3
   if (x == 4 or x == 13) and y < 4 and z == 1 then
-    local beat_sync = quant.scene == 2 and 1 or (quant.scene == 3 and quant.bar or ptn[ptn.focus].quantize)
-    send_mutes_change(bank, beat_sync)
-    for i = 1, 8 do
-      p[i].load = bank
-      local launch = ptn.overdub_active or p[i].scene[bank]
-      if ptn[i].play == 0 then
-        update_pattern_bank(i)
-        send_program_change(i)
-        if x == 13 and p[i].count[bank] > 0 and launch then
-          ptn[i]:start(beat_sync)
-        end
-      else
-        if not launch then
-          ptn[i]:stop(beat_sync)
-        end
-        clock.run(function()
-          clock.sync(beat_sync)
-          update_pattern_bank(i)
-          send_program_change(i)
-          ptn[i].step = 0
-        end)
-      end
-    end
+    lnc.x, lnc.y = x, y
+    scene_launch(bank, x == 13)
   elseif x == 13 and y == 4 and z == 1 then
     if ptn.overdub_active and ptn.stop_all then
       stop_callback()
@@ -466,6 +459,7 @@ local function pattern_slots(x, y, z, off) -- grid one: off = 2
             p[i].prc_num[bank] = 0
           end
         end
+        ui.set_view(ui.PRCH)
         dirtyscreen = true
       end
     else
@@ -473,10 +467,7 @@ local function pattern_slots(x, y, z, off) -- grid one: off = 2
         -- select active pattern bank, copy/paste/duplicate/append actions
         if z == 1 then
           -- set pattern focus
-          if ptn.focus ~= i and rec_inactive() then
-            ptn.focus = i
-            held.ptn[ptn.focus].num = 0
-          end
+          set_pattern_focus(i, ui.PPTN)
           -- copy/append/merge/duplicate
           if ptn.copying then
             if ptn.copy.state then
@@ -515,42 +506,15 @@ local function pattern_slots(x, y, z, off) -- grid one: off = 2
               ui.show_message("pattern   empty")
             end
           elseif ptn.clear or (mod.a and mod.c) or (mod.b and mod.d) then
-            if ui.get_view(ui.POPP) then
-              ui.popup_exec("yes")
-            else
-              local msg = "clear   pattern  "..i.."  bank  "..bank
-              local yes = {func = clear_pattern_bank, args = {i, bank}}
-              ui.popup_set(msg, yes)
-            end
-          -- load pattern
+            queue_pattern_clear(i, bank)
           else
-            if p[i].bank ~= bank then
-              local beat_sync = 1
-              if p[i].load ~= nil then
-                if i == 8 then send_mutes_change(bank, beat_sync) end
-                clock.run(function()
-                  clock.sync(beat_sync)
-                  update_pattern_bank(i)
-                  send_program_change(i)
-                  ptn[i].step = 0
-                end)
-              else
-                p[i].load = bank
-                if ptn[i].play == 0 then
-                  update_pattern_bank(i)
-                  send_program_change(i)
-                  if i == 8 then send_mutes_change(bank, beat_sync) end
-                end
-              end
-            elseif p[i].load then
-              p[i].load = nil
-            end
+            queue_pattern(i, bank)
           end
         end
-        ui.set_view(ui.PPTN)
       elseif y == 4 and z == 1 then
         if ptn[i].play == 1 then
           p[i].stop = not p[i].stop
+          run_stop_timer()
         else
           p[i].stop = false
         end
@@ -985,6 +949,13 @@ local function grid_options(x, y, z, off) -- grid one: off = -7
   end
 end
 
+local function clear_freeze()
+  if not frz.config then
+    fx.freezedelay(frz.focus, 0, 0)
+    held.frz = 0
+  end
+end
+
 local function kit_grid(x, y, z, off) -- grid one: off = -7
   local y = off and (y - off) or y
   if x > 3 and x < 12 then
@@ -995,13 +966,13 @@ local function kit_grid(x, y, z, off) -- grid one: off = -7
         table.insert(notes.kit, i)
         ui.kit_focus = i
         params:set("drmfm_selected_voice", i)
-        ui.set_view(ui.PKIT)
+        ui.set_view(kit_edit and ui.EKIT or ui.PKIT)
       else
         table_remove(notes.kit, i)
       end
       if mute.edit then
         if z == 1  then edit_kit_mutes(i) end
-      elseif ui.get_view(ui.EKIT) and ui.kit_action == 2 then
+      elseif kit_edit and ui.kit_action == 2 then
         if z == 1 then drmfm.exec_copy(i) end
       elseif rep.active then
         if held.kit == 1 and z == 1 then
@@ -1017,42 +988,57 @@ local function kit_grid(x, y, z, off) -- grid one: off = -7
         else
           local e = {t = eKIT, i = 7, note = i, action = "note_off"} event(e)
         end
-      end     
-    elseif y == 9 and mute.edit then
-      if x > 5 and x < 12 then
-        if z == 1 then
-          local mute_group = x - 5
-          if mute.focus == mute_group and mute.active then
-            clear_mutes()
-          else
-            set_mutes(mute_group)
+      end
+    elseif y == 9 then
+      if mute.edit then
+        if x > 5 and x < 12 then
+          if z == 1 then
+            local mute_group = x - 5
+            if mute.focus == mute_group and mute.active then
+              clear_mutes()
+            else
+              set_mutes(mute_group)
+            end
           end
+        end
+      elseif off ~= 0 then
+        if x == 5 and z == 1 then
+          frz.config = not frz.config
+          if not frz.config then clear_freeze() end
+        elseif x > 5 and x < 12 and frz.config then
+          track_num_held("frz", z)
+          if z == 1 then frz.focus = x - 5 end
+          fx.freezedelay(frz.focus, z, held.frz)
         end
       end
     end
   elseif x == 12 then
-    if y == 10 then
-      if kit_morph and z == 1 then
-        drmfm.kit_mod("run")
-      else
-        if ui.kit_action < 3 then
-          ui.set_view(z == 1 and ui.EKIT or ui.PKIT)
-          drmfm.init_copy(z)
-        else
-          if z == 1 then
-            ui.toggle_view(ui.EKIT, ui.PKIT)
-          end
-        end
-        dirtyscreen = true
+    if y == 9 then
+      if off ~= 0 and frz.config and z == 1 then
+        fx.freezemode_toggle()
       end
+    elseif y == 10 then
+      if ui.kit_action < 3 then
+        ui.set_view(z == 1 and ui.EKIT or ui.PKIT)    
+        kit_edit = z == 1 and true or false
+        if ui.kit_action == 1 then
+          if z == 0 then drmfm.kit_mod("stop") end
+        elseif ui.kit_action == 2 then
+          drmfm.init_copy(z)
+        end 
+      elseif z == 1 then
+        ui.toggle_view(ui.EKIT, ui.PKIT)
+        kit_edit = not kit_edit
+      end 
     elseif y == 11 then
       mute.edit = z == 1 and true or false
+      if z == 0 then clear_freeze() end
     end
   elseif x == 13 then
     if y == 10 then
       kit_morph = z == 1 and true or false
-      if z == 0 then
-        drmfm.kit_mod("stop")
+      if kit_edit and ui.kit_action == 1 and z == 1 then
+        drmfm.kit_mod("run")        
       end
     elseif y == 11 then
       if mute.edit and z == 1 then
@@ -1157,13 +1143,6 @@ local function int_grid(x, y, z, off) -- grid one: off = -7
   end
 end
 
-local function clear_freeze()
-  if not frz.config then
-    fx.freezedelay(frz.focus, 0, 0)
-     held.frz = 0
-  end
-end
-
 local function seq_settings(x, z)
   if x == 1 then
     hrmy.latch = z == 1 and true or false
@@ -1179,6 +1158,8 @@ local function seq_settings(x, z)
       hrmy.config, seq.config = false, false
       clear_freeze()
     end
+  elseif x == 3 then
+    fx.freezemode_toggle()
   elseif x > 4 and x < 13 then
     if hrmy.config and z == 1 then
       set_hrmy_slot(x - 4)
@@ -1793,15 +1774,18 @@ local function pattern_slot_draw(off)
     for i = 1, 8 do
       local dim = ptn.focus == i and 0 or -1
       for j = 1, 3 do
-        g:led(i + 4, j + off, p[i].load == j + page and viz.key_slow or (p[i].bank == j + page and (p[i].count[j + page] > 0 and 15 + dim or 4 + dim) or (p[i].count[j + page] > 0 and 8 + dim or 2 + dim)))
-        if p[i].prc_pulse and p[i].bank == j + page then
-          g:led(i + 4, j + off, 15)
-        end
+        local pulse = p[i].prc_pulse and p[i].bank == j + page
+        local queued = p[i].load == j + page
+        local selected = p[i].bank == j + page
+        local has_data = p[i].count[j + page] > 0
+        g:led(i + 4, j + off, pulse and 15 or (queued and viz.key_slow or (selected and (has_data and 12 + dim or 4 + dim) or has_data and 7 + dim or 2 + dim)))
       end
       g:led(i + 4, 4 + off, p[i].stop and viz.key_mid or 0)
     end
+    -- scene launch
+    g:led(lnc.x, lnc.y + off, ptn.scene_lnc and viz.key_slow or 0)
     -- stop all key
-    g:led(13, 4 + off, ptn.stop_all and viz.key_fast or 0)
+    g:led(13, 4 + off, ptn.stop_all and viz.key_fast or 1)
   end
 end
 
@@ -1890,23 +1874,28 @@ local function kit_grid_draw(off)
       g:led(x + 9, y + off, drmfm.viz[i + 6] and 15 or (mute.kit_key[i + 6] and 0 or 4))
     end
   end
-  if kit_morph then
+
+  g:led(12, 10 + off, kit_edit and viz.key_slow or 1)
+  if kit_edit and ui.kit_action == 1 then
     local perf_depth = math.floor(params:get("drmfm_perf_depth") * 15)
-    g:led(12, 10 + off, perf_depth > 0 and perf_depth or 1)
+    g:led(13, 10 + off, perf_depth > 0 and perf_depth or 1)
   else
-    if ui.get_view(ui.EKIT) and ui.kit_action > 2 then
-      g:led(12, 10 + off, viz.key_slow)
-    else
-      g:led(12, 10 + off, drmfm.copy_data and viz.key_mid or 1)
-    end
+    g:led(13, 10 + off, kit_morph and 15 or 8)
   end
+
   g:led(12, 11 + off, mute.active and viz.key_mid or 1)
-  g:led(13, 10 + off, kit_morph and 15 or 8)
   g:led(13, 11 + off, mute.all and viz.key_fast or 8)
   if mute.edit then
     for i = 1, 6 do
       g:led(i + 5, 9 + off, (mute.active and mute.focus == i) and 15 or 6)
     end
+  elseif off ~= 0 and frz.config then
+    g:led(5, 9 + off, 12)
+    for x = 1, 6 do
+        local active = frz.focus == x and held.frz > 0
+        g:led(x + 5, 9 + off, active and 15 or frz.key_led[x])
+    end
+    g:led(12, 9 + off, params:get("freez_mode") == 2 and 8 or 0)
   end
 end
 
@@ -1949,7 +1938,6 @@ local function octave_options_draw(off)
   end
 end
 
-local frz_key_led = {4, 1, 4, 1, 4, 1, 4, 1}
 local function event_options_draw(off)
   local off = off and off or 0
   if off == 0 then
@@ -1963,7 +1951,7 @@ local function event_options_draw(off)
     elseif frz.config then
       for x = 1, 8 do
         local active = frz.focus == x and held.frz > 0
-        g:led(x + 4, 12, active and 15 or frz_key_led[x])
+        g:led(x + 4, 12, active and 15 or frz.key_led[x])
       end
     elseif seq.config then
       for x = 1, 8 do
@@ -2136,8 +2124,6 @@ local function zero_keys(x, y, z)
       drum_grid(x, y, z)  
     end
   end
-  dirtygrid = true
-  screen.ping()
 end
 
 local function one_keys(x, y, z)
@@ -2148,9 +2134,10 @@ local function one_keys(x, y, z)
     modifier_keys(x, y, z, -6)
   end
   if x == 16 and y == 3 and z == 1 then
+    pattern_page = not pattern_page
     ui.toggle_view(ui.PPTN)
   end
-  if ui.get_view(ui.PPTN) then
+  if pattern_page then
     if (x < 4 or x > 13) and y < 4 then
       pattern_options(x, y, z)
     elseif x > 4 and x < 13 and y == 2 and z == 1 then
@@ -2191,8 +2178,6 @@ local function one_keys(x, y, z)
       end
     end
   end
-  dirtygrid = true
-  screen.ping()
 end
 
 local function zero_draw()
@@ -2224,7 +2209,7 @@ local function one_draw()
   g:all(0)
   pattern_key_draw(-6)
   mod_key_draw(-6)
-  if ui.get_view(ui.PPTN) then
+  if pattern_page then
     pattern_options_draw(128)
     pattern_slot_draw(2)
     pattern_playhead_draw(3)
@@ -2254,6 +2239,7 @@ function g.key(x, y, z)
     one_keys(x, y, z)
   end
   dirtygrid = true
+  screen.ping()
 end 
 
 function grd.redraw()
@@ -2292,6 +2278,7 @@ function grd.banner()
     end
   end
   g:refresh()
+  gridredrawtimer:stop()
 end
 
 return grd
