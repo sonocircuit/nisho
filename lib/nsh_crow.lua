@@ -11,6 +11,19 @@ local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
 end
 
+local function freq_display(freq)
+  if freq < 1 then
+    freq = round_form(freq, 0.001, "Hz")
+  elseif freq < 20 then
+    freq = round_form(freq, 0.01, "Hz")
+  elseif util.round(freq, 1) < 1000 then
+    freq = round_form(freq, 1, "Hz")
+  else
+    freq = round_form(freq / 1000, 0.01, "kHz")
+  end
+  return freq
+end
+
 ---------------------- crow out ----------------------
 local cw = {}
 cw.env_shapes = {'logarithmic', 'linear', 'exponential'}
@@ -428,7 +441,7 @@ wdel.add_params = function()
   params:add_group("wdel_params", "crow [wdel]", 8)
   if not crow_detected then params:hide("wdel_params") end
 
-  params:add_control("wdel_mix", "mix", controlspec.new(-5, 5, "lin", 0, 0, "v"))
+  params:add_control("wdel_mix", "mix", controlspec.new(-5, 1, "lin", 0, 0), function(param) return round_form((param:get() + 5) * 20, 1, "%") end)
   params:set_action("wdel_mix", function(v) crow.ii.wdel.mix(v) end)
 
   params:add_option("wdel_mode", "mode", {"free", "clocked"}, 2)
@@ -446,16 +459,19 @@ wdel.add_params = function()
   params:add_option("wdel_rate", "rate", wdel.rate_names, 6)
   params:set_action("wdel_rate", function(x) wdel.rate = wdel.rate_values[x] wdel.set_rate() end)
 
-  params:add_control("wdel_feedback", "feedback", controlspec.new(-5, 5, "lin", 0, 0, "v"))
-  params:set_action("wdel_feedback", function(v) crow.ii.wdel.feedback(v) end)
+  params:add_control("wdel_feedback", "feedback", controlspec.new(-5, 5, "lin", 0, 0), function(param) local val = param:get() return val == 5 and "freeze" or round_form((val + 5) * 10, 1, "%") end)
+  params:set_action("wdel_feedback", function(v)
+    crow.ii.wdel.feedback(v)
+    crow.ii.wdel.freeze(v == 5 and 1 or 0)
+  end)
 
-  params:add_control("wdel_filter", "filter", controlspec.new(-5, 5, "lin", 0, 0, "v"))
+  params:add_control("wdel_filter", "filter", controlspec.new(-5, 5, "lin", 0, 0), function(param) return freq_display(util.linexp(-5, 5, 16, 16000, param:get())) end)
   params:set_action("wdel_filter", function(v) crow.ii.wdel.filter(v) end)
 
-  params:add_control("wdel_mod_rate", "mod rate", controlspec.new(-5, 5, "lin", 0, 0, "v"))
+  params:add_control("wdel_mod_rate", "mod rate", controlspec.new(-5, 5, "lin", 0, 0), function(param) return freq_display(util.linexp(-5, 5, 1, 200, param:get())) end)
   params:set_action("wdel_mod_rate", function(v) crow.ii.wdel.mod_rate(v) end)
 
-  params:add_control("wdel_mod_amount", "mod amount", controlspec.new(-5, 5, "lin", 0, 0, "v"))
+  params:add_control("wdel_mod_amount", "mod amount", controlspec.new(-5, 5, "lin", 0, 0), function(param) return round_form((param:get()) * 20, 1, "%") end)
   params:set_action("wdel_mod_amount", function(v) crow.ii.wdel.mod_amount(v) end)
 end
 
@@ -513,10 +529,11 @@ ansi.add_params = function()
   params:add_group("ansi_params", "crow [ansible]", (4 + 11) * 4)
   if not crow_detected then params:hide("ansi_params") end
 
+  local default = {1, 0, 0, 0.5}
   for i = 1, 4 do
     params:add_separator("ansi_cv_"..i, "ansible cv "..i)
 
-    params:add_control("ansi_cv_"..i.."_level", "level", controlspec.new(0, 1, "lin", 0, 0), function() return ansi.volt_display(i) end)
+    params:add_control("ansi_cv_"..i.."_level", "level", controlspec.new(0, 1, "lin", 0, default[i]), function() return ansi.volt_display(i) end)
     params:set_action("ansi_cv_"..i.."_level", function(val) ansi[i].lvl = val ansi.set_volt(i) end)
 
     params:add_control("ansi_cv_"..i.."_min", "min", controlspec.new(0, 10, "lin", 0, 0), function(param) return round_form(param:get(), 0.1, "v") end)
