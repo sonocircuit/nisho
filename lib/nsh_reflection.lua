@@ -84,6 +84,14 @@ end
 --- stop transport
 function reflection:stop(beat_sync)
   if self.stop_clock or self.play == 0 then return end
+  --[[
+  if self.play_queued == 1 and self.clock then
+    clock.cancel(self.clock)
+    self.clock = nil
+    self.play_queued = 0
+    return
+  end
+  --]]
   local beat_sync = beat_sync or self.quantize
   self.stop_clock = clock.run(function()
     clock.sync(beat_sync)
@@ -197,8 +205,8 @@ end
 -- must be called from within a clock.run
 function reflection:begin_playback()
   self.step = self.step_min
-  self.play_queued = 0
   self.play = 1
+  self.play_queued = 0
   self.start_callback()
   local queued_start_callback = false
   local queued_end_of_loop_callback = false
