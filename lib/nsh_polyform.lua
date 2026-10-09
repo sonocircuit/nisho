@@ -43,6 +43,19 @@ local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
 end
 
+local function freq_display(freq)
+  if freq < 1 then
+    freq = round_form(freq, 0.001, "Hz")
+  elseif freq < 20 then
+    freq = round_form(freq, 0.01, "Hz")
+  elseif util.round(freq, 1) < 1000 then
+    freq = round_form(freq, 1, "Hz")
+  else
+    freq = round_form(freq / 1000, 0.01, "kHz")
+  end
+  return freq
+end
+
 local function pan_display(param)
   if param < -0.01 then
     return ("L < "..math.abs(util.round(param * 100, 1)))
@@ -202,7 +215,7 @@ local function add_params()
     params:add_control("polyform_saw_shape_"..i, "wave shape", controlspec.new(-1, 1, "lin", 0, -0.8, "", 1/200), function(param) return shape_display(param:get()) end)
     params:set_action("polyform_saw_shape_"..i, function(x) set_value(i, "saw_shape", util.linlin(-1, 1, 0, 1, x)) end)
     -- swm speed
-    params:add_control("polyform_swm_rate_"..i, "shape mod rate", controlspec.new(0.2, 20, "exp", 0.01, 2.2, "", 1/200), function(param) return round_form(param:get(), 0.01, " hz") end)
+    params:add_control("polyform_swm_rate_"..i, "shape mod rate", controlspec.new(0.2, 20, "exp", 0.01, 2.2, "", 1/200), function(param) return freq_display(param:get()) end)
     params:set_action("polyform_swm_rate_"..i, function(x) set_value(i, "saw_lfo_freq", x) end)
     -- swm depth
     params:add_control("polyform_swm_depth_"..i, "shape mod depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -222,7 +235,7 @@ local function add_params()
     params:add_control("polyform_pulse_width_"..i, "pulse width", controlspec.new(0.1, 0.9, "lin", 0, 0.5), function(param) return round_form(param:get() * 100, 1, "%") end)
     params:set_action("polyform_pulse_width_"..i, function(x) set_value(i, "pulse_width", x) end)
     -- pwm speed
-    params:add_control("polyform_pwm_rate_"..i, "pwm rate", controlspec.new(0.2, 20, "exp", 0.01, 2.2), function(param) return round_form(param:get(), 0.01, " hz") end)
+    params:add_control("polyform_pwm_rate_"..i, "pwm rate", controlspec.new(0.2, 20, "exp", 0.01, 2.2), function(param) return freq_display(param:get()) end)
     params:set_action("polyform_pwm_rate_"..i, function(x) set_value(i, "pulse_lfo_freq", x) end)
     -- pwm depth
     params:add_control("polyform_pwm_depth_"..i, "pwm depth", controlspec.new(0, 0.5, "lin", 0, 0), function(param) return round_form(param:get() * 200, 1, "%") end)
@@ -238,7 +251,7 @@ local function add_params()
     
     params:add_separator("polyform_filter_lpf_"..i, "low pass filter")
     -- cutoff lpf
-    params:add_control("polyform_lpf_cutoff_"..i, "cutoff", controlspec.new(20, 18000, "exp", 0, 1200), function(param) return round_form(param:get(), 1, " hz") end)
+    params:add_control("polyform_lpf_cutoff_"..i, "cutoff", controlspec.new(20, 18000, "exp", 0, 1200), function(param) return freq_display(param:get()) end)
     params:set_action("polyform_lpf_cutoff_"..i, function(x) set_value(i, "cutoff_lpf", x) end)
     -- resonance lpf
     params:add_control("polyform_lpf_resonance_"..i, "resonance", controlspec.new(0, 1, "lin", 0, 0.2), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -252,7 +265,7 @@ local function add_params()
     
     params:add_separator("polyform_polyform_filter_hpf_"..i, "high pass filter")
     -- cutoff hpf
-    params:add_control("polyform_hpf_cutoff_"..i, "cutoff", controlspec.new(20, 8000, "exp", 0, 20), function(param) return round_form(param:get(), 1, " hz") end)
+    params:add_control("polyform_hpf_cutoff_"..i, "cutoff", controlspec.new(20, 8000, "exp", 0, 20), function(param) return freq_display(param:get()) end)
     params:set_action("polyform_hpf_cutoff_"..i, function(x) set_value(i, "cutoff_hpf", x) end)
     -- resonance hpf
     params:add_control("polyform_hpf_resonance_"..i, "resonance", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -355,7 +368,7 @@ local function add_params()
 
     params:add_separator("polyform_vibrato_"..i, "vibrato")
     -- vibrato rate
-    params:add_control("polyform_vib_freq_"..i, "vibrato rate", controlspec.new(0.2, 20, "exp", 0, 8), function(param) return round_form(param:get(), 0.01," hz") end)
+    params:add_control("polyform_vib_freq_"..i, "vibrato rate", controlspec.new(0.2, 20, "exp", 0, 8), function(param) return freq_display(param:get()) end)
     params:set_action("polyform_vib_freq_"..i, function(x) set_value(i, "vib_rate", x) end)
     -- vibrato depth
     params:add_control("polyform_vib_depth_"..i, "vibrato depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -409,12 +422,12 @@ function polyform.load_default()
   end
 end
 
-function polyform.prc_load(num, i)
+function polyform.prc_load(i, num)
   if ptch.list[num] ~= nil then
     local path = ptch.preset_path.."/"..ptch.list[num]
     load_synth_patch(path, i)
   else
-    print("error: unvalid patch number: "..num)
+    print("error: unvalid patch number:", num)
   end
 end
 
