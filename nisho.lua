@@ -7,6 +7,7 @@
 --           composition
 --
 
+local pm = require 'core/menu/params'
 local fs = require 'fileselect'
 local mu = require 'musicutil'
 local lt = require 'lattice'
@@ -30,7 +31,6 @@ engine.name = "Nisho"
 local load_pset = false
 local load_tempo = true
 local rotate_grid = false
-local rytm_mode = false
 
 -- scale
 local scale = {}
@@ -326,11 +326,9 @@ m.in_dst = 0
 m.out_id = 8
 m.out_ch = 1
 m.tsrp_id = 9
-m.rytm_id = 10
-m.rytm_ch = 1
 m.qnt = false
 m.thru = false
-for i = 1, 10 do -- 6 voices + midi in(7) + midi out(8) + transport(9) + rytm out(10)
+for i = 1, 9 do -- 6 voices + midi in(7) + midi out(8) + transport(9)
   m[i] = midi.connect()
 end
 
@@ -731,6 +729,7 @@ ptn.src = 1
 ptn.dst = 1
 ptn.remap_src = 1
 ptn.remap_dst = 1
+ptn.scene_lnc = false
 -- patterns
 ptn.rec_mode = "queued"
 ptn.overdub_active = false
@@ -754,7 +753,7 @@ for i = 1, 8 do
   ptn[i].end_of_rec_callback = function() catch_held_notes(i, "note_off") clock.run(function() clock.sleep(0.2) save_pattern_bank(i, p[i].bank) end) end
   ptn[i].start_callback = function() step_one_viz(i) set_pattern_length(i) clear_active_notes(i) end
   ptn[i].step_callback = function() track_pattern_pos(i) end
-  ptn[i].end_of_loop_callback = function() update_pattern_bank(i) end
+  ptn[i].end_of_loop_callback = function() set_pattern_bank(i) end
   ptn[i].end_callback = function() clear_active_notes(i) dirtygrid = true end
   ptn[i].meter = 4/4
   ptn[i].barnum = 4
@@ -771,6 +770,7 @@ for i = 1, 8 do
 end
 
 -- pattern bank slots (24 slots per player) organized as 8 banks
+local prc_defaults = {1, 1, 3, 3, 3, 3, 4, 5}
 p = {}
 for i = 1, 8 do
   p[i] = {}
@@ -794,7 +794,7 @@ for i = 1, 8 do
   p[i].manual_length = {}
   p[i].prc_enabled = false
   p[i].prc_pulse = false
-  p[i].prc_type = 5
+  p[i].prc_type = prc_defaults[i]
   p[i].prc_ch = i
   p[i].prc_num = {}
   p[i].prc_option = {}
@@ -899,8 +899,14 @@ function set_pattern_length(i)
     local prev_length = ptn[i].length
     ptn[i].length = ptn[i].meter * ptn[i].barnum * 4
     if prev_length ~= ptn[i].length then
-      ptn[i]:set_length(ptn[i].length)
-      save_pattern_bank(i, p[i].bank)
+      -- set length
+      ptn[i].endpoint = ptn[i].length * 64
+      ptn[i].step_max = ptn[i].endpoint
+      -- save bank
+      p[i].endpoint[p[i].bank] = ptn[i].endpoint
+      p[i].barnum[p[i].bank] = ptn[i].barnum
+      p[i].meter[p[i].bank] = ptn[i].meter
+      p[i].length[p[i].bank] = ptn[i].length
     end
   end
 end
@@ -939,6 +945,7 @@ function save_pattern_bank(i, bank)
 end
 
 function load_pattern_bank(i, bank)
+  if ptn[i].play == 1 and p[i].count[bank] == 0 then ptn[i]:stop(1/64) end
   p[i].looping = false
   ptn[i].manual_length = p[i].manual_length[bank]
   ptn[i].count = p[i].count[bank]
@@ -954,7 +961,6 @@ function load_pattern_bank(i, bank)
   ptn[i].barnum = p[i].barnum[bank]
   ptn[i].meter = p[i].meter[bank]
   ptn[i].length = p[i].length[bank]
-
   params:set("patterns_playback_"..i, ptn[i].loop == 1 and 1 or 2)
   params:set("patterns_quantize_"..i, tab.key(ptn.quant_val, ptn[i].quantize))
   params:set("patterns_launch_"..i, ptn[i].launch)
@@ -964,11 +970,19 @@ function load_pattern_bank(i, bank)
     params:set("patterns_barnum_"..i, math.floor(util.clamp(ptn[i].barnum, 1, 16)))
     params:set("patterns_meter_"..i, tab.key(ptn.meter_val, ptn[i].meter))
   end
-  if ptn[i].play == 1 and ptn[i].count == 0 then
-    ptn[i]:stop()
-  end
   ui.draw_view(ui.PPTN)
   dirtygrid = true
+end
+
+function set_pattern_bank(i, bank)
+  local bank = bank or (ptn.scene_lnc == false and p[i].load or nil)
+  if bank then
+    p[i].bank = bank
+    ptn[i].step = 0
+    clear_active_notes(i)
+    load_pattern_bank(i, bank)
+    p[i].load = nil
+  end
 end
 
 function clear_pattern_bank(i, bank)
@@ -987,20 +1001,20 @@ function clear_pattern_bank(i, bank)
   ui.show_message("pattern   cleared")
 end
 
-function update_pattern_bank(i)
-  if p[i].stop or p[i].count[p[i].load] == 0 then
-    if ptn[i].play == 1 then
-      ptn[i]:stop(1/64)
-    end
-    p[i].stop = false
+function run_stop_timer()
+  if ptn.stop_timer == nil then
+    ptn.stop_timer = clock.run(function()
+      clock.sync(quant.bar, -1/4)
+      for i = 1, 8 do
+        if p[i].stop and ptn[i].play == 1 then
+          ptn[i]:stop(1/64)
+          p[i].stop = false
+        end
+      end
+      ptn.stop_all = false
+      ptn.stop_timer = nil
+    end)
   end
-  if p[i].load then
-    p[i].bank = p[i].load
-    clear_active_notes(i)
-    load_pattern_bank(i, p[i].bank)
-    p[i].load = nil
-  end
-  ui.draw_view(ui.PPTN)
 end
 
 function stop_all_patterns()
@@ -1020,21 +1034,144 @@ function stop_all_patterns()
         p[i].stop = true
       end
     end
-    ptn.stop_timer = clock.run(function()
-      clock.sync(quant.bar, -1/4)
+    run_stop_timer()
+  end
+end
+
+function patterns_stopped()
+  for i = 1, 8 do
+    if ptn[i].play == 1 then
+      return false
+    end
+  end
+  return true
+end
+
+local scene_pulse_timer = nil
+local function scene_pulse()
+  if scene_pulse_timer ~= nil then
+    clock.cancel(scene_pulse_timer)
+  end
+  scene_pulse_timer = clock.run(function()
+    ptn.scene_lnc = true
+    dirtygrid = true
+    clock.sleep(1/30)
+    ptn.scene_lnc = false
+    dirtygrid = true
+    scene_pulse_timer = nil
+  end)
+end
+
+local scene_timer = nil
+function scene_launch(bank, launch_all)
+  if patterns_stopped() and not launch_all then
+    for i = 1, 8 do
+      set_pattern_bank(i, bank)
+    end
+    for i = 1, 7 do
+      if p[i].prc_option[bank] == 2 then
+        send_program_change(i, bank)
+      end
+    end
+    send_mutes_change(bank, 1/64)
+    scene_pulse()
+  else
+    local beat_sync = quant.scene == 2 and 1 or (quant.scene == 3 and quant.bar or 1/64)
+    for i = 1, 8 do
+      local launch = (ptn.overdub_active or p[i].scene[bank]) 
+      p[i].load = p[i].count[bank] > 0 and bank or nil
+      if ptn[i].play == 0 then
+        if launch_all and p[i].load and launch then
+          ptn[i]:start(beat_sync)
+        end
+      elseif not launch then
+        ptn[i]:stop(beat_sync)
+      end
+    end
+    if scene_timer ~= nil then
+      clock.cancel(scene_timer)
+    end
+    scene_timer = clock.run(function()
+      ptn.scene_lnc = true
+      clock.sync(beat_sync)
       for i = 1, 8 do
-        if p[i].stop and ptn[i].play == 1 then
-          ptn[i]:stop(1/64)
-          p[i].stop = false
+        set_pattern_bank(i, bank)
+      end
+      for i = 1, 7 do
+        if p[i].prc_option[bank] == 2 then
+          send_program_change(i, bank)
         end
       end
-      ptn.stop_all = false
-      ptn.stop_timer = nil
+      scene_timer = nil
+      ptn.scene_lnc = false
     end)
+    send_mutes_change(bank, beat_sync)
   end
-  -- rytm mode
-  if rytm_mode then
-    m[m.rytm_id]:program_change(127, m.rytm_ch) -- send prg change to Analog Rytm -> pattern h16 is blank
+end
+
+function queue_pattern(i, bank)
+  if p[i].bank ~= bank then
+    if p[i].load == bank then
+      clock.run(function()
+        clock.sync(1)
+        set_pattern_bank(i)
+        if p[i].prc_option[bank] == 1 and i < 8 then
+          send_program_change(i, bank)
+        end
+      end)
+      if i == 8 then send_mutes_change(bank, 1) end
+    else
+      p[i].load = bank
+      if ptn[i].play == 0 then
+        set_pattern_bank(i)
+        if p[i].prc_option[bank] == 1 and i < 8 then
+          send_program_change(i, bank)
+        end
+        if i == 8 then send_mutes_change(bank, 1) end
+      end
+    end
+  elseif p[i].load then
+    p[i].load = nil
+  end
+end
+
+local function viz_program_change(i)
+  p[i].prc_pulse = true
+  dirtygrid = true
+  clock.run(function()
+    clock.sleep(1/30)
+    p[i].prc_pulse = false
+    dirtygrid = true
+  end)
+end
+
+function send_program_change(i, bank)
+  if p[i].prc_enabled and p[i].prc_num[bank] ~= 0 then
+    local pcnum = p[i].prc_num[bank]
+    if p[i].prc_type < 3 then
+      polyform.prc_load(p[i].prc_type, pcnum)
+    elseif p[i].prc_type == 3 then
+      m[i]:program_change(pcnum - 1, p[i].prc_ch)
+    elseif p[i].prc_type == 4 then
+      set_hrmy_slot(pcnum)
+    end
+    viz_program_change(i)
+  end
+end
+
+function send_mutes_change(bank, beat_sync)
+  local pcnum = p[8].prc_num[bank]
+  if p[8].prc_enabled and pcnum ~= 0 then
+    local offset = p[8].prc_option[bank] == 1 and 0 or 1/4
+    clock.run(function()
+      clock.sync(beat_sync, offset)
+      if pcnum < 0 then
+        clear_mutes()
+      else
+        set_mutes(pcnum)
+      end
+      viz_program_change(8)
+    end)
   end
 end
 
@@ -1069,6 +1206,7 @@ function transpose_pattern(i, deg)
     ui.show_message("pattern    transposed")
   end
 end
+
 
 function copy_pattern(src, src_bank, dst, dst_bank)
   p[dst].loop[dst_bank] = p[src].loop[src_bank]
@@ -1218,10 +1356,10 @@ function load_patterns(pset_id)
     if ptn[i].play == 1 then
       clock.run(function()
         clock.sync(quant.bar)
-        update_pattern_bank(i)
+        set_pattern_bank(i)
       end)
     else
-      update_pattern_bank(i)
+      set_pattern_bank(i)
     end
   end
   ui.draw_view(ui.PPTN)
@@ -1301,50 +1439,6 @@ function clear_kit_voice(i, vox)
       ui.show_message("voice  "..vox..":  cleared    "..num_cleared.."   events")
     else
       ui.show_message("no   events   found")
-    end
-  end
-end
-
-local function viz_program_change(i)
-  p[i].prc_pulse = true
-  dirtygrid = true
-  clock.run(function()
-    clock.sleep(1/30)
-    p[i].prc_pulse = false
-    dirtygrid = true
-  end)
-end
-
-function send_mutes_change(bank, beat_sync)
-  if p[8].prc_enabled and p[8].prc_num[bank] ~= 0 then
-    local offset = p[8].prc_option[bank] == 1 and 0 or 1/4
-    clock.run(function()
-      clock.sync(beat_sync, offset)
-      if p[8].prc_num[bank] < 0 then
-        clear_mutes()
-      else
-        set_mutes(p[8].prc_num[bank])
-      end
-      viz_program_change(8)
-    end)
-  end
-end
-
-function send_program_change(i)
-  local bank = p[i].bank
-  if i < 8 then
-    if p[i].prc_enabled and p[i].prc_num[bank] ~= 0 then
-      if (p[i].prc_option[bank] == 2 or ptn[i].play == 1) then
-        local pcnum = p[i].prc_num[bank]
-        if p[i].prc_type < 3 then
-          polyform.prc_load(pcnum, p[i].prc_type)
-        elseif p[i].prc_type == 3 then
-          m[i]:program_change(pcnum - 1, p[i].prc_ch)
-        elseif p[i].prc_type == 4 then
-          set_hrmy_slot(pcnum)
-        end
-      end
-      viz_program_change(i)
     end
   end
 end
@@ -1547,7 +1641,7 @@ local function ledpulse_slow()
       dirtygrid = true
     end
   end
-  if (ptn.copy.state or rep.hold or seq.config or ptn.clear or ui.get_view(ui.PRCH) or seq.polyseq or not cmem.link) then
+  if (ptn.copy.state or rep.hold or seq.config or ptn.clear or ptn.scene_lnc or ui.get_view(ui.PRCH) or seq.polyseq or not cmem.link) then
     dirtygrid = true
   end
 end
@@ -1772,9 +1866,6 @@ function edit_drum_mutes(i)
   if mute.active then
     mute.drm_group[mute.focus][i] = mute.drm_key[i]
   end
-  if rytm_mode then
-    m[m.rytm_id]:cc(94, mute.drm_key[i] and 127 or 0, i)
-  end
 end
 
 function edit_kit_mutes(i)
@@ -1792,10 +1883,6 @@ function set_mutes(mute_group)
   end
   for i = 1, 12 do
     mute.drm_key[i] = mute.drm_group[mute_group][i]
-    if rytm_mode then
-      local state = mute.drm_group[mute_group][i] and 127 or 0
-      m[m.rytm_id]:cc(94, state, i)
-    end
   end
 end
 
@@ -1806,21 +1893,12 @@ function clear_mutes()
   end
   for i = 1, 12 do
     mute.drm_key[i] = false
-    if rytm_mode then
-      m[m.rytm_id]:cc(94, 0, i)
-    end
   end
 end
 
 function mute_all(z)
   mute.all = z == 1 and true or false
-  if mute.all then
-    if rytm_mode then
-      for i = 1, 12 do
-        m[m.rytm_id]:cc(94, 127, i)
-      end
-    end
-  else
+  if z == 0 then
     if mute.active then
       set_mutes(mute.focus)
     else
@@ -2270,65 +2348,7 @@ local function pset_read_callback(filename, silent, number)
       fx.update_rates()
       dirtyscreen = true
       dirtygrid = true
-      print("finished reading pset: "..pset_id)
-    else
-      print("loading old pset")
-      for i = 1, 8 do
-        for j = 1, 24 do
-          p[i].loop[j] = pdata[i].loop[j]
-          p[i].quantize[j] = pdata[i].quantize[j]
-          p[i].count[j] = pdata[i].count[j]
-          p[i].event[j] = deep_copy(pdata[i].event[j])
-          p[i].endpoint[j] = pdata[i].endpoint[j]
-          p[i].endpoint_init[j] = pdata[i].endpoint[j]
-          p[i].meter[j] = pdata[i].meter[j]
-          p[i].barnum[j] = pdata[i].barnum[j]
-          p[i].length[j] = pdata[i].length[j]
-          p[i].manual_length[j] = pdata[i].manual_length[j]
-          p[i].prc_num[j] = pdata[i].prc_num[j]
-          p[i].prc_option[j] = pdata[i].prc_option[j]
-          if pdata[i].launch ~= nil then
-            p[i].launch[j] = pdata[i].launch[j]
-          else
-            print("no launch data")
-          end
-        end
-        p[i].prc_enabled = pdata[i].prc_enabled
-        p[i].prc_ch = pdata[i].prc_ch
-        p[i].bank = 1
-        ptn.page = 0
-        load_pattern_bank(i, 1)
-        trigs[i].step_max = pdata[i].trigs_max
-        trigs[i].pattern = {table.unpack(pdata[i].trigs_pattern)}
-        if pdata[i].trigs_ratnum then
-          trigs[i].ratnum = {table.unpack(pdata[i].trigs_ratnum)}
-          trigs[i].ratvel = {table.unpack(pdata[i].trigs_ratvel)}
-        else
-          print("some trig data missing")
-        end
-      end
-      for i = 1, 16 do
-        if pdata.cmem[i].notes then
-          cmem[i].notes = {table.unpack(pdata.cmem[i].notes)}
-          cmem[i].trigs = pdata.cmem[i].trigs
-        else
-          cmem[i].notes = {table.unpack(pdata.cmem[i])}
-        end
-      end
-      if load_tempo then
-        params:set("clock_tempo", pdata.tempo)
-      end
-      if pdata.hrmy then
-        hrmy.slot = deep_copy(pdata.hrmy)
-        if pdata.hrmy_active then
-          hrmy.active = pdata.hrmy_active
-        else
-          hrmy.active = 1
-        end
-      end
-      fx.update_rates()
-      dirtyscreen = true
-      dirtygrid = true
+      pm.ps_last = tonumber(number)
       print("finished reading pset: "..pset_id)
     end
   end
@@ -2510,7 +2530,7 @@ function init()
   params:add_option("strm_mode", "strum mode", {"up", "alt lo", "random", "alt hi", "down"}, 1)
   params:set_action("strm_mode", function(val) chrd.strm_mode = val end)
 
-  params:add_number("strm_rate", "strum rate", 10, 100, 70, function(param) return round_form((1 / chrd.strm_rate), 0.01,"hz") end)
+  params:add_number("strm_rate", "strum rate", 10, 100, 70, function(param) return round_form((1 / chrd.strm_rate), 0.01,"Hz") end)
   params:set_action("strm_rate", function(val) chrd.strm_rate = (110 - val) / 200 end)
 
   params:add_number("strm_skew", "strum skew", -30, 30, 0, function(param) return round_form((util.linlin(-30, 30, -100, 100, param:get())), 1,"%") end)
@@ -2536,16 +2556,6 @@ function init()
   params:set_action("trigs_rst_mode", function(mode) trigs.reset_mode = mode end)
   params:hide("trigs_rst_mode")
 
-  -- rytm params
-  params:add_group("rytm_params", "rytm settings", 2)
-  if not rytm_mode then params:hide("rytm_params") end
-
-  params:add_option("rytm_out_device", "rytm out device", m.device_names, 2)
-  params:set_action("rytm_out_device", function(val) m[m.rytm_id] = midi.connect(val) end)
-
-  params:add_number("rytm_out_channel", "rytm out channel", 1, 16, 16)
-  params:set_action("rytm_out_channel", function(val) m.rytm_ch = val end)
-
   -- octave params
   params:add_group("octave_params", "octaves", 13)
   params:hide("octave_params")
@@ -2568,14 +2578,16 @@ function init()
   
     params:add_option("patterns_playback_"..i, "playback", ptn.playback_modes, 1)
     params:set_action("patterns_playback_"..i, function(mode)
-      ptn[i].loop = mode == 1 and 1 or 0
-      p[i].loop[p[i].bank] = ptn[i].loop
+      local state = mode == 1 and 1 or 0
+      ptn[i].loop = state
+      p[i].loop[p[i].bank] = state
     end)
 
     params:add_option("patterns_quantize_"..i, "quantize", ptn.quant_ids, 13)
     params:set_action("patterns_quantize_"..i, function(idx)
-      ptn[i].quantize = ptn.quant_val[idx]
-      p[i].quantize[p[i].bank] = ptn[i].quantize
+      local val = ptn.quant_val[idx]
+      ptn[i].quantize = val
+      p[i].quantize[p[i].bank] = val
     end)
 
     params:add_option("patterns_launch_"..i, "pattern launch", ptn.launch_modes, 3)
@@ -2586,14 +2598,16 @@ function init()
 
     params:add_option("patterns_scene_"..i, "scene launch", {"off", "on"}, 2)
     params:set_action("patterns_scene_"..i, function(mode)
-      ptn[i].scene = mode == 2 and true or false
-      p[i].scene[p[i].bank] = mode == 2 and true or false
+      local state = mode == 2 and true or false
+      ptn[i].scene = state
+      p[i].scene[p[i].bank] = state
     end)
 
     params:add_option("patterns_meter_"..i, "meter", ptn.meter_ids, 3)
     params:set_action("patterns_meter_"..i, function(idx)
-      ptn[i].meter = ptn.meter_val[idx]
-      p[i].meter[p[i].bank] = ptn.meter_val[idx]
+      local val = ptn.meter_val[idx]
+      ptn[i].meter = val
+      p[i].meter[p[i].bank] = val
       update_pattern_length(i)
     end)
 
@@ -2696,7 +2710,7 @@ function init()
   params:add_control("adc_input_level", "level", controlspec.new(0, 1, "lin", 0, 1), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("adc_input_level", function(x) engine.input_set_param("level", x) end)
   -- balance
-  params:add_control("adc_input_balance", "bal", controlspec.new(-1, 1, "lin", 0, 1), function(param) return pan_display(param:get()) end)
+  params:add_control("adc_input_balance", "bal", controlspec.new(-1, 1, "lin", 0, 0), function(param) return pan_display(param:get()) end)
   params:set_action("adc_input_balance", function(x) engine.input_set_param("balance", x) end)
   -- drive
   params:add_control("adc_input_drive", "drive", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -2783,8 +2797,6 @@ function init()
 
   -- set defaults
   fx.update_rates()
-  p[7].prc_type = 4
-  p[8].prc_type = 5
   
 end
 
@@ -2793,7 +2805,6 @@ end
 
 function cleanup()
   clear_all_notes()
-  gridredrawtimer:stop()
   vizclock:destroy()
   crow.ii.jf[1].mode(0)
   crow.ii.jf[2].mode(0)
