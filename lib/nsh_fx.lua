@@ -12,6 +12,7 @@ local frz = {}
 frz.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
 frz.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
 frz.defaults = {1, 6, 4, 9, 7, 10, 12, 13}
+frz.focus = 1
 for i = 1, 8 do
   frz[i] = {}
   frz[i].rate = 1/4
@@ -19,9 +20,31 @@ end
 
 local beat_sec = clock.get_beat_sec()
 
--- display utilities
 local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
+end
+
+local function freq_display(freq)
+  if freq < 1 then
+    freq = round_form(freq, 0.001, "Hz")
+  elseif freq < 20 then
+    freq = round_form(freq, 0.01, "Hz")
+  elseif util.round(freq, 1) < 1000 then
+    freq = round_form(freq, 1, "Hz")
+  else
+    freq = round_form(freq / 1000, 0.01, "kHz")
+  end
+  return freq
+end
+
+local function pan_display(param)
+  if param < -0.01 then
+    return ("L < "..math.abs(util.round(param * 100, 1)))
+  elseif param > 0.01 then
+    return (math.abs(util.round(param * 100, 1)).." > R")
+  else
+    return "> <"
+  end
 end
 
 local function update_delay_params()
@@ -55,16 +78,6 @@ local function update_delay_params()
     end
   end
   _menu.rebuild_params()
-end
-
-local function pan_display(param)
-  if param < -0.01 then
-    return ("L < "..math.abs(util.round(param * 100, 1)))
-  elseif param > 0.01 then
-    return (math.abs(util.round(param * 100, 1)).." > R")
-  else
-    return "> <"
-  end
 end
 
 local function set_rates()
@@ -113,10 +126,10 @@ local function add_params()
   params:add_control("ledelay_feedback", "feedback", controlspec.new(0, 1, "lin", 0, 0.6), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("ledelay_feedback", function(x) engine.fx_set_param("delay", "fb", x) end)
 
-  params:add_control("ledelay_lpf_cutoff", "lowpass", controlspec.new(20, 18000, "exp", 0, 1600), function(param) return round_form(param:get(), 1, " hz") end)
+  params:add_control("ledelay_lpf_cutoff", "lowpass", controlspec.new(20, 18000, "exp", 0, 1600), function(param) return freq_display(param:get()) end)
   params:set_action("ledelay_lpf_cutoff", function(x) engine.fx_set_param("delay", "hzLpf", x) end)
 
-  params:add_control("ledelay_hpf_cutoff", "highpass", controlspec.new(20, 18000, "exp", 0, 80), function(param) return round_form(param:get(), 1, " hz") end)
+  params:add_control("ledelay_hpf_cutoff", "highpass", controlspec.new(20, 18000, "exp", 0, 80), function(param) return freq_display(param:get()) end)
   params:set_action("ledelay_hpf_cutoff", function(x) engine.fx_set_param("delay", "hzHpf", x) end)
 
   params:add_control("ledelay_modulation", "mod depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
@@ -140,13 +153,17 @@ local function add_params()
   params:add_control("leverb_damp", "damping", controlspec.new(0, 1, "lin", 0, 0.40), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("leverb_damp", function(x) engine.fx_set_param("reverb", "damping", x) end)
 
-  params:add_control("leverb_mod_rate", "mod rate", controlspec.new(0.1, 3.6, "exp", 0, 1.2), function(param) return round_form(param:get(), 0.01, " hz") end)
+  params:add_control("leverb_mod_rate", "mod rate", controlspec.new(0.1, 3.6, "exp", 0, 1.2), function(param) return freq_display(param:get()) end)
   params:set_action("leverb_mod_rate", function(x) engine.fx_set_param("reverb", "modRate", x) end)
 
   params:add_control("leverb_mod_depth", "mod depth", controlspec.new(0, 1, "lin", 0, 0.32), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("leverb_mod_depth", function(x) engine.fx_set_param("reverb", "modDepth", x) end)
 
-  params:add_group("freeze_delay", "fx [freez]", 9)
+  
+  params:add_group("freeze_delay", "fx [freez]", 13)
+
+  params:add_option("freez_mode", "mode", {"isolate", "passthru"}, 1)
+  params:set_action("freez_mode", function(mode) frz.mode = mode engine.sum_set_param("frzMode", mode - 1) end)
 
   params:add_separator("freez_rate", "rate")
   for i = 1, 8 do
@@ -154,22 +171,24 @@ local function add_params()
     params:set_action("freez_rate_"..i, function(idx) frz[i].rate = frz.rate_values[idx] end)
   end
 
-  --[[params:add_separator("freez_remote", "midi control")
-  
-  for i = 1, 8 do
-    params:add_binary("freez_ctrl_"..i, "> freeze "..i, "momentary")
-    params:set_action("freez_rate_"..i, function(state) fx.freezedelay(i, state, state) end)
-  end]]
+  params:add_separator("freez_remote", "midi control")
+
+  params:add_number("freez_slot", "freeze slot", 1, 8, 1)
+  params:set_action("freez_slot", function(num) frz.focus = num end)
+
+  params:add_binary("freez_ctrl", "freeze >>", "momentary")
+  params:set_action("freez_ctrl", function(state) fx.freezedelay(frz.focus, state, state) end)
+
 
   params:add_group("sum_stage", "fx [sum]", 3)
 
-  params:add_control("sum_compressor", "compressor", controlspec.new(0, 1, "lin", 0, 0.8), function(param) return round_form(param:get() * 100, 1, "%") end)
+  params:add_control("sum_compressor", "compressor", controlspec.new(0, 1, "lin", 0, 0.6), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("sum_compressor", function(x) engine.sum_set_param("compMix", x) end)
  
-  params:add_control("sum_hz_lo", "cutoff lpf", controlspec.new(80, 20000, "exp", 0, 20000), function(param) return round_form(param:get(), 1, "hz") end)
+  params:add_control("sum_hz_lo", "cutoff lpf", controlspec.new(80, 20000, "exp", 0, 20000), function(param) return freq_display(param:get()) end)
   params:set_action("sum_hz_lo", function(x) engine.sum_set_param("loHz", x) end)
 
-  params:add_control("sum_hz_hi", "cutoff hpf", controlspec.new(20, 8000, "exp", 0, 20), function(param) return round_form(param:get(), 1, "hz") end)
+  params:add_control("sum_hz_hi", "cutoff hpf", controlspec.new(20, 8000, "exp", 0, 20), function(param) return freq_display(param:get()) end)
   params:set_action("sum_hz_hi", function(x) engine.sum_set_param("hiHz", x) end)
 
 end
@@ -180,6 +199,10 @@ local fx = {}
 
 function fx.update_rates()
   set_rates()
+end
+
+function fx.freezemode_toggle()
+  params:set("freez_mode", frz.mode == 1 and 2 or 1)
 end
 
 function fx.freezedelay(slot, state, num_held)
