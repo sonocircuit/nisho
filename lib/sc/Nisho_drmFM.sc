@@ -795,10 +795,10 @@ Nisho_drmFM {
 					plyDir  = Lag.kr((mod2 + (mod2M * kitMod)).clip(0, 1));
 					srtRel  = Lag.kr((mod3 + (mod3M * kitMod)).linlin(0, 1, 0, 0.99));
 					lenRel  = Lag.kr((mod4 + (mod4M * kitMod)).linlin(0, 1, 0.01, 1));
-					fadeIn  = Lag.kr(mod5.linexp(0, 1, 0.001, 2));
-					fadeOut = Lag.kr(mod6.linexp(0, 1, 0.001, 2));
-					lpfHz   = Lag.kr(mod7.linexp(0, 1, 20, 20000));
-					hpfHz   = Lag.kr(mod8.linexp(0, 1, 20, 20000));
+					fadeIn  = Lag.kr((mod5 + (mod5M * kitMod)).linexp(0, 1, 0.001, 2));
+					fadeOut = Lag.kr((mod6 + (mod6M * kitMod)).linexp(0, 1, 0.001, 2));
+					lpfHz   = Lag.kr((mod7 + (mod7M * kitMod)).linexp(0, 1, 20, 20000));
+					hpfHz   = Lag.kr((mod8 + (mod8M * kitMod)).linexp(0, 1, 20, 20000));
 
 					sendA = Lag.kr(sendA + (sendAM * kitMod)).clip(0, 1);
 					sendB = Lag.kr(sendB + (sendBM * kitMod)).clip(0, 1);
@@ -872,10 +872,10 @@ Nisho_drmFM {
 					plyDir  = Lag.kr((mod2 + (mod2M * kitMod)).clip(0, 1));
 					srtRel  = Lag.kr((mod3 + (mod3M * kitMod)).linlin(0, 1, 0, 0.99));
 					lenRel  = Lag.kr((mod4 + (mod4M * kitMod)).linlin(0, 1, 0.01, 1));
-					fadeIn  = Lag.kr(mod5.linexp(0, 1, 0.001, 2));
-					fadeOut = Lag.kr(mod6.linexp(0, 1, 0.001, 2));
-					lpfHz   = Lag.kr(mod7.linexp(0, 1, 20, 20000));
-					hpfHz   = Lag.kr(mod8.linexp(0, 1, 20, 20000));
+					fadeIn  = Lag.kr((mod5 + (mod5M * kitMod)).linexp(0, 1, 0.001, 2));
+					fadeOut = Lag.kr((mod6 + (mod6M * kitMod)).linexp(0, 1, 0.001, 2));
+					lpfHz   = Lag.kr((mod7 + (mod7M * kitMod)).linexp(0, 1, 20, 20000));
+					hpfHz   = Lag.kr((mod8 + (mod8M * kitMod)).linexp(0, 1, 20, 20000));
 
 					sendA = Lag.kr(sendA + (sendAM * kitMod)).clip(0, 1);
 					sendB = Lag.kr(sendB + (sendBM * kitMod)).clip(0, 1);
