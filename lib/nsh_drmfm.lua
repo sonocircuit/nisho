@@ -9,9 +9,34 @@ local MAX_LENGTH = math.pow(2, 24)
 
 local perf_clk = nil
 
+
 local function round_form(param, quant, form)
   return(util.round(param, quant)..form)
 end
+
+local function freq_display(freq)
+  if freq < 1 then
+    freq = round_form(freq, 0.001, "Hz")
+  elseif freq < 20 then
+    freq = round_form(freq, 0.01, "Hz")
+  elseif util.round(freq, 1) < 1000 then
+    freq = round_form(freq, 1, "Hz")
+  else
+    freq = round_form(freq / 1000, 0.01, "kHz")
+  end
+  return freq
+end
+
+local function pan_display(param)
+  if param < -0.01 then
+    return ("L < "..math.abs(util.round(param * 100, 1)))
+  elseif param > 0.01 then
+    return (math.abs(util.round(param * 100, 1)).." > R")
+  else
+    return "> <"
+  end
+end
+
 
 local kit = {}
 kit.preset_path = "/home/we/dust/data/nisho/drmfm_kits" 
@@ -96,7 +121,7 @@ prms.specs = {
     names = {"mix [body/noise]", "tone", "noise colour", "noise floor", "body decay", "mod depth", "mod ratio", "mod decay"},
     formatters = {
       function(param)  val = math.floor(param:get() * 100) return ((100 - val).."/"..val) end,
-      function(param) return round_form(util.linexp(0, 1, 400, 1200, param:get()), 1, "hz") end,
+      function(param) return freq_display(util.linexp(0, 1, 400, 1200, param:get())) end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 20, 100, param:get()), 1, "%") end,
@@ -115,7 +140,7 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0.5, 8, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 80, 2200, param:get()), 1, "hz") end,
+      function(param) return freq_display(util.linexp(0, 1, 80, 2200, param:get())) end,
       function(param) return round_form(util.linlin(0, 1, -6, 18, param:get()), 1, "dB") end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
@@ -128,9 +153,9 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 2, 8, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 200, 12000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 60, 800, param:get()), 1, "hz") end
+      function(param) return freq_display(util.linexp(0, 1, 200, 12000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 800, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 60, 800, param:get())) end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
@@ -143,8 +168,8 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 40, 600, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 10, param:get()), 0.1, "*") end,
-      function(param) return round_form(util.linexp(0, 1, 600, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 120, 600, param:get()), 1, "hz") end
+      function(param) return freq_display(util.linexp(0, 1, 600, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 120, 600, param:get())) end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
@@ -157,8 +182,8 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 0, 200, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0.01, 1, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 600, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 60, 600, param:get()), 1, "hz") end
+      function(param) return freq_display(util.linexp(0, 1, 600, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 60, 600, param:get())) end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
@@ -167,12 +192,12 @@ prms.specs = {
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 3600, 8600, param:get()), 1, "hz") end,
+      function(param) return freq_display(util.linexp(0, 1, 3600, 8600, param:get())) end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linexp(0, 1, 0.1, 0.8, param:get()), 0.01, "*") end,
       function(param) return round_form(util.linlin(0, 1, 1, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 800, 3600, param:get()), 1, "hz") end
+      function(param) return freq_display(util.linexp(0, 1, 800, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 800, 3600, param:get())) end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 0, mod8 = 0}
   },
@@ -181,12 +206,12 @@ prms.specs = {
     formatters = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 10, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 2200, 8600, param:get()), 1, "hz") end,
+      function(param) return freq_display(util.linexp(0, 1, 2200, 8600, param:get())) end,
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 2, 6, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 1, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 800, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 800, 3200, param:get()), 1, "hz") end
+      function(param) return freq_display(util.linexp(0, 1, 800, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 800, 3200, param:get())) end
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
@@ -199,8 +224,8 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, -100, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linlin(0, 1, 1, 10, param:get()), 0.1, "*") end,
       function(param) return round_form(util.linlin(0, 1, 1, 200, param:get()), 1, "%") end,
-      function(param) return round_form(util.linexp(0, 1, 20, 18000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 20, 18000, param:get()), 1, "hz") end      
+      function(param) return freq_display(util.linexp(0, 1, 20, 18000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 20, 18000, param:get())) end      
     },
     default = {mod1 = 0.5, mod2 = 1, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
@@ -213,35 +238,27 @@ prms.specs = {
       function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
       function(param) return round_form(util.linexp(0, 1, 0.001, 2, param:get()), 0.001, "s") end,
       function(param) return round_form(util.linexp(0, 1, 0.001, 2, param:get()), 0.001, "s") end,
-      function(param) return round_form(util.linexp(0, 1, 20, 20000, param:get()), 1, "hz") end,
-      function(param) return round_form(util.linexp(0, 1, 20, 20000, param:get()), 1, "hz") end  
+      function(param) return freq_display(util.linexp(0, 1, 20, 20000, param:get())) end,
+      function(param) return freq_display(util.linexp(0, 1, 20, 20000, param:get())) end  
     },
     default = {mod1 = 0.5, mod2 = 0.6, mod3 = 0, mod4 = 1, mod5 = 0, mod6 = 0, mod7 = 1, mod8 = 0}
   },
   MIDI = {
     names = {"-", "-", "-", "-", "-", "-"},
     formatters = {
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end,
-      function(param) return round_form(util.linlin(0, 1, 0, 100, param:get()), 1, "%") end
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end,
+      function(param) return "-" end
     },
     default = {}
   },
 }
 
-
-local function pan_display(param)
-  if param < -0.01 then
-    return ("L < "..math.abs(util.round(param * 100, 1)))
-  elseif param > 0.01 then
-    return (math.abs(util.round(param * 100, 1)).." > R")
-  else
-    return "> <"
-  end
-end
 
 local function build_menu()
   for i = 1, NUM_VOICES do
@@ -589,7 +606,7 @@ local function add_params()
       params:add_control("drmfm_mod"..n.."_pmc_"..i, "mod"..n, controlspec.new(-1, 1, "lin", 0, 0, "", 1/200), function(param) return round_form(param:get() * 100, 1, "%") end)
       params:set_action("drmfm_mod"..n.."_pmc_"..i, function(val) local key = ("mod"..n.."M") set_param(i, key, val)  end)
     end
-
+    
     ----- MIDI model params -----
     params:add_number("drmfm_midi_ccA_pmc_"..i, "cc A depth", -127, 127, 0)
     params:set_action("drmfm_midi_ccA_pmc_"..i, function(val) vox[i].midi_ccA_mod = val end)
@@ -650,7 +667,7 @@ end
 
 function drmfm.init_model(i)
   set_default(i)
-  show_message("voice  "..i..":  set  to  default")
+  ui.show_message("voice  "..i..":  set  to  default")
 end
 
 function drmfm.load_default()
@@ -717,13 +734,13 @@ function drmfm.exec_copy(i)
     for _,v in ipairs(prms.kit) do
       params:set("drmfm_"..v.."_"..i , kit.clipboard[v])
     end
-    show_message("pasted   drmFM   voice")
+    ui.show_message("pasted   drmFM   voice")
   else
     for _,v in ipairs(prms.kit) do 
       kit.clipboard[v] = params:get("drmfm_"..v.."_"..i)
     end
     drmfm.copy_data = true
-    show_message("copied   drmFM   voice   "..i)
+    ui.show_message("copied   drmFM   voice   "..i)
   end
 end
 
