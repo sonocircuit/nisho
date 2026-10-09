@@ -141,6 +141,7 @@ function ui.autofocus()
   auto_timer = clock.run(function()
     clock.sleep(20)
     ui.set_view(ui.SCLE)
+    auto_timer = nil
   end)
 end
 
@@ -899,7 +900,7 @@ ui.enc[ui.PRCH] = function(n, d)
 end
 
 ui.redraw[ui.PRCH] = function()
-  local launch_options = {{"play", "load"}, {"upbeat", "dnbeat"}}
+  local launch_options = {{"manual", "scene"}, {"upbeat", "dnbeat"}}
   local launch_mode = p[ptn.focus].prc_option[ptn.bank]
   local num = p[ptn.focus].prc_num[ptn.bank]
   screen.font_size(8)
