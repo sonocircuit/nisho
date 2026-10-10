@@ -6,9 +6,10 @@ local ui = {}
 local shift = false
 local page = 1
 local num_pages = 4
-local auto_timer = nil
-local msg_timer = nil
 local pset_focus = 1
+local msg_timer = nil
+local focus_timer = nil
+local timestamp = util.time()
 
 local pop = {}
 pop.msg = ""
@@ -135,15 +136,17 @@ function ui.page_delta(d)
 end
 
 function ui.autofocus()
-  if auto_timer ~= nil then
-    clock.cancel(auto_timer)
-  end
-  auto_timer = clock.run(function()
-    clock.sleep(20)
-    ui.set_view(ui.SCLE)
-    auto_timer = nil
-  end)
+  timestamp = util.time()
 end
+
+focus_timer = clock.run(function()
+  while true do
+    clock.sleep(10)
+    if util.time() > timestamp + 20 then
+      ui.set_view(ui.SCLE)
+    end
+  end
+end)
 
 function ui.show_message(msg, dur)
   ui.screen_msg = msg
