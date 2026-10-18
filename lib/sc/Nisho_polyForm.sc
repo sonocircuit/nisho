@@ -56,7 +56,7 @@ Nisho_PolyForm {
 					// pulse oscillator
 					pulse_lfo_depth = (pulse_lfo_depth + (mod_pwm_depth * mod_val)).clip(0, 1);
 					lfo_pulse = SinOsc.kr(pulse_lfo_freq, Rand(0, 2pi), 0.44) * pulse_lfo_depth;
-					pulse_width = Lag.kr(pulse_width + lfo_pulse + (mod_pulsewidth * mod_val), 0.05).clip(0.06, 0.94);
+					pulse_width = Lag.kr(pulse_width + lfo_pulse + Line.kr(0, mod_pulsewidth * mod_val, 0.05), 0.05).clip(0.06, 0.94);
 					osc_pulse = Pulse.ar(freq_pulse, pulse_width);
 
 					// variable sawtooth oscillator
