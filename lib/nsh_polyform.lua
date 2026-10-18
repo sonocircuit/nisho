@@ -7,8 +7,8 @@ local vx = require 'voice'
 
 
 local ptch = {}
-ptch.preset_path = "/home/we/dust/data/polyform_patches"
-ptch.default = "/home/we/dust/data/polyform_patches/default.patch"
+ptch.preset_path = "/home/we/dust/data/nisho/polyform_patches"
+ptch.default = "/home/we/dust/data/nisho/polyform_patches/default.patch"
 ptch.failsafe = "/home/we/dust/code/nisho/data/polyform_patches/default.patch"
 ptch.loaded = {"", ""}
 ptch.synth = 1
