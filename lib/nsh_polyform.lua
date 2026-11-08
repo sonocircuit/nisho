@@ -8,8 +8,7 @@ local vx = require 'voice'
 
 local ptch = {}
 ptch.preset_path = "/home/we/dust/data/nisho/polyform_patches"
-ptch.default = "/home/we/dust/data/nisho/polyform_patches/default.patch"
-ptch.failsafe = "/home/we/dust/code/nisho/data/polyform_patches/default.patch"
+ptch.default = { "/home/we/dust/code/nisho/data/default/polyform_mono.patch", "/home/we/dust/code/nisho/data/default/polyform_poly.patch"}
 ptch.loaded = {"", ""}
 ptch.synth = 1
 ptch.list = {}
@@ -128,6 +127,16 @@ local function build_patch_list()
   end
 end
 
+local function save_default_patch(i)
+    local t = {}
+    local s = {"mono", "poly"}
+    for _, v in ipairs(ptch.prms) do
+      t[v] = params:get("polyform_"..v.."_"..i)
+    end
+    tab.save(t, ptch.default[i])
+    print("polyform "..s[i]..": set default")
+end
+
 local function save_synth_patch(txt)
   if txt then
     local t = {}
@@ -158,8 +167,8 @@ local function load_synth_patch(path, i)
         local syn_name = {"polyform[mono]", "polyform[poly]"}
         print("loaded "..syn_name[i]..": "..ptch.loaded[i])
       else
-        if util.file_exists(ptch.failsafe) then
-          load_synth_patch(ptch.failsafe, i)
+        if util.file_exists(ptch.default[i]) then
+          load_synth_patch(ptch.default[i], i)
         end
         print("error: could not find patch", path)
       end
@@ -172,7 +181,7 @@ end
 local function add_params()
    for i = 1, 2 do
     local name = i == 1 and "mono" or "poly"
-    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 78)
+    params:add_group("polyform_synth_"..i, "polyform ["..name.."]", 79)
 
     params:add_separator("polyform_patches_"..i, "polyform ["..name.."]")
 
@@ -181,6 +190,9 @@ local function add_params()
 
     params:add_trigger("polyform_save_patch_"..i, "<< save")
     params:set_action("polyform_save_patch_"..i, function() ptch.synth = i tx.enter(save_synth_patch, ptch.loaded[i]) end)
+
+    params:add_trigger("polyform_set_default_"..i, "<  set default")
+    params:set_action("polyform_set_default_"..i, function() save_default_patch(i) end)
 
     params:add_separator("polyform_levels_"..i, "levels")
     -- main amp
@@ -411,14 +423,8 @@ function polyform.init()
 end
 
 function polyform.load_default()
-  if util.file_exists(ptch.default) then
-    for i = 1, 2 do
-      load_synth_patch(ptch.default, i)
-    end
-  elseif util.file_exists(ptch.failsafe) then
-    for i = 1, 2 do
-      load_synth_patch(ptch.failsafe, i)
-    end
+  for i = 1, 2 do
+    load_synth_patch(ptch.default[i], i)
   end
 end
 
