@@ -50,7 +50,6 @@ local lnc = {x = 13, y = 1}
 local rep_mode = false
 local kit_edit = false
 local kit_mode = false
-local kit_morph = false
 local rec_modes = {"queued", "synced", "free"}
 local pattern_page = false
 
@@ -355,7 +354,7 @@ local function clear_pattern_loop(i)
 end
 
 local function set_pattern_focus(i, view)
-  if ptn.focus ~= i and rec_inactive() and not ui.get_view(ui.POPP) then
+  if rec_inactive() and not ui.get_view(ui.POPP) then
     ptn.focus = i
     held.ptn[i].num = 0
     if view then ui.set_view(view) end
@@ -974,14 +973,14 @@ local function kit_grid(x, y, z, off) -- grid one: off = -7
         if z == 1  then edit_kit_mutes(i) end
       elseif kit_edit and ui.kit_action == 2 then
         if z == 1 then drmfm.exec_copy(i) end
+      elseif (ptn.clear or (mod.a and mod.c) or (mod.b and mod.d)) then
+        if z == 1 then clear_kit_voice(ptn.focus, i) end
+      elseif drmfm.kit_morph then
+        drmfm.key_mod(i, z)
       elseif rep.active then
         if held.kit == 1 and z == 1 then
           reset_trig_step()
         end
-      elseif (ptn.clear or (mod.a and mod.c) or (mod.b and mod.d)) then
-        if z == 1 then clear_kit_voice(ptn.focus, i) end
-      elseif kit_morph then
-        drmfm.key_mod(i, z)
       else
         if z == 1 then
           local e = {t = eKIT, i = 7, note = i, vel = 127, action = "note_on"} event(e)
@@ -1036,10 +1035,11 @@ local function kit_grid(x, y, z, off) -- grid one: off = -7
     end
   elseif x == 13 then
     if y == 10 then
-      kit_morph = z == 1 and true or false
+      drmfm.kit_morph = z == 1 and true or false
       if kit_edit and ui.kit_action == 1 and z == 1 then
         drmfm.kit_mod("run")        
       end
+      ui.draw_view(ui.PKIT)
     elseif y == 11 then
       if mute.edit and z == 1 then
         clear_mutes()
@@ -1159,7 +1159,9 @@ local function seq_settings(x, z)
       clear_freeze()
     end
   elseif x == 3 then
-    fx.freezemode_toggle()
+    if z == 1 then
+      fx.freezemode_toggle()
+    end
   elseif x > 4 and x < 13 then
     if hrmy.config and z == 1 then
       set_hrmy_slot(x - 4)
@@ -1846,8 +1848,8 @@ local function voice_settings_draw(off)
       g:led(i, 7 + off, voice[i].mute and 2 or (voice.int == i and 10 or 4))
       g:led(i + 13, 7 + off, voice[i + 3].mute and 2 or (voice.int == i + 3 and 10 or 4))
     end
-    g:led(i, 8 + off, voice[i].mute and 2 or (voice.keys == i and 10 or 4))
-    g:led(i + 13, 8 + off, voice[i + 3].mute and 2 or (voice.keys == i + 3 and 10 or 4))
+    g:led(i, 8 + off, (voice[i].mute and 2 or (voice.keys == i and 10 or 4))) -- - (voice[i].viz and 2 or 0)
+    g:led(i + 13, 8 + off, (voice[i + 3].mute and 2 or (voice.keys == i + 3 and 10 or 4))) -- - (voice[i + 3].viz and 2 or 0)
     if off == 0 then
       g:led(i, 9, voice[i].sustaining and viz.key_slow or 0)
       g:led(i + 13, 9, voice[i + 3].sustaining and viz.key_slow or 0)
@@ -1880,7 +1882,7 @@ local function kit_grid_draw(off)
     local perf_depth = math.floor(params:get("drmfm_perf_depth") * 15)
     g:led(13, 10 + off, perf_depth > 0 and perf_depth or 1)
   else
-    g:led(13, 10 + off, kit_morph and 15 or 8)
+    g:led(13, 10 + off, drmfm.kit_morph and 15 or 8)
   end
 
   g:led(12, 11 + off, mute.active and viz.key_mid or 1)
