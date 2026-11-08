@@ -86,13 +86,11 @@ function reflection:stop(beat_sync)
   if self.stop_clock or self.play == 0 then return end
   --[[
   if self.play_queued == 1 and self.clock then
-    clock.cancel(self.clock)
-    self.clock = nil
-    self.play_queued = 0
+    self:end_playback()    
     return
   end
   --]]
-  local beat_sync = beat_sync or self.quantize
+  local beat_sync = beat_sync or 1/PPQN
   self.stop_clock = clock.run(function()
     clock.sync(beat_sync)
     self:end_playback()
@@ -306,6 +304,7 @@ end
 function reflection:end_playback()
   self.play = 0
   self.rec = 0
+  self.play_queued = 0
   self.rec_enabled = 0
   if self.endpoint == 0 and next(self.event) then
     self.endpoint = self.step
