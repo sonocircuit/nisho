@@ -266,10 +266,8 @@ jf.add_params = function()
 
   params:add_option("jf_address", "address", {"jf[one]", "jf[two]"}, 1)
   params:set_action("jf_address", function(selected) jf.addr = selected
-    local other = selected == 1 and 2 or 1
     caw.jf_panic(other)
-    crow.ii.jf[selected].mode(1)
-    crow.ii.jf[other].mode(0)
+    caw.manage_ii()
   end)
 
   params:add_option("jf_mode", "mode", {"mono", "poly", "unison"}, 1)
@@ -680,6 +678,7 @@ function caw.manage_ii()
       crow.ii.wsyn.voices(4)
     end
   end
+  crow.ii.jf[jf.addr == 1 and 2 or 1].mode(0)
   crow.ii.jf[jf.addr].mode(ii > 0 and 1 or 0)
   cw[1].active = crow_1 > 0 and true or false
   cw[2].active = crow_2 > 0 and true or false
