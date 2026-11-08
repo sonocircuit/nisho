@@ -65,23 +65,23 @@ Nisho_FX {
 
 			CroneDefs.add(
 				SynthDef(\outputFX, {
-					arg inBus, outBus, compMix = 0, loHz = 20, hiHz = 20000, frzGate = 0, frzTime = 0.2;
-					var snd, cmp, frz, lo, mid, hi, mono, xHz = 80;
+					arg inBus, outBus, compMix = 0, loHz = 20, hiHz = 20000, frzMode = 0, frzGate = 0, frzTime = 0.2;
+					var in, snd, cmp, frz, lo, mid, hi, mono;
+					var frzMax = 2, xHz = 80;
 
 					// slew and clamp
 					compMix = Lag.kr(compMix);
 					loHz = Lag.kr(loHz).clip(20, 20000);
 					hiHz = Lag.kr(hiHz).clip(20, 20000);
-					frzGate = Lag.kr(frzGate, 0.2);
-					//frzTime = Lag.kr(frzTime, 0.001);
-					
+
 					// sound in
-					snd = In.ar(inBus, 2);
-					
-					// freez					
-					frz = DelayC.ar(LocalIn.ar(2), 4, frzTime);
-					snd = XFade2.ar(snd, frz, (frzGate * 2) - 1);
+					in = In.ar(inBus, 2);
+
+					// freez
+					frz = DelayC.ar(LocalIn.ar(2), frzMax, frzTime);
+					snd = XFade2.ar(in, frz, (frzGate * 2) - 1);
 					LocalOut.ar(snd);
+					snd = Select.ar(frzMode * frzGate, [snd, Mix([in, snd])]);
 
 					// hp/lp filter
 					snd = RHPF.ar(snd, hiHz);
@@ -93,10 +93,17 @@ Nisho_FX {
 					snd = mono + snd;
 
 					// compression
-					cmp = tanh(CompanderD.ar(snd, 0.7, 1.0, 0.4, 0.008, 0.2)).softclip;
+					cmp = tanh(Compander.ar(snd, snd, 0.7, 1.0, 0.4, 0.008, 0.2)).softclip;
 					snd = XFade2.ar(snd, cmp, compMix);
-					
+
 					Out.ar(outBus, snd);
+				});
+			);
+
+			CroneDefs.add(
+				SynthDef(\routeBus, {
+					arg inBus, outBus;		
+					Out.ar(outBus, In.ar(inBus, 2));
 				});
 			);
 
@@ -105,7 +112,7 @@ Nisho_FX {
 					arg inBus, outBus, sendBus,
 					amp = 1, send = 0, mod = 0, mode = 0, timeL = 0.4, timeR = 0.4, fb = 0.6, hzLpf = 2400, hzHpf = 80;
 					var modT, modOsc, tL, tR, rtn, rtnL, rtnR, dry, dly, dlyL, dlyR;
-					var modHz = 12, tMax = 4, modF = 0.008;
+					var modHz = 12, tMax = 2, modF = 0.008;
 
 					timeL = Lag.kr(timeL, 0.4);
 					timeR = Lag.kr(timeR, 0.4);
