@@ -26,11 +26,11 @@ ui = include 'lib/nsh_ui'
 
 engine.name = "Nisho"
 
-
 -- user variables
 local load_pset = false
 local load_tempo = true
 local rotate_grid = false
+lite_mode = false
 
 -- scale
 local scale = {}
@@ -56,6 +56,7 @@ for i = 1, 6 do
   voice[i].keys_option = 1
   voice[i].velocity = 100
   voice[i].midi_ch = i
+  voice[i].viz = false
 end
 
 -- drum keys
@@ -339,10 +340,11 @@ quant.active = false
 quant.keys = 1/4
 quant.bar = 4
 quant.scene = 3
+quant.stop = 3
 quant.loop_set = 1
 quant.loop_clr = 4
-quant.ids = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16","1/32"}
-quant.val = {1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 1/32}
+quant.rate_ids = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16","1/32"}
+quant.rate_val = {1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16, 1/32}
 
 -- events
 eSCALE = 1
@@ -436,6 +438,7 @@ prms.kit = {
     {"midi_channel", "midi_vel", "midi_ccB_num"}
   }
 }
+
 prms.kitmod_param = {DM = 1, UW = 1, MIDI = 1}
 prms.kitmod = {
   DM = {
@@ -453,14 +456,8 @@ prms.kitmod = {
 }
 
 prms.ptn_param = 1
-prms.ptn_ids = {
-  {"patterns_meter_", "patterns_launch_", "patterns_playback_", "patterns_glb_transpose_"},
-  {"patterns_barnum_", "patterns_scene_", "patterns_quantize_", "patterns_transpose_"}
-}
-prms.ptn_nms = {
-  {"meter", "launch", "playback", "glb   trsp"},
-  {"length", "scene", "quantize", "transpose"}
-}
+prms.ptn_pnum = 4
+prms.ptn_alloc = {"free", "voice 1", "voice 2", "voice 3", "voice 4", "voice 5", "voice 6", "kit", "midi"}
 
 prms.keys_param = 1
 prms.keys_ids = {
@@ -473,6 +470,15 @@ prms.keys_nms = {
 }
 prms.keys_setting = {"output", "velocity", "velocity", "pitchbend", "modwheel", "aftertouch"}
 
+prms.time_param = 1
+prms.time_ids = {
+  {"time_signature", "scene_quantization", "loop_set_q"},
+  {"key_quantization", "stop_quantization", "loop_clr_q"}
+}
+prms.time_nms = {
+  {"time  signature", "scene  launch", "set"},
+  {"key  quantization", "scene  stop", "clear"}
+}
  
 local function build_voice_params()
   -- polyform & crow
@@ -527,25 +533,30 @@ local function build_voice_params()
   }
 end
 
-local function set_voice_output(i, val, prev_val)
+local function set_voice_output(i, val)
+  if caw.detected() == false then
+    local prev_val = voice[i].output
+    local nextval = (prev_val == (val + 1)) or (prev_val == (val - 1))
+    if nextval then
+      if prev_val <= MID and val > MID then
+        params:set("voice_out_"..i, NB1)
+        val = NB1
+      elseif prev_val >= NB1 and val < NB1 then
+        params:set("voice_out_"..i, MID)
+        val = MID
+      end
+    end
+  end
+  -- set voice
   voice[i].output = val
   p[i].prc_type = val < 3 and val or 3
-  caw.manage_ii()
-  -- reset voice params
-  local ptab = prms.voice[voice[i].output].ids[1]
+  local ptab = prms.voice[val].ids[1]
   if ptab then
     if prms.voice_param[i] > #ptab then
       prms.voice_param[i] = 1
     end
   end
-  -- clamp range
-  if caw.detected() == false then
-    if prev_val < CW1 and val > MID then
-      params:set("voice_out_"..i, NB1)
-    elseif prev_val > WSY and val < NB1 then
-      params:set("voice_out_"..i, MID)
-    end
-  end
+  caw.manage_ii()
 end
 
 function set_hrmy_slot(i)
@@ -699,7 +710,7 @@ function event_nq(e)
   event_exec(e)
 end
 
-local function event_q_clock()
+local function event_q()
   while true do
     clock.sync(quant.keys)
     if #quant.event > 0 then
@@ -717,9 +728,9 @@ end
 ptn = {}
 -- params
 ptn.launch_modes = {"manual", "beat", "bar"}
-ptn.playback_modes = {"loop", "oneshot"}
+ptn.playback_modes = {"oneshot", "loop"}
 ptn.quant_ids = {"1/4", "3/16", "1/6", "1/8", "3/32", "1/12", "1/16", "3/64", "1/24", "1/32", "3/128", "1/48", "1/64"}
-ptn.quant_val = {1, 3/4, 2/3, 1/2, 3/8, 1/3, 1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16}
+ptn.quant_val = {1/1, 3/4, 2/3, 1/2, 3/8, 1/3, 1/4, 3/16, 1/6, 1/8, 3/32, 1/12, 1/16}
 ptn.meter_ids = {"2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "9/4", "11/4"}
 ptn.meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 -- preset and pattern loading
@@ -894,19 +905,24 @@ function clear_active_notes(i)
   end
 end
 
-function set_pattern_length(i)
+function set_pattern_length(i, override)
   if ptn[i].rec == 0 then
-    local prev_length = ptn[i].length
-    ptn[i].length = ptn[i].meter * ptn[i].barnum * 4
-    if prev_length ~= ptn[i].length then
-      -- set length
-      ptn[i].endpoint = ptn[i].length * 64
-      ptn[i].step_max = ptn[i].endpoint
-      -- save bank
-      p[i].endpoint[p[i].bank] = ptn[i].endpoint
-      p[i].barnum[p[i].bank] = ptn[i].barnum
-      p[i].meter[p[i].bank] = ptn[i].meter
-      p[i].length[p[i].bank] = ptn[i].length
+    if override then ptn[i].manual_length = false end
+    if not ptn[i].manual_length then
+      local prev_len = ptn[i].length
+      ptn[i].length = ptn[i].meter * ptn[i].barnum * 4
+      if (prev_len ~= ptn[i].length) or override then
+        -- set endpoint
+        ptn[i].endpoint = ptn[i].length * 64
+        ptn[i].step_max = ptn[i].endpoint
+        -- save bank
+        local bank = p[i].bank
+        p[i].endpoint[bank] = ptn[i].endpoint
+        p[i].barnum[bank] = ptn[i].barnum
+        p[i].meter[bank] = ptn[i].meter
+        p[i].length[bank] = ptn[i].length
+        ui.draw_view(ui.PPTN)
+      end
     end
   end
 end
@@ -917,14 +933,13 @@ function update_pattern_length(i)
   end
 end
 
-function reset_pattern_length(i, bank)
+function reset_pattern_length(i)
+  local bank = p[i].bank
   p[i].endpoint[bank] = p[i].endpoint_init[bank]
   if (p[i].endpoint_init[bank] % 64 ~= 0 or p[i].endpoint_init[bank] < 128) then
     p[i].manual_length[bank] = true
   end
-  if bank == p[i].bank then
-    load_pattern_bank(i, bank)
-  end
+  load_pattern_bank(i, bank)
 end
 
 function save_pattern_bank(i, bank)
@@ -941,11 +956,10 @@ function save_pattern_bank(i, bank)
   p[i].length[bank] = ptn[i].length
   p[i].manual_length[bank] = ptn[i].manual_length
   ui.draw_view(ui.PPTN)
-  dirtygrid = true
 end
 
 function load_pattern_bank(i, bank)
-  if ptn[i].play == 1 and p[i].count[bank] == 0 then ptn[i]:stop(1/64) end
+  if ptn[i].play == 1 and p[i].count[bank] == 0 then ptn[i]:stop() end
   p[i].looping = false
   ptn[i].manual_length = p[i].manual_length[bank]
   ptn[i].count = p[i].count[bank]
@@ -961,17 +975,7 @@ function load_pattern_bank(i, bank)
   ptn[i].barnum = p[i].barnum[bank]
   ptn[i].meter = p[i].meter[bank]
   ptn[i].length = p[i].length[bank]
-  params:set("patterns_playback_"..i, ptn[i].loop == 1 and 1 or 2)
-  params:set("patterns_quantize_"..i, tab.key(ptn.quant_val, ptn[i].quantize))
-  params:set("patterns_launch_"..i, ptn[i].launch)
-  params:set("patterns_scene_"..i, ptn[i].scene and 2 or 1)
-  params:set("patterns_transpose_"..i, 0)
-  if not ptn[i].manual_length then
-    params:set("patterns_barnum_"..i, math.floor(util.clamp(ptn[i].barnum, 1, 16)))
-    params:set("patterns_meter_"..i, tab.key(ptn.meter_val, ptn[i].meter))
-  end
   ui.draw_view(ui.PPTN)
-  dirtygrid = true
 end
 
 function set_pattern_bank(i, bank)
@@ -1003,11 +1007,12 @@ end
 
 function run_stop_timer()
   if ptn.stop_timer == nil then
+    local beat_sync = quant.stop == 2 and 1 or (quant.stop == 3 and quant.bar or 1/64)
     ptn.stop_timer = clock.run(function()
-      clock.sync(quant.bar, -1/4)
+      clock.sync(beat_sync, -1/64)
       for i = 1, 8 do
         if p[i].stop and ptn[i].play == 1 then
-          ptn[i]:stop(1/64)
+          ptn[i]:stop()
           p[i].stop = false
         end
       end
@@ -1202,11 +1207,10 @@ function transpose_pattern(i, deg)
         end
       end
     end
-    params:set("patterns_transpose_"..ptn.focus, 0)
+    ptn[i].transpose = 0
     ui.show_message("pattern    transposed")
   end
 end
-
 
 function copy_pattern(src, src_bank, dst, dst_bank)
   p[dst].loop[dst_bank] = p[src].loop[src_bank]
@@ -1252,7 +1256,7 @@ function append_pattern(src, src_bank, dst, dst_bank, src_s, src_e)
       local n = p[dst].endpoint[dst_bank] > 128 and 2 or 1
       for i = n, #ptn.meter_val do
         local new_meter = ptn.meter_val[i]
-        local new_count = num_beats / (new_meter * 4)
+        local new_count = math.floor(num_beats / (new_meter * 4))
         if new_count % 1 == 0 then
           p[dst].barnum[dst_bank] = new_count
           p[dst].meter[dst_bank] = new_meter
@@ -1363,7 +1367,6 @@ function load_patterns(pset_id)
     end
   end
   ui.draw_view(ui.PPTN)
-  dirtygrid = true
 end
 
 function load_pattern_data(pset_id)
@@ -1439,6 +1442,45 @@ function clear_kit_voice(i, vox)
       ui.show_message("voice  "..vox..":  cleared    "..num_cleared.."   events")
     else
       ui.show_message("no   events   found")
+    end
+  end
+end
+
+----------------- pattern conversion -----------------
+function convert_kit(i)
+  if ptn[i].count > 0 then
+    local events = deep_copy(ptn[i].event)
+    for s, _ in pairs(events) do
+      for n, e in pairs(events[s]) do
+        if e.t == eKIT then
+          local new_note = (e.note % 16) -- + 1
+          ptn[i].event[s][n].note = new_note
+          p[i].event[p[i].bank][s][n].note = new_note
+          if e.action == nil then
+            ptn[i].event[s][n].action = "note_on"
+            p[i].event[p[i].bank][s][n].action = "note_on"
+          end
+        end
+      end
+    end
+  end
+end
+
+function convert_pattern_ppqn(from, to)
+  local factor = to/from
+  for i = 1, 8 do
+    for j = 1, 24 do
+      if p[i].count[j] > 0 then
+        local event = deep_copy(p[i].event[j])
+        p[i].event[j] = {}
+        for s, e in pairs(event) do
+          local step = math.floor(s * factor)
+          if p[i].event[j][step] == nil then
+            p[i].event[j][step] = {}
+          end
+          table.insert(p[i].event[j][step], e)
+        end
+      end
     end
   end
 end
@@ -1553,6 +1595,7 @@ function stop_callback()
   end
   ptn.stop_all = false
   seq.active = false
+  rep.active = false
   seq.step = 0
   dirtygrid = true
   clear_all_notes()
@@ -1796,7 +1839,7 @@ local function ansi_rep(notetab)
   end
 end
 
-local function run_keyrepeat()
+local function run_rep()
   while true do
     clock.sync(rep.rate)
     if rep.active then
@@ -1987,7 +2030,7 @@ local function send_modwheel(i, val)
   if voice[i].output == PF1 or voice[i].output == PF2 then
     polyform.set_modwheel(voice[i].output, val)
   elseif voice[i].output == MID then
-    local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
+    local m_val = math.floor(val * 127)
     m[i]:cc(1, m_val, voice[i].midi_ch)
   elseif voice[i].output == CW1 or voice[i].output == CW2 then
     local n = voice[i].output - CW1 + 1
@@ -2024,7 +2067,7 @@ local function send_aftertouch(i, val)
   if voice[i].output == PF1 or voice[i].output == PF2 then
     polyform.set_aftertouch(voice[i].output, val)
   elseif voice[i].output == MID then
-    local m_val = math.floor(util.linlin(0, 1, 0, 127, val))
+    local m_val = math.floor(val * 127)
     m[i]:channel_pressure(m_val, voice[i].midi_ch)
   elseif voice[i].output == CW1 or voice[i].output == CW2 then
     local n = voice[i].output - CW1 + 1
@@ -2084,7 +2127,7 @@ function voice_note_on(i, note_num, vel)
     caw.wsyn_note_on(note_num, vel)
   elseif voice[i].output == NB1 or voice[i].output == NB2 then
     local player = params:lookup_param("nb_player_"..(voice[i].output - NB1 + 1)):get_player()
-    local vel = util.linlin(0, 127, 0, 1, (vel or 127))
+    local vel = (vel or 127) / 127
     player:note_on(note_num, vel)
   end
   if m.thru then
@@ -2092,6 +2135,7 @@ function voice_note_on(i, note_num, vel)
     m[m.out_id]:note_on(note_num, vel, channel)
   end
   nv.viz[tab.key(nv.notes, note_num % 12)] = true
+  voice[i].viz = true
   ui.draw_view(ui.SCLE)
 end
 
@@ -2115,6 +2159,7 @@ function voice_note_off(i, note_num)
     m[m.out_id]:note_off(note_num, 0, channel)
   end
   nv.viz[tab.key(nv.notes, note_num % 12)] = false
+  voice[i].viz = false
   ui.draw_view(ui.SCLE)
 end
 
@@ -2217,7 +2262,6 @@ local function pset_write_callback(filename, name, number)
   for i = 1, 8 do
     pdata.ptn[i] = {}
     pdata.ptn[i].glb_transpose = ptn[i].glb_transpose
-    pdata.ptn[i].transpose = ptn[i].transpose
     pdata.ptn[i].alloc = ptn[i].alloc
     pdata.ptn[i].bank = p[i].bank
     pdata.ptn[i].loop = {}
@@ -2299,6 +2343,8 @@ local function pset_read_callback(filename, silent, number)
     if pdata.nisho_v2_0 then
       -- load patterns
       for i = 1, 8 do
+        ptn[i].glb_transpose = pdata.ptn[i].glb_transpose
+        ptn[i].alloc = pdata.ptn[i].alloc
         for j = 1, 24 do
           p[i].loop[j] = pdata.ptn[i].loop[j]
           p[i].quantize[j] = pdata.ptn[i].quantize[j]
@@ -2313,7 +2359,7 @@ local function pset_read_callback(filename, silent, number)
           p[i].prc_num[j] = pdata.ptn[i].prc_num[j]
           p[i].prc_option[j] = pdata.ptn[i].prc_option[j]
           p[i].launch[j] = pdata.ptn[i].launch[j]
-          p[i].scene[j] = pdata.ptn[i].scene and pdata.ptn[i].scene[j] or true
+          p[i].scene[j] = pdata.ptn[i].scene[j]
         end
         p[i].prc_enabled = pdata.ptn[i].prc_enabled
         p[i].prc_ch = pdata.ptn[i].prc_ch
@@ -2345,7 +2391,6 @@ local function pset_read_callback(filename, silent, number)
       if load_tempo then
         params:set("clock_tempo", pdata.tempo)
       end
-      fx.update_rates()
       dirtyscreen = true
       dirtygrid = true
       pm.ps_last = tonumber(number)
@@ -2410,7 +2455,6 @@ end
 
 --------------------- INIT! INNIT? ---------------------
 function init()
-
   -- get grid size
   grd.get_size()
 
@@ -2446,21 +2490,25 @@ function init()
     ui.draw_view(ui.SCLE)
   end)
 
-  params:add_group("timing", "timing", 7)
+  params:add_group("timing", "timing", 8)
   params:add_option("metronome_viz", "metronome", {"hide", "show"}, 2)
   params:set_action("metronome_viz", function(mode) set_metronome(mode) end)
 
   params:add_number("time_signature", "time signature", 2, 9, 4, function(param) return param:get().."/4" end)
   params:set_action("time_signature", function(val) quant.bar = val end)
         
-  params:add_option("key_quantization", "key quantization", quant.ids, 7)
-  params:set_action("key_quantization", function(idx) quant.keys = quant.val[idx] * 4 end)
+  params:add_option("key_quantization", "key quantization", quant.rate_ids, 7)
+  params:set_action("key_quantization", function(idx) quant.keys = quant.rate_val[idx] * 4 end)
   
   params:add_option("seq_rate", "sequencer rate", seq.rate_ids, 7)
   params:set_action("seq_rate", function(idx) seq.rate = seq.rate_val[idx] * 4 end)
+  params:hide("seq_rate")
 
   params:add_option("scene_quantization", "scene launch", ptn.launch_modes, 3)
   params:set_action("scene_quantization", function(mode) quant.scene = mode end)
+
+  params:add_option("stop_quantization", "scene stop", ptn.launch_modes, 3)
+  params:set_action("stop_quantization", function(mode) quant.stop = mode end)
 
   params:add_option("loop_set_q", "set pattern loop", ptn.launch_modes, 2)
   params:set_action("loop_set_q", function(mode) quant.loop_set = mode end)
@@ -2571,77 +2619,13 @@ function init()
     params:set_action("keys_octaves_"..i, function(val) notes.key_oct[i] = val end)
   end
 
-  -- patterns params
-  params:add_group("pattern_parameters", "pattern parameters", 72)
-  params:hide("pattern_parameters")
-  for i = 1, 8 do
-  
-    params:add_option("patterns_playback_"..i, "playback", ptn.playback_modes, 1)
-    params:set_action("patterns_playback_"..i, function(mode)
-      local state = mode == 1 and 1 or 0
-      ptn[i].loop = state
-      p[i].loop[p[i].bank] = state
-    end)
-
-    params:add_option("patterns_quantize_"..i, "quantize", ptn.quant_ids, 13)
-    params:set_action("patterns_quantize_"..i, function(idx)
-      local val = ptn.quant_val[idx]
-      ptn[i].quantize = val
-      p[i].quantize[p[i].bank] = val
-    end)
-
-    params:add_option("patterns_launch_"..i, "pattern launch", ptn.launch_modes, 3)
-    params:set_action("patterns_launch_"..i, function(mode)
-      ptn[i].launch = mode
-      p[i].launch[p[i].bank] = mode
-    end)
-
-    params:add_option("patterns_scene_"..i, "scene launch", {"off", "on"}, 2)
-    params:set_action("patterns_scene_"..i, function(mode)
-      local state = mode == 2 and true or false
-      ptn[i].scene = state
-      p[i].scene[p[i].bank] = state
-    end)
-
-    params:add_option("patterns_meter_"..i, "meter", ptn.meter_ids, 3)
-    params:set_action("patterns_meter_"..i, function(idx)
-      local val = ptn.meter_val[idx]
-      ptn[i].meter = val
-      p[i].meter[p[i].bank] = val
-      update_pattern_length(i)
-    end)
-
-    params:add_number("patterns_barnum_"..i, "length", 1, 16, 4, function(param) return param:get()..(param:get() == 1 and " bar" or " bars") end)
-    params:set_action("patterns_barnum_"..i, function(num)
-      ptn[i].barnum = num
-      p[i].barnum[p[i].bank] = num
-      update_pattern_length(i)
-      dirtygrid = true
-    end)
-
-    params:add_option("patterns_glb_transpose_"..i, "global transpose", {"off", "on"}, 1)
-    params:set_action("patterns_glb_transpose_"..i, function(val)
-      ptn[i].glb_transpose = val == 2 and true or false
-    end)
-
-    params:add_number("patterns_transpose_"..i, "transpose", -12, 12, 0, function(param) return param:get().." deg" end)
-    params:set_action("patterns_transpose_"..i, function(val)
-      ptn[i].transpose = val
-    end)
-
-    params:add_option("patterns_alloc_"..i, "allocate", {"free", "voice 1", "voice 2", "voice 3", "voice 4", "voice 5", "voice 6", "kit", "midi"}, 1)
-    params:set_action("patterns_alloc_"..i, function(val)
-      ptn[i].alloc = val - 1
-    end)
-  end
-
   -- voice params
   params:add_group("voices", "voices", 15 * 6)
   params:hide("voices")
   for i = 1, 6 do
     -- output
     params:add_option("voice_out_"..i, "output", prms.voice_outputs, (i > 2 and 3 or i))
-    params:set_action("voice_out_"..i, function(val) set_voice_output(i, val, voice[i].output) end)
+    params:set_action("voice_out_"..i, function(val) set_voice_output(i, val) end)
     -- mute
     params:add_option("voice_mute_"..i, "mute", {"off", "on"}, 1)
     params:set_action("voice_mute_"..i, function(mode) voice[i].mute = mode == 2 and true or false end)
@@ -2734,7 +2718,7 @@ function init()
   nb:add_player_params()
   
   -- fx
-  fx.init()
+  fx.init(lite_mode)
 
   -- callbacks
   grid.add = grd.get_size()
@@ -2759,9 +2743,9 @@ function init()
   dirtyscreen = true
 
   -- clocks
-  evt_clk = clock.run(event_q_clock)
+  evt_clk = clock.run(event_q)
   seq_clk = clock.run(run_seq)
-  rep_clk = clock.run(run_keyrepeat)
+  rep_clk = clock.run(run_rep)
 
   -- lattice
   vizclock = lt:new()
@@ -2796,8 +2780,8 @@ function init()
   end
 
   -- set defaults
+  --fx.set_sum_stage(lite_mode)
   fx.update_rates()
-  
 end
 
 
@@ -2806,7 +2790,5 @@ end
 function cleanup()
   clear_all_notes()
   vizclock:destroy()
-  crow.ii.jf[1].mode(0)
-  crow.ii.jf[2].mode(0)
   grd.banner()
 end
