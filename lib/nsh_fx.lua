@@ -9,9 +9,9 @@ del.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/
 del.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
 
 local frz = {}
-frz.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
-frz.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
-frz.defaults = {1, 6, 4, 9, 7, 10, 12, 13}
+frz.rate_names = {"1/32", "1/24", "3/64", "1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4", "1/3", "3/8", "1/2", "2/3", "3/4", "1"}
+frz.rate_values = {1/32, 1/24, 3/64, 1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
+frz.defaults = {4, 6, 7, 9, 10, 12, 13, 15}
 frz.focus = 1
 for i = 1, 8 do
   frz[i] = {}
@@ -88,7 +88,7 @@ local function set_rates()
   end
 end
 
-local function add_params()
+local function add_params(lite)
   params:add_separator("fx_params", "fx")
   
   params:add_group("nisho_ledelay", "fx [delay]", 14)
@@ -161,6 +161,7 @@ local function add_params()
 
   
   params:add_group("freeze_delay", "fx [freez]", 13)
+  if lite then params:hide("freeze_delay") end
 
   params:add_option("freez_mode", "mode", {"isolate", "passthru"}, 1)
   params:set_action("freez_mode", function(mode) frz.mode = mode engine.sum_set_param("frzMode", mode - 1) end)
@@ -181,6 +182,7 @@ local function add_params()
 
 
   params:add_group("sum_stage", "fx [sum]", 3)
+  if lite then params:hide("sum_stage") end
 
   params:add_control("sum_compressor", "compressor", controlspec.new(0, 1, "lin", 0, 0.6), function(param) return round_form(param:get() * 100, 1, "%") end)
   params:set_action("sum_compressor", function(x) engine.sum_set_param("compMix", x) end)
@@ -196,6 +198,15 @@ end
 ------------------- fx -------------------
 
 local fx = {}
+
+function fx.init(lite)
+  add_params(lite)
+end
+
+function fx.set_sum_stage(lite)
+  local def = lite and "routeBus" or "outputFX"
+  --engine.sum_set_stage(def)
+end
 
 function fx.update_rates()
   set_rates()
@@ -218,11 +229,6 @@ function fx.freezedelay(slot, state, num_held)
   elseif num_held < 1 then
     engine.sum_set_param("frzGate", 0)
   end
-end
-
--- initialize
-function fx.init()
-  add_params()
 end
 
 return fx
