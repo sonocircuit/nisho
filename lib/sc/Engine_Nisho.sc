@@ -7,6 +7,7 @@ Engine_Nisho : CroneEngine {
 	var numMono = 2;
 	var numPoly = 6;
 	var numKit = 16;
+	var numChk = 8;
 
 	var kitParams;
 	var kitVoiceParams;
@@ -14,7 +15,6 @@ Engine_Nisho : CroneEngine {
 	var monoParams;
 	var polyParams;
 
-	var mainGroup;
 	var monoGroup;
 	var polyGroup;
 	var kitGroup;
@@ -42,7 +42,6 @@ Engine_Nisho : CroneEngine {
 	var reverbFx;
 
 	var nozBuf;
-	var delBuf;
 
 	var loadQueue;
 	var loadingSamples = false;
@@ -174,7 +173,7 @@ Engine_Nisho : CroneEngine {
 		polyVoices = Array.newClear(numPoly);
 		kitVoices = Array.newClear(numKit);
 		kitDef = Array.fill(numKit, { \UW });
-		kitChk = Array.fill(16, {|i| i%8});
+		kitChk = Array.fill(numKit, {|i| i%numChk});
 
 		// add kit buffer
 		loadQueue = Array.new(numKit);
@@ -183,7 +182,6 @@ Engine_Nisho : CroneEngine {
 		context.server.sync;
 
 		// add groups
-		//mainGroup = Group.new(context.xg);
 		monoGroup = Group.tail(context.xg); // polyForm mono
 		polyGroup = Group.tail(context.xg); // polyForm poly
 		kitGroup = Group.tail(context.xg);  // drmFM
@@ -201,14 +199,7 @@ Engine_Nisho : CroneEngine {
 		~nishoDelayBus = delayBus;
 		~nishoReverbBus = reverbBus;
 		~nishoSumBus = sumBus;
-
-		context.server.sync;
-		
-		// add freeze buffers
-		//delBuf =Array.newClear(2);
-		//delBuf[0] = Buffer.alloc(context.server, 2.pow(18));
-		//delBuf[1] = Buffer.alloc(context.server, 2.pow(18));
-		
+			
 		context.server.sync;
 
 		// render noise buffers
@@ -269,6 +260,8 @@ Engine_Nisho : CroneEngine {
 			context.og, 'addToTail'
 		);
 
+		context.server.sync;
+
 		delayFx = Synth.new(\leDelay,
 			[
 				\inBus, delayBus,
@@ -286,16 +279,16 @@ Engine_Nisho : CroneEngine {
 			context.og, 'addToTail'
 		);
 
+		context.server.sync;
+		
 		sumStage = Synth.new(\outputFX,
 			[
 				\inBus, sumBus,
-				\outBus, context.out_b,
-				//\bufL, delBuf[0],
-				//\bufR, delBuf[1]
+				\outBus, context.out_b
 			],
 			context.og, 'addToTail'
 		);
-
+	
 		context.server.sync;
 
 		this.addCommands();
@@ -573,7 +566,7 @@ Engine_Nisho : CroneEngine {
 		this.addCommand(\sum_set_param, "sf", { arg msg;
 			var key = msg[1].asSymbol;
 			var val = msg[2].asFloat;
-			sumStage.set(key, val);
+			if (sumStage.notNil) {sumStage.set(key, val)};
 		});
 
 	}
