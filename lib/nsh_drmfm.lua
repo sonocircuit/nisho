@@ -583,7 +583,7 @@ local function add_params()
   params:add_separator("drmfm_modulation_settings", "morph settings")
 
   params:add_control("drmfm_perf_depth", "morph depth", controlspec.new(0, 1, "lin", 0, 0), function(param) return round_form(param:get() * 100, 1, "%") end)
-  params:set_action("drmfm_perf_depth", function(val) set_perf_macros(val) end)
+  params:set_action("drmfm_perf_depth", function(val) set_perf_macros(val) ui.draw_view(ui.EKIT) end)
 
   params:add_number("drmfm_perf_time", "morph time", 2, 32, 8, function(param) return param:get().." beats" end)
 
@@ -620,6 +620,7 @@ end
 -------------------------- drmfm --------------------------
 
 local drmfm = {}
+drmfm.kit_morph = false
 drmfm.copy_data = false
 drmfm.viz = {}
 for i = 1, NUM_VOICES do
