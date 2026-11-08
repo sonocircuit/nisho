@@ -2,6 +2,8 @@
 
 local ui = {}
 
+local mu = require 'musicutil'
+
 -- locals
 local shift = false
 local page = 1
@@ -27,7 +29,6 @@ ui.kit_action = 1
 ui.kit_options = false
 ui.screen_msg = ""
 
--- index variables
 ui.SCLE = 1  -- main scale/notes
 ui.PVOX = 2  -- voice param
 ui.PPTN = 3  -- pattern param
@@ -61,7 +62,7 @@ local function enter_nb_params(i)
       end
     end
     table.sort(names)
-    local nb_pos = tab.key(names, players[i].name) + (caw.detected() and 21 or 16)
+    local nb_pos = tab.key(names, players[i].name) + (caw.detected() and 22 or 16)
     _menu.set_mode(true)
     _menu.set_page("PARAMS")
     _menu.m.PARAMS.mode = 1
@@ -100,6 +101,7 @@ end
 function ui.draw_view(view)
   if ui.view == view then
     dirtyscreen = true
+    dirtygrid = true
   end
 end
 
@@ -143,7 +145,9 @@ focus_timer = clock.run(function()
   while true do
     clock.sleep(10)
     if util.time() > timestamp + 20 then
-      ui.set_view(ui.SCLE)
+      if ui.view ~= ui.POPP then
+        ui.set_view(ui.SCLE)
+      end
     end
   end
 end)
@@ -205,7 +209,6 @@ ui.redraw[ui.MSGV] = function()
 end
 
 -- popup ui --------------------------------------------
-
 ui.key[ui.POPP] = function(n, z)
   if z == 1 then
     if n == 2 then
@@ -239,13 +242,35 @@ ui.redraw[ui.POPP] = function()
   screen.text_center("no   <")
   screen.move(108, 60)
   screen.text_center(">   yes")
-  screen.update()
 end
 
 -- notes ui --------------------------------------------
-
 ui.key[ui.SCLE] = function(n, z)
-  if shift then ui.key[ui.QKEY](n, z) end
+  if shift then  
+    if n == 2 then
+      if params:get("clock_source") == 3 then
+        clock.link.stop()
+      else
+        m[m.tsrp_id]:stop()
+      end
+      stop_callback()
+      ui.show_message("stop")
+    elseif n == 3 then
+      if params:get("clock_source") == 3 then
+        clock.link.start()
+        ui.show_message("> start")
+        start_callback()
+      else
+        ui.show_message("starting...", 10)
+        clock.run(function()
+          clock.sync(quant.bar)
+          m[m.tsrp_id]:start()
+          ui.show_message("> start")
+          start_callback()
+        end)
+      end
+    end
+  end
 end
 
 ui.enc[ui.SCLE] = function(n, d)
@@ -318,8 +343,8 @@ ui.redraw[ui.SCLE] = function()
   end
 end
 
--- voice ui --------------------------------------------
 
+-- voice ui --------------------------------------------
 ui.key[ui.PVOX] = function(n, z)
   if z == 1 then
     local d = n == 2 and -1 or 1
@@ -454,20 +479,16 @@ ui.redraw[ui.PVOX] = function()
   end
 end
 
+
 -- pattern ui --------------------------------------------
-
-
 ui.key[ui.PPTN] = function(n, z)
   if z == 1 then
     if shift then
       if prms.ptn_param == 1 then
         if n == 2 then
-          ptn[ptn.focus].manual_length = false
-          ptn[ptn.focus].length = ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4
-          ptn[ptn.focus]:set_length(ptn[ptn.focus].length)
-          save_pattern_bank(ptn.focus, p[ptn.focus].bank)
+          set_pattern_length(ptn.focus, true)
         elseif n == 3 then
-          reset_pattern_length(ptn.focus, p[ptn.focus].bank)
+          reset_pattern_length(ptn.focus)
         end
       elseif prms.ptn_param == 3 then
         remap_pattern_voice(ptn.focus, ptn.remap_src, ptn.remap_dst)
@@ -476,57 +497,130 @@ ui.key[ui.PPTN] = function(n, z)
       end
     else
       local d = n == 2 and -1 or 1
-      prms.ptn_param = util.wrap(prms.ptn_param + d, 1, #prms.ptn_ids[1])
+      prms.ptn_param = util.wrap(prms.ptn_param + d, 1, prms.ptn_pnum)
     end
   end
   dirtygrid = true
 end
 
 ui.enc[ui.PPTN] = function(n, d)
-  if shift then
-    if prms.ptn_param == 2 then
-      params:delta("patterns_alloc_"..ptn.focus, d)
-    elseif prms.ptn_param == 3 then
+  if prms.ptn_param == 1 then
+    if ptn[ptn.focus].manual_length then
+      ui.show_message("K1+K2:  edit  length")
+    elseif (ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) then
+      ui.show_message("change  rec  mode")
+    else
       if n == 2 then
-        ptn.remap_src = util.clamp(ptn.remap_src + d, 1, NUM_VOICES)
+        local idx = util.clamp(tab.key(ptn.meter_val, ptn[ptn.focus].meter) + d, 1, #ptn.meter_val)
+        ptn[ptn.focus].meter = ptn.meter_val[idx]
       elseif n == 3 then
-        ptn.remap_dst = util.clamp(ptn.remap_dst + d, 1, NUM_VOICES)
+        ptn[ptn.focus].barnum = math.floor(util.clamp(ptn[ptn.focus].barnum + d, 1, 16))
+      end
+      update_pattern_length(ptn.focus)
+    end
+  elseif prms.ptn_param == 2 then
+    if shift then
+      ptn[ptn.focus].alloc = util.clamp(ptn[ptn.focus].alloc + d, 0, 8)
+    else
+      if n == 2 then
+        local mode = util.clamp(ptn[ptn.focus].launch + d, 1, 3)
+        ptn[ptn.focus].launch = mode
+        p[ptn.focus].launch[p[ptn.focus].bank] = mode
+      elseif n == 3 then
+        local state = ptn[ptn.focus].scene and 2 or 1
+        state = util.clamp(state + d, 1, 2) == 2 and true or false
+        ptn[ptn.focus].scene = state
+        p[ptn.focus].scene[p[ptn.focus].bank] = state
       end
     end
-  else
-    if not (prms.ptn_focus == 1 and ((ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) or ptn[ptn.focus].manual_length)) and n > 1 then
-      params:delta(prms.ptn_ids[n - 1][prms.ptn_param]..ptn.focus, d)
+  elseif prms.ptn_param == 3 then
+    if shift then
+      if n == 2 then
+        ptn.remap_src = util.clamp(ptn.remap_src + d, 1, 6)
+      elseif n == 3 then
+        ptn.remap_dst = util.clamp(ptn.remap_dst + d, 1, 6)
+      end
+    else
+      if n == 2 then
+        local state = util.clamp(ptn[ptn.focus].loop + d, 0, 1)
+        ptn[ptn.focus].loop = state
+        p[ptn.focus].loop[p[ptn.focus].bank] = state
+      elseif n == 3 then
+        local idx = util.clamp(tab.key(ptn.quant_val, ptn[ptn.focus].quantize) + d, 1, #ptn.quant_val)
+        ptn[ptn.focus].quantize = ptn.quant_val[idx]
+        p[ptn.focus].quantize[p[ptn.focus].bank] = ptn.quant_val[idx]
+      end
     end
-  end
+  elseif prms.ptn_param == 4 then
+    if n == 2 then
+      local state = ptn[ptn.focus].glb_transpose and 2 or 1
+      ptn[ptn.focus].glb_transpose = util.clamp(state + d, 1, 2) == 2 and true or false
+    elseif n == 3 then
+      ptn[ptn.focus].transpose = util.clamp(ptn[ptn.focus].transpose + d, -12, 12)
+    end
+  end 
 end
+
 
 ui.redraw[ui.PPTN] = function()
   screen.font_size(8)
   screen.level(15)
   screen.move(64, 12)
   screen.text_center("pattern   "..ptn.focus.."       bank   "..p[ptn.focus].bank)
-  if shift then
-    if prms.ptn_param == 1 then
+  if prms.ptn_param == 1 then
+    if shift then
       local current_length = ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4
-      screen.level((ptn[ptn.focus].manual_length or current_length ~= ptn[ptn.focus].length) and viz.key_mid or 2)
+      screen.level((ptn[ptn.focus].manual_length or current_length ~= ptn[ptn.focus].length) and 15 or 2)
       screen.move(30, 60)
-      screen.text_center("set")
+      screen.text_center(ptn[ptn.focus].manual_length and "edit  length" or "set")
       screen.move(98, 60)
-      screen.level(ptn[ptn.focus].endpoint ~= ptn[ptn.focus].endpoint_init and viz.key_mid or 2)
+      screen.level(ptn[ptn.focus].endpoint ~= ptn[ptn.focus].endpoint_init and 15 or 2)
       screen.text_center("reset")
       screen.font_size(16)
       screen.level(10)
       screen.move(64, 39)
       screen.text_center((ptn[ptn.focus].endpoint / 64).."  beats")
-    elseif prms.ptn_param == 2 then
+    else
+      screen.level(4)
+      screen.move(30, 60)
+      screen.text_center("meter")
+      screen.move(98, 60)
+      screen.text_center("length")
+      local state = (ptn[ptn.focus].endpoint / 64 == ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4) and true or false
+      screen.level((state or ptn[ptn.focus].manual_length) and 15 or 4)
+      screen.font_size(16)
+      local void = ((ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) or ptn[ptn.focus].manual_length)
+      screen.move(30, 39)
+      screen.text_center(void and "-" or ptn.meter_ids[tab.key(ptn.meter_val, ptn[ptn.focus].meter)])
+      screen.move(98, 39)
+      local barnum = math.floor(ptn[ptn.focus].barnum)
+      local barnme = barnum == 1 and " bar" or " bars"
+      screen.text_center(void and "-" or (barnum..barnme))
+    end
+  elseif prms.ptn_param == 2 then
+    if shift then
       screen.level(10)
       screen.move(64, 60)
       screen.text_center("allocate")
       screen.font_size(16)
       screen.level(10)
       screen.move(64, 39)
-      screen.text_center(params:string("patterns_alloc_"..ptn.focus))
-    elseif prms.ptn_param == 3 then
+      screen.text_center(prms.ptn_alloc[ptn[ptn.focus].alloc + 1])
+    else
+      screen.level(4)
+      screen.move(30, 60)
+      screen.text_center("launch")
+      screen.move(98, 60)
+      screen.text_center("scene")
+      screen.font_size(16)
+      screen.level(15)
+      screen.move(30, 39)
+      screen.text_center(ptn.launch_modes[ptn[ptn.focus].launch])
+      screen.move(98, 39)
+      screen.text_center(ptn[ptn.focus].scene and "on" or "off")
+    end
+  elseif prms.ptn_param == 3 then
+    if shift then
       screen.level(2)
       screen.move(64, 60)
       screen.text_center("remap   voice")
@@ -538,70 +632,58 @@ ui.redraw[ui.PPTN] = function()
       screen.text_center(ptn.remap_src)
       screen.move(98, 39)
       screen.text_center(ptn.remap_dst)
-    elseif prms.ptn_param == 4 then
-      screen.level(ptn[ptn.focus].transpose ~= 0 and viz.key_mid or 2)
+    else
+      screen.level(4)
+      screen.move(30, 60)
+      screen.text_center("playback")
+      screen.move(98, 60)
+      screen.text_center("quantize")
+      screen.font_size(16)
+      screen.level(15)
+      screen.move(30, 39)
+      screen.text_center(ptn.playback_modes[ptn[ptn.focus].loop + 1])
+      screen.move(98, 39)
+      screen.text_center(ptn.quant_ids[tab.key(ptn.quant_val, ptn[ptn.focus].quantize)])
+    end
+  elseif prms.ptn_param == 4 then
+    if shift then
+      screen.level(ptn[ptn.focus].transpose ~= 0 and 15 or 2)
       screen.move(64, 60)
       screen.text_center("transpose   pattern")
       screen.font_size(16)
       screen.level(10)
       screen.move(64, 39)
       screen.text_center(ptn[ptn.focus].transpose.."  deg")
-    end
-  else
-    local param1 = prms.ptn_ids[1][prms.ptn_param]..ptn.focus
-    local param2 = prms.ptn_ids[2][prms.ptn_param]..ptn.focus
-    local txt1 = prms.ptn_nms[1][prms.ptn_param]
-    local txt2 = prms.ptn_nms[2][prms.ptn_param]
-    if txt1 == txt2 then
-      screen.level(2)
-      screen.move(64, 60)
-      screen.text_center(txt1)
-      screen.font_size(16)
-      screen.level(10)
-      screen.move(64, 39)
-      screen.text_center(params:string(param1))
     else
       screen.level(4)
       screen.move(30, 60)
-      screen.text_center(txt1)
+      screen.text_center("glb   trsp")
       screen.move(98, 60)
-      screen.text_center(txt2)
-      local state = (ptn[ptn.focus].endpoint / 64 == ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4) and true or false
-      screen.level((state or ptn[ptn.focus].manual) and 15 or 4)
+      screen.text_center("transpose")
       screen.font_size(16)
+      screen.level(15)
       screen.move(30, 39)
-      if prms.ptn_param == 1 and ((ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) or ptn[ptn.focus].manual_length) then
-        screen.text_center("-")
-      else
-        screen.text_center(params:string(param1))
-      end
+      screen.text_center(ptn[ptn.focus].glb_transpose and "on" or "off")
       screen.move(98, 39)
-      if (prms.ptn_param == 1 and ((ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) or ptn[ptn.focus].manual_length)) then
-        screen.text_center("-")
-      else
-        screen.text_center(params:string(param2))
-      end
+      screen.text_center(ptn[ptn.focus].transpose.." deg")
     end
-    -- param page
-    local nprm = #prms.ptn_ids[1]
-    if nprm > 1 then
-      for i = 1, nprm do
-        screen.level(i == prms.ptn_param and 8 or 1)
-        screen.pixel(127, 32 - nprm + (i - 1) * 2)
-        screen.fill()
-      end
-    end
+  end
+  -- param page
+  for i = 1, prms.ptn_pnum do
+    screen.level(i == prms.ptn_param and 8 or 1)
+    screen.pixel(127, 32 - prms.ptn_pnum + (i - 1) * 2)
+    screen.fill()
   end
 end
 
--- kit ui --------------------------------------------
 
+-- kit ui --------------------------------------------
 ui.key[ui.PKIT] = function(n, z)
   if z == 1 then
     local d = n == 2 and -1 or 1
     local model = drmfm.get_model(ui.kit_focus)
     local mprms = (model == "MIDI" or model == "UW") and model or "DM"
-    if shift then
+    if shift or drmfm.kit_morph then
       prms.kitmod_param[mprms] = util.wrap(prms.kitmod_param[mprms] + d, 1, #prms.kitmod[mprms][1])
     else
       prms.kit_param[mprms] = util.wrap(prms.kit_param[mprms] + d, 1, #prms.kit[mprms][1])
@@ -613,7 +695,7 @@ ui.enc[ui.PKIT] = function(n, d)
   if n > 1 then
     local model = drmfm.get_model(ui.kit_focus)
     local mprms = (model == "MIDI" or model == "UW") and model or "DM"
-    if shift then
+    if shift or drmfm.kit_morph then
       params:delta("drmfm_"..prms.kitmod[mprms][n - 1][prms.kitmod_param[mprms]].."_"..ui.kit_focus, d)
     else
       params:delta("drmfm_"..prms.kit[mprms][n - 1][prms.kit_param[mprms]].."_"..ui.kit_focus, d)
@@ -629,6 +711,7 @@ end
 ui.redraw[ui.PKIT] = function()
   local model = drmfm.get_model(ui.kit_focus)
   local mprms = (model == "MIDI" or model == "UW") and model or "DM"
+  local shift = shift or drmfm.kit_morph
   local ptab = shift and prms.kitmod or prms.kit
   local pid = shift and prms.kitmod_param or prms.kit_param
   local ktxt = shift and (pid[mprms] == 1 and "drmFM   model   " or "drmFM   morph   ") or "drmFM   voice   "
@@ -672,40 +755,17 @@ ui.redraw[ui.PKIT] = function()
 end
 
 
-
 -- keyquant ui --------------------------------------------
-
 ui.key[ui.QKEY] = function(n, z)
-  if n == 2 then
-    if params:get("clock_source") == 3 then
-      clock.link.stop()
-    else
-      m[m.tsrp_id]:stop()
-    end
-    stop_callback()
-    ui.show_message("stop")
-  elseif n == 3 then
-    if params:get("clock_source") == 3 then
-      clock.link.start()
-      ui.show_message("> start")
-      start_callback()
-    else
-      ui.show_message("starting...", 10)
-      clock.run(function()
-        clock.sync(quant.bar)
-        m[m.tsrp_id]:start()
-        ui.show_message("> start")
-        start_callback()
-      end)
-    end
+  if z == 1 then
+    local inc = n == 2 and -1 or 1
+    prms.time_param = util.wrap(prms.time_param + inc, 1, #prms.time_ids[1])
   end
 end
 
 ui.enc[ui.QKEY] = function(n, d)
-  if n == 2 then
-    params:delta("time_signature", d)
-  elseif n == 3 then
-    params:delta("key_quantization", d)
+  if n > 1 then
+    params:delta(prms.time_ids[n - 1][prms.time_param], d)
   end
 end
 
@@ -716,19 +776,32 @@ ui.redraw[ui.QKEY] = function()
   screen.text_center("timing")
   screen.font_size(16)
   screen.move(30, 39)
-  screen.text_center(params:string("time_signature"))
+  screen.text_center(params:string(prms.time_ids[1][prms.time_param]))
   screen.move(98, 39)
-  screen.text_center(params:string("key_quantization"))
+  screen.text_center(params:string(prms.time_ids[2][prms.time_param]))
   screen.font_size(8)
   screen.level(4)
   screen.move(30, 60)
-  screen.text_center("time  signature")
+  screen.text_center(prms.time_nms[1][prms.time_param])
   screen.move(98, 60)
-  screen.text_center("key  quantization") 
+  screen.text_center(prms.time_nms[2][prms.time_param])
+  if prms.time_param == 3 then
+    screen.move(64, 60)
+    screen.text_center("ptn  loop")
+  end
+   -- param page
+  local nprm = #prms.time_ids[1]
+  local idx = prms.time_param
+  if nprm > 1 then
+    for i = 1, nprm do
+      screen.level(i == idx and 8 or 1)
+      screen.pixel(127, 32 - nprm + (i - 1) * 2)
+      screen.fill()
+    end
+  end
 end
 
 -- preset ui --------------------------------------------
-
 ui.key[ui.PSET] = function(n, z)
   if n == 2 and z == 1 then
     if shift then
@@ -808,7 +881,6 @@ ui.redraw[ui.PSET] = function()
 end
 
 -- import ui --------------------------------------------
-
 ui.key[ui.IMPT] = function(n, z)
   if n == 2 and z == 1 then
     ui.set_view(ui.PSET)
@@ -1135,6 +1207,7 @@ ui.enc[ui.EKIT] = function(n, d)
 end
 
 ui.redraw[ui.EKIT] = function()
+  screen.blend_mode(0)
   if ui.kit_action == 1 then
     screen.level(15)
     screen.font_size(8)
@@ -1146,7 +1219,11 @@ ui.redraw[ui.EKIT] = function()
     screen.level(15)
     screen.font_size(16)
     screen.move(64, 39)
+    screen.blend_mode(1)
     screen.text_center(params:string("drmfm_perf_time"))
+    local width = math.floor(params:get("drmfm_perf_depth") * 128)
+    screen.rect(0, 23, width, 20)
+    screen.fill()
   elseif ui.kit_action == 2 then
     screen.level(15)
     screen.font_size(8)
