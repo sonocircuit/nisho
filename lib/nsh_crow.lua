@@ -7,8 +7,9 @@ local a = arc.connect()
 local crow_detected = false
 local arc_detected = false
 
-local function round_form(param, quant, form)
-  return(util.round(param, quant)..form)
+-------------------------- formatters --------------------------
+local function round_form(val, quant, form)
+  return(util.round(val, quant)..form)
 end
 
 local function freq_display(freq)
@@ -24,7 +25,7 @@ local function freq_display(freq)
   return freq
 end
 
----------------------- crow out ----------------------
+-------------------------- crow out --------------------------
 local cw = {}
 cw.env_shapes = {'logarithmic', 'linear', 'exponential'}
 for i = 1, 2 do
@@ -164,7 +165,7 @@ cw.add_params = function()
 end
 
 
----------------------- just friends ----------------------
+-------------------------- just friends --------------------------
 local jf = {}
 jf.addr = 1
 jf.mode = 1
@@ -300,7 +301,7 @@ jf.add_params = function()
   params:set_action("jf_run_voltage", function(v) crow.ii.jf[jf.addr].run(v) end)
 end
 
----------------------- w/ syn ----------------------
+-------------------------- w/ syn --------------------------
 local wsyn = {}
 wsyn.jack = {"ramp", "curve", "fm env", "fm index", "lpg time", "lpg symmetry", "gate", "pitch", "fm ratio num", "fm ratio denom"}
 wsyn.alloc = vx.new(4, 2)
@@ -407,7 +408,7 @@ wsyn.add_params = function()
 end
 
 
----------------------- w/ del ----------------------
+-------------------------- w/ del --------------------------
 
 local wdel = {}
 wdel.mode = 1
@@ -474,7 +475,7 @@ wdel.add_params = function()
 end
 
 
----------------------- ansible ----------------------
+-------------------------- ansible --------------------------
 local ansi = {}
 for i = 1, 4 do
   ansi[i] = {}
@@ -558,8 +559,7 @@ ansi.add_params = function()
 end
 
 
----------------------- arc ----------------------
-
+-------------------------- arc --------------------------
 function a.key(n, z)
   if z == 1 then
     ansi.arc_ktimer = clock.run(function()
@@ -633,8 +633,7 @@ function arc_redraw()
   a:refresh()
 end
 
----------------------- caw caw caw ----------------------
-
+-------------------------- caw caw caw --------------------------
 local caw = {}
 
 caw.ansi_view = false
