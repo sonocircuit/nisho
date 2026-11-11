@@ -1,4 +1,4 @@
--- nb for nisho -  v2.0
+-- nb for nisho - v2.0
 
 local player_lib = include 'nisho/lib/nsh_player'
 
