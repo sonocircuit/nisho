@@ -1,10 +1,10 @@
--- midi import for nisho -  v2.0
+-- midi import for nisho - v2.0
 -- convert midi to reflection patterns
 
 local mu = require 'musicutil'
 local ml = include 'lib/nsh_midilib'
 
-local STEP_RES = 64 -- nishos reflection runs at 64ppqn
+local PPQN = 64 -- nishos reflection runs at 64ppqn
 local tick_res = 0
 local midi_files = {}
 local midi_dir = ""
@@ -21,8 +21,7 @@ t.bank = 0
 t.beats = 0
 
 
-
---------- utilities ----------
+-------------------------- utilities --------------------------
 local function deep_copy(tbl)
   local ret = {}
   if type(tbl) ~= 'table' then return tbl end
@@ -32,17 +31,17 @@ local function deep_copy(tbl)
   return ret
 end
 
-function copy_to_slot(ptn, bank, beats)
+local function copy_to_slot(ptn, bank, beats)
   local i = math.floor(ptn) -- some wonky stuff going on here... callback messes with first arg. why?
   p[i].count[bank] = t.count
   p[i].event[bank] = deep_copy(t.event)
-  p[i].endpoint[bank] = beats * STEP_RES
-  p[i].endpoint_init[bank] = beats * STEP_RES
+  p[i].endpoint[bank] = beats * PPQN
+  p[i].endpoint_init[bank] = beats * PPQN
   -- get bar and meter values
-  if ((p[i].endpoint[bank] % STEP_RES == 0) and (p[i].endpoint[bank] >= (STEP_RES * 2))) then
+  if ((p[i].endpoint[bank] % PPQN == 0) and (p[i].endpoint[bank] >= (PPQN * 2))) then
     p[i].manual_length[bank] = false
     -- calc values
-    local num_beats = (p[i].endpoint[bank] / STEP_RES)
+    local num_beats = (p[i].endpoint[bank] / PPQN)
     local current_meter = p[i].meter[bank]
     local bar_count = num_beats / (current_meter * 4)
     -- check bar-size
@@ -50,7 +49,7 @@ function copy_to_slot(ptn, bank, beats)
       p[i].barnum[bank] = bar_count
     else
       -- get closest fit
-      local n = p[i].endpoint[bank] > (STEP_RES * 2) and 2 or 1
+      local n = p[i].endpoint[bank] > (PPQN * 2) and 2 or 1
       for i = n, #meter_values do
         local new_meter = meter_values[i]
         local new_count = num_beats / (new_meter * 4)
@@ -68,7 +67,7 @@ function copy_to_slot(ptn, bank, beats)
 end
 
 -- set directory and populate table with filenames
-function get_files(filename)
+local function get_files(filename)
   local dir = filename:match("(.*/)")
   local files = util.scandir(dir)
   local list = {}
@@ -78,17 +77,6 @@ function get_files(filename)
     end
   end
   return dir, list
-end
-
--- extract specs from name. expected format: name_B4P3_16.mid
-function get_specs(name)
-  local bank = tonumber(name:match("[B%d+](%d+)"))
-  local pattern = tonumber(name:match("[P%d+](%d+)"))
-  local num_beats = tonumber(name:match("[_%d+](%d+)"))
-  if name and pattern and num_beats then
-    --print(type(bank), type(pattern), type(num_beats))
-    return bank, pattern, num_beats
-  end
 end
 
 -- format event
@@ -115,7 +103,7 @@ end
 
 -- handler for deltatime increments
 function get_position(ticks)
-  t.step = t.step + math.floor((ticks / tick_res) * STEP_RES)
+  t.step = t.step + math.floor((ticks / tick_res) * PPQN)
 end
 
 -- callback function to grab tick resolution from header
@@ -134,6 +122,8 @@ function to_pattern(msg, ...)
   end
 end
 
+
+-------------------------- midim --------------------------
 local midim = {}
 
 function midim.convert_all(filename, map)
