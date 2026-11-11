@@ -399,7 +399,11 @@ local function pattern_keys(i)
             end
           end
         else
-          ptn[i]:start(beat_sync)
+          if ptn[i].play_queued == 1 then
+            ptn[i]:stop()
+          else
+            ptn[i]:start(beat_sync)
+          end
         end
       else
         if (ptn.overdub_active or mod.a or mod.b) then
