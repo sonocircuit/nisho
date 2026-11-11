@@ -1,4 +1,4 @@
--- nb player for nisho -  v2.0
+-- nb player for nisho - v2.0
 
 local player = {
   is_active = false,

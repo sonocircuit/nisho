@@ -27,7 +27,6 @@ ui = include 'lib/nsh_ui'
 engine.name = "Nisho"
 
 -- user variables
-local load_pset = false
 local load_tempo = true
 local rotate_grid = false
 lite_mode = false
@@ -182,7 +181,7 @@ cmem.link = true
 for i = 1, 16 do
   cmem[i] = {}
   cmem[i].notes = {}
-  cmem[i].trigs = 0 -- 0 corresponds to the focused one. otherwise it can be linked to 1-8.
+  cmem[i].trigs = 0
 end
 
 -- sequencer
@@ -579,15 +578,15 @@ local function deep_copy(tbl)
   return ret
 end
 
-local function round_form(param, quant, form)
-  return(util.round(param, quant)..form)
+local function round_form(val, quant, form)
+  return(util.round(val, quant)..form)
 end
 
-local function pan_display(param)
-  if param < -0.01 then
-    return ("L < "..math.abs(util.round(param * 100, 1)))
-  elseif param > 0.01 then
-    return (math.abs(util.round(param * 100, 1)).." > R")
+local function pan_display(val)
+  if val < -0.01 then
+    return ("L < "..math.abs(util.round(val * 100, 1)))
+  elseif val > 0.01 then
+    return (math.abs(util.round(val * 100, 1)).." > R")
   else
     return "> <"
   end
@@ -726,6 +725,8 @@ end
 
 -- pattern players
 ptn = {}
+-- constants
+ptn.ppqn = 64 -- pattern resolution
 -- params
 ptn.launch_modes = {"manual", "beat", "bar"}
 ptn.playback_modes = {"oneshot", "loop"}
@@ -758,7 +759,7 @@ ptn.rec_enabled = false
 ptn.stop_all = false
 ptn.stop_timer = nil
 for i = 1, 8 do
-  ptn[i] = reflect.new(i)
+  ptn[i] = reflect.new(i, ptn.ppqn)
   ptn[i].process = event_exec
   ptn[i].start_rec_callback = function() catch_held_notes(i, "note_on") end
   ptn[i].end_of_rec_callback = function() catch_held_notes(i, "note_off") clock.run(function() clock.sleep(0.2) save_pattern_bank(i, p[i].bank) end) end
@@ -867,7 +868,7 @@ function catch_held_notes(i, action)
   end
 end
 
-local function table_remove(t, note)
+local function table_remove(t, note) -- remove last entries
   for k = #t, 1, -1 do
     if t[k] == note then
       table.remove(t, k)
@@ -913,7 +914,7 @@ function set_pattern_length(i, override)
       ptn[i].length = ptn[i].meter * ptn[i].barnum * 4
       if (prev_len ~= ptn[i].length) or override then
         -- set endpoint
-        ptn[i].endpoint = ptn[i].length * 64
+        ptn[i].endpoint = ptn[i].length * ptn.ppqn
         ptn[i].step_max = ptn[i].endpoint
         -- save bank
         local bank = p[i].bank
@@ -936,7 +937,7 @@ end
 function reset_pattern_length(i)
   local bank = p[i].bank
   p[i].endpoint[bank] = p[i].endpoint_init[bank]
-  if (p[i].endpoint_init[bank] % 64 ~= 0 or p[i].endpoint_init[bank] < 128) then
+  if (p[i].endpoint_init[bank] % ptn.ppqn ~= 0 or p[i].endpoint_init[bank] < (ptn.ppqn * 2)) then
     p[i].manual_length[bank] = true
   end
   load_pattern_bank(i, bank)
@@ -1007,9 +1008,9 @@ end
 
 function run_stop_timer()
   if ptn.stop_timer == nil then
-    local beat_sync = quant.stop == 2 and 1 or (quant.stop == 3 and quant.bar or 1/64)
+    local beat_sync = quant.stop == 2 and 1 or (quant.stop == 3 and quant.bar or 1/ptn.ppqn)
     ptn.stop_timer = clock.run(function()
-      clock.sync(beat_sync, -1/64)
+      clock.sync(beat_sync, -1/ptn.ppqn)
       for i = 1, 8 do
         if p[i].stop and ptn[i].play == 1 then
           ptn[i]:stop()
@@ -1078,10 +1079,10 @@ function scene_launch(bank, launch_all)
         send_program_change(i, bank)
       end
     end
-    send_mutes_change(bank, 1/64)
+    send_mutes_change(bank, 1/ptn.ppqn)
     scene_pulse()
   else
-    local beat_sync = quant.scene == 2 and 1 or (quant.scene == 3 and quant.bar or 1/64)
+    local beat_sync = quant.scene == 2 and 1 or (quant.scene == 3 and quant.bar or 1/ptn.ppqn)
     for i = 1, 8 do
       local launch = (ptn.overdub_active or p[i].scene[bank]) 
       p[i].load = p[i].count[bank] > 0 and bank or nil
@@ -1242,10 +1243,10 @@ function append_pattern(src, src_bank, dst, dst_bank, src_s, src_e)
   p[dst].endpoint[dst_bank] = p[dst].endpoint[dst_bank] + length
   p[dst].endpoint_init[dst_bank] = p[dst].endpoint[dst_bank]
   -- get bar and meter values
-  if ((p[dst].endpoint[dst_bank] % 64 == 0) and (p[dst].endpoint[dst_bank] >= 128)) then
+  if ((p[dst].endpoint[dst_bank] % ptn.ppqn == 0) and (p[dst].endpoint[dst_bank] >= (ptn.ppqn * 2))) then
     p[dst].manual_length[dst_bank] = false
     -- calc values
-    local num_beats = (p[dst].endpoint[dst_bank] / 64)
+    local num_beats = (p[dst].endpoint[dst_bank] / ptn.ppqn)
     local current_meter = p[dst].meter[dst_bank]
     local bar_count = num_beats / (current_meter * 4)
     -- check bar-size
@@ -1307,7 +1308,7 @@ end
 function paste_seq_pattern(i)
   local bank = p[i].bank
   if #seq.notes > 0 then
-    local n_len = seq.rate * 64
+    local n_len = seq.rate * ptn.ppqn
     for n = 1, #seq.notes do
       local s = math.floor((n - 1) * n_len + 1)
       local e = math.floor(s + n_len - 1)
@@ -1389,6 +1390,8 @@ function load_pattern_slot(from, to)
       p[i].meter[to] = ptn.data[i].meter[from]
       p[i].length[to] = ptn.data[i].length[from]
       p[i].manual_length[to] = ptn.data[i].manual_length[from]
+      p[i].launch[to] = pdata.ptn[i].launch[from]
+      p[i].scene[to] = pdata.ptn[i].scene[from]
       if to == p[i].bank then
         load_pattern_bank(i, to)
       end
@@ -1583,28 +1586,6 @@ local function midi_remove_callback()
   end)
 end
 
-function start_callback()
-  seq.step = 0
-  trigs.step = 0
-end
-
-function stop_callback()
-  for i = 1, 8 do
-    ptn[i]:stop()
-    p[i].stop = false
-  end
-  ptn.stop_all = false
-  seq.active = false
-  rep.active = false
-  seq.step = 0
-  dirtygrid = true
-  clear_all_notes()
-end
-
-local function clock_tempo_callback()
-  fx.update_rates()
-end
-
 local function midi_panic(i) -- per voice
   if i < 7 then
     m[i]:cc(123, 0, voice[i].midi_ch)
@@ -1658,34 +1639,64 @@ function load_midi_files(filename, quantize)
 end
 
 
---------------------- clock coroutines ---------------------
--------- viz --------
-local function ledpulse_fast()
-  viz.key_fast = viz.key_fast == 8 and 12 or 8
-  if (ptn.rec_enabled or ptn.stop_all or mute.all) then
-    dirtygrid = true
-  end
+--------------------- clock ---------------------
+
+-------- callbacks --------
+function clock_start_callback()
+  seq.step = 0
+  trigs.step = 0
 end
 
-local function ledpulse_mid()
-  viz.key_mid = util.wrap(viz.key_mid + 1, 4, 12)
-  if (trigs.view_active or notes.trsp_active or cmem.copy_src > 0) then
-    dirtygrid = true
-  end
-end
-
-local function ledpulse_slow()
-  viz.key_slow = util.wrap(viz.key_slow + 1, 4, 12)
+function clock_stop_callback()
   for i = 1, 8 do
-    if p[i].load then
-      dirtygrid = true
-    end
-    if ptn[i].play_queued then
-      dirtygrid = true
-    end
+    ptn[i]:stop()
+    p[i].stop = false
   end
-  if (ptn.copy.state or rep.hold or seq.config or ptn.clear or ptn.scene_lnc or ui.get_view(ui.PRCH) or seq.polyseq or not cmem.link) then
-    dirtygrid = true
+  ptn.stop_all = false
+  seq.active = false
+  rep.active = false
+  seq.step = 0
+  dirtygrid = true
+  clear_all_notes()
+end
+
+function clock_tempo_callback()
+  fx.update_rates()
+end
+
+-------- viz --------
+local function vizclock()
+  local counter = 0
+  while true do
+    clock.sync(1/8)
+    counter = util.wrap(counter + 1, 1, 8)
+    -- fast
+    viz.key_fast = viz.key_fast == 8 and 12 or 8
+    if (ptn.rec_enabled or ptn.stop_all or mute.all) then
+      dirtygrid = true
+    end
+    -- mid
+    if counter % 2 == 0 then
+      viz.key_mid = util.wrap(viz.key_mid + 1, 4, 12)
+      if (trigs.view_active or notes.trsp_active or cmem.copy_src > 0) then
+        dirtygrid = true
+      end
+    end
+    -- slow
+    if counter % 4 == 0 then
+      viz.key_slow = util.wrap(viz.key_slow + 1, 4, 12)
+      for i = 1, 8 do
+        if p[i].load then
+          dirtygrid = true
+        end
+        if ptn[i].play_queued then
+          dirtygrid = true
+        end
+      end
+      if (ptn.copy.state or rep.hold or seq.config or ptn.clear or ptn.scene_lnc or ui.get_view(ui.PRCH) or seq.polyseq or not cmem.link) then
+        dirtygrid = true
+      end
+    end
   end
 end
 
@@ -2060,7 +2071,6 @@ function mw_ramp_down(i)
     clock.sleep(mw_res)
   end
 end
-
 
 -- aftertouch
 local function send_aftertouch(i, val)
@@ -2717,16 +2727,16 @@ function init()
   end
   nb:add_player_params()
   
-  -- fx
+  -- fx params
   fx.init(lite_mode)
 
   -- callbacks
-  grid.add = grd.get_size()
+  grid.add = grd.get_size
   midi.add = midi_add_callback
   midi.remove = midi_remove_callback
 
-  clock.transport.start = start_callback
-  clock.transport.stop = stop_callback
+  clock.transport.start = clock_start_callback
+  clock.transport.stop = clock_stop_callback
   clock.tempo_change_handler = clock_tempo_callback
 
   params.action_write = pset_write_callback
@@ -2746,42 +2756,14 @@ function init()
   evt_clk = clock.run(event_q)
   seq_clk = clock.run(run_seq)
   rep_clk = clock.run(run_rep)
-
-  -- lattice
-  vizclock = lt:new()
-
-  fastpulse = vizclock:new_sprocket{
-    action = ledpulse_fast,
-    division = 1/32,
-    enabled = true
-  }
-
-  midpulse = vizclock:new_sprocket{
-    action = ledpulse_mid,
-    division = 1/24,
-    enabled = true
-  }
-
-  slowpulse = vizclock:new_sprocket{
-    action = ledpulse_slow,
-    division = 1/12,
-    enabled = true
-  }
-
-  vizclock:start()
+  viz_clk = clock.run(vizclock)
 
   -- bang params
-  if load_pset then
-    params:default()
-  else
-    params:bang()
-    polyform.load_default()
-    drmfm.load_default()
-  end
-
-  -- set defaults
-  --fx.set_sum_stage(lite_mode)
+  params:bang()
+  polyform.load_default()
+  drmfm.load_default()
   fx.update_rates()
+  --fx.set_sum_stage(lite_mode)
 end
 
 
@@ -2789,6 +2771,5 @@ end
 
 function cleanup()
   clear_all_notes()
-  vizclock:destroy()
   grd.banner()
 end

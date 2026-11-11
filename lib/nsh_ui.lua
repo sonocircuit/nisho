@@ -1,7 +1,6 @@
 -- UI for nisho - v2.0
 
 local ui = {}
-
 local mu = require 'musicutil'
 
 -- locals
@@ -253,20 +252,20 @@ ui.key[ui.SCLE] = function(n, z)
       else
         m[m.tsrp_id]:stop()
       end
-      stop_callback()
+      clock_stop_callback()
       ui.show_message("stop")
     elseif n == 3 then
       if params:get("clock_source") == 3 then
         clock.link.start()
         ui.show_message("> start")
-        start_callback()
+        clock_start_callback()
       else
         ui.show_message("starting...", 10)
         clock.run(function()
           clock.sync(quant.bar)
           m[m.tsrp_id]:start()
           ui.show_message("> start")
-          start_callback()
+          clock_start_callback()
         end)
       end
     end
@@ -579,14 +578,14 @@ ui.redraw[ui.PPTN] = function()
       screen.font_size(16)
       screen.level(10)
       screen.move(64, 39)
-      screen.text_center((ptn[ptn.focus].endpoint / 64).."  beats")
+      screen.text_center((ptn[ptn.focus].endpoint / ptn.ppqn).."  beats")
     else
       screen.level(4)
       screen.move(30, 60)
       screen.text_center("meter")
       screen.move(98, 60)
       screen.text_center("length")
-      local state = (ptn[ptn.focus].endpoint / 64 == ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4) and true or false
+      local state = (ptn[ptn.focus].endpoint / ptn.ppqn == ptn[ptn.focus].meter * ptn[ptn.focus].barnum * 4) and true or false
       screen.level((state or ptn[ptn.focus].manual_length) and 15 or 4)
       screen.font_size(16)
       local void = ((ptn.rec_mode == "free" and ptn[ptn.focus].endpoint == 0) or ptn[ptn.focus].manual_length)
@@ -1231,7 +1230,7 @@ ui.redraw[ui.EKIT] = function()
     screen.text_center("drmFM  action:   copy")
     screen.level(4)
     screen.move(64, 39)
-    if drmfm.get_copy_state() then
+    if drmfm.copy_data then
       screen.text_center("- ready   to   paste -")
     else
       screen.text_center("- clipboard   empty -")

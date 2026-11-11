@@ -20,8 +20,10 @@ end
 
 local beat_sec = clock.get_beat_sec()
 
-local function round_form(param, quant, form)
-  return(util.round(param, quant)..form)
+
+-------------------------- params --------------------------
+local function round_form(val, quant, form)
+  return (util.round(val, quant)..form)
 end
 
 local function freq_display(freq)
@@ -37,11 +39,11 @@ local function freq_display(freq)
   return freq
 end
 
-local function pan_display(param)
-  if param < -0.01 then
-    return ("L < "..math.abs(util.round(param * 100, 1)))
-  elseif param > 0.01 then
-    return (math.abs(util.round(param * 100, 1)).." > R")
+local function pan_display(val)
+  if val < -0.01 then
+    return ("L < "..math.abs(util.round(val * 100, 1)))
+  elseif val > 0.01 then
+    return (math.abs(util.round(val * 100, 1)).." > R")
   else
     return "> <"
   end
@@ -195,8 +197,8 @@ local function add_params(lite)
 
 end
 
-------------------- fx -------------------
 
+-------------------------- fx --------------------------
 local fx = {}
 
 function fx.init(lite)

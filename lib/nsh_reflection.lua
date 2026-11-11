@@ -8,10 +8,11 @@ local reflection = {}
 reflection.__index = reflection
 
 --- constructor
-function reflection.new(id)
+function reflection.new(id, ppqn)
   local p = {}
   setmetatable(p, reflection)
   p.id                   = id or 1
+  p.ppqn                 = ppqn or 96
   p.rec                  = 0
   p.rec_enabled          = 0
   p.play                 = 0
@@ -40,8 +41,6 @@ function reflection.new(id)
   p.process              = function(_) end
   return p
 end
-
-local PPQN = 64 -- clock resolution
 
 local function deep_copy(tbl)
   local ret = {}
@@ -83,14 +82,15 @@ end
 
 --- stop transport
 function reflection:stop(beat_sync)
-  if self.stop_clock or self.play == 0 then return end
-  --[[
-  if self.play_queued == 1 and self.clock then
-    self:end_playback()    
+  if self.play_queued == 1 then
+    if self.clock then
+      clock.cancel(self.clock)
+    end
+    self:end_playback()
     return
   end
-  --]]
-  local beat_sync = beat_sync or 1/PPQN
+  if self.stop_clock then return end
+  local beat_sync = beat_sync or 1/self.ppqn
   self.stop_clock = clock.run(function()
     clock.sync(beat_sync)
     self:end_playback()
@@ -147,7 +147,7 @@ end
 --- change pattern length in beats
 function reflection:set_length(beats)
   if self.count > 0 then
-    self.endpoint = beats * PPQN
+    self.endpoint = beats * self.ppqn
     self.step_max = self.endpoint
   end
 end
@@ -184,7 +184,7 @@ function reflection:watch(event, step)
   if self.queued_rec ~= nil then
     if self.queued_rec.state then
       self.queued_rec.state = false
-      self:set_rec(1, self.queued_rec.duration, 1/PPQN)
+      self:set_rec(1, self.queued_rec.duration, 1/self.ppqn)
     end
     offset = 1
   end
@@ -224,13 +224,13 @@ function reflection:begin_playback()
       break
     end
     self.step = self.step + 1
-    local q = math.floor(PPQN * self.quantize)
+    local q = math.floor(self.ppqn * self.quantize)
     if self.endpoint == 0 then
       -- don't process on first pass
       if self.rec_dur then
-        self.rec_dur.count = self.rec_dur.count - 1 / PPQN
-        if self.rec_dur.count <= (self.queued_rec ~= nil and 1/PPQN or 0) then
-          self.endpoint = self.rec_dur.length * PPQN
+        self.rec_dur.count = self.rec_dur.count - 1/self.ppqn
+        if self.rec_dur.count <= (self.queued_rec ~= nil and 1/self.ppqn or 0) then
+          self.endpoint = self.rec_dur.length * self.ppqn
           self.endpoint_init = self.endpoint
           self.step_max = self.endpoint
           self:set_rec(0)
@@ -279,7 +279,7 @@ function reflection:begin_playback()
       end
       ::continue::
       if self.rec_dur then
-        self.rec_dur.count = self.rec_dur.count - 1 / PPQN
+        self.rec_dur.count = self.rec_dur.count - 1/self.ppqn
         if self.rec_dur.count <= 0 then
           self:set_rec(0)
           self.rec_dur = nil
@@ -297,7 +297,7 @@ function reflection:begin_playback()
         end
       end
     end
-    clock.sync(1/PPQN)
+    clock.sync(1/self.ppqn)
   end
 end
 

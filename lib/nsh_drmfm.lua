@@ -1,17 +1,13 @@
--- drmfm for nisho - v2.0
+-- drmFM for nisho - v2.0
 
 local fs = require 'fileselect'
 local tx = require 'textentry'
 local mu = require 'musicutil'
 
-local NUM_VOICES = 16
-local MAX_LENGTH = math.pow(2, 24)
 
-local perf_clk = nil
-
-
-local function round_form(param, quant, form)
-  return(util.round(param, quant)..form)
+-------------------------- formatters --------------------------
+local function round_form(val, quant, form)
+  return(util.round(val, quant)..form)
 end
 
 local function freq_display(freq)
@@ -27,25 +23,29 @@ local function freq_display(freq)
   return freq
 end
 
-local function pan_display(param)
-  if param < -0.01 then
-    return ("L < "..math.abs(util.round(param * 100, 1)))
-  elseif param > 0.01 then
-    return (math.abs(util.round(param * 100, 1)).." > R")
+local function pan_display(val)
+  if val < -0.01 then
+    return ("L < "..math.abs(util.round(val * 100, 1)))
+  elseif val > 0.01 then
+    return (math.abs(util.round(val * 100, 1)).." > R")
   else
     return "> <"
   end
 end
 
 
+-------------------------- variables --------------------------
+local NUM_VOICES = 16
+local MAX_LENGTH = math.pow(2, 24)
+
 local kit = {}
 kit.preset_path = "/home/we/dust/data/nisho/drmfm_kits" 
 kit.voice_path = "/home/we/dust/data/nisho/drmfm_voices"
-kit.default = "/home/we/dust/data/nisho/drmfm_kits/default.kit"
-kit.failsafe = "/home/we/dust/code/nisho/data/drmfm_kits/default.kit"
+kit.default = "/home/we/dust/code/nisho/data/default/drmfm.kit"
 kit.loaded = ""
 kit.clipboard = {}
 kit.list = {}
+kit.modclk = nil
 
 local vox = {}
 vox.models = {"BD", "SD", "XT", "CP", "RS", "CB", "HH", "CY", "OC", "UW", "MIDI"}
@@ -260,80 +260,7 @@ prms.specs = {
 }
 
 
-local function build_menu()
-  for i = 1, NUM_VOICES do
-    for _, v in ipairs(prms.hide) do
-      params:hide("drmfm_"..v.."_"..i)
-    end
-    if vox.selected == i then
-      if vox[i].model == "UW" then
-        for _, v in ipairs(prms.uw) do
-          params:show("drmfm_"..v.."_"..i)
-        end
-      elseif vox[i].model == "MIDI" then
-        for _, v in ipairs(prms.midi) do
-          params:show("drmfm_"..v.."_"..i)
-        end
-      else
-        for _, v in ipairs(prms.vox) do
-          params:show("drmfm_"..v.."_"..i)
-        end
-      end
-    end
-  end
-  _menu.rebuild_params()
-end
-
-local function update_modparams(i)
-  local t = prms.specs[vox[i].model]
-  for n = 1, 8 do
-    local p = params:lookup_param("drmfm_mod"..n.."_"..i)
-    p.name = t.names[n]
-    p.formatter = t.formatters[n]
-    p:bang()
-    local m = params:lookup_param("drmfm_mod"..n.."_pmc_"..i)
-    m.name = t.names[n]
-    m:bang()
-  end
-  build_menu()
-end
-
-local function set_default(i)
-  local t = prms.specs[vox[i].model]
-  if next(t.default) then
-    for k, v in pairs(t.default) do
-      params:set("drmfm_"..k.."_"..i, v)
-    end
-  end
-end
-
-local function set_model(i, idx)
-  vox[i].model = vox.models[idx]
-  update_modparams(i)
-  engine.drmfm_set_def(i - 1, vox[i].model)
-end
-
-local function set_param(i, key, val)
-  engine.drmfm_set_param(i - 1, key, val)
-  ui.draw_view(ui.PKIT)
-end
-
-local function set_perf_macros(val)
-  engine.drmfm_kit_mod(val)
-  for i = 1, NUM_VOICES do
-    if vox[i].model == "MIDI" then
-      if vox[i].midi_ccA_mod ~= 0 and vox[i].midi_ccA_num > 0 then
-        local cc_val = math.floor(vox[i].midi_ccA_mod * val)
-        vox[i].midi_dev:cc(vox[i].midi_ccA_num, cc_val)
-      end
-      if vox[i].midi_ccB_mod ~= 0 and vox[i].midi_ccB_num > 0 then
-        local cc_val = math.floor(vox[i].midi_ccB_mod * val)
-        vox[i].midi_dev:cc(vox[i].midi_ccB_num, cc_val)
-      end
-    end
-  end
-end
-
+-------------------------- presets --------------------------
 local function build_kit_list()
   local files = util.scandir(kit.preset_path)
   kit.list = {}
@@ -345,6 +272,20 @@ local function build_kit_list()
       end
     end
   end
+end
+
+local function save_default_kit()
+  local t = {}
+  t["main_level"] = params:get("drmfm_main_level")
+  t["perf_time"] = params:get("drmfm_perf_time")
+  for n = 1, NUM_VOICES do
+    t[n] = {}
+    for _, v in ipairs(prms.kit) do
+      t[n][v] = params:get("drmfm_"..v.."_"..n)
+    end
+  end
+  tab.save(t, kit.default)
+  print("drmfm [kit]: set default")
 end
 
 local function save_drmfm_kit(txt)
@@ -384,9 +325,6 @@ local function load_drmfm_kit(path)
         kit.loaded = name:gsub(".kit", "")
         print("loaded drmfm [kit]: "..kit.loaded)
       else
-        if util.file_exists(kit.failsafe) then
-          load_drmfm_kit(kit.failsafe)
-        end
         print("error: could not find kit", path)
       end
     else
@@ -457,18 +395,84 @@ local function clear_sample(i)
   vox[i].sample_ch = ""
 end
 
-local function viz_pulse(i)
-  drmfm.viz[i] = true
-  dirtygrid = true
-  clock.run(function()
-    clock.sleep(1/30)
-    drmfm.viz[i] = false
-    dirtygrid = true
-  end)
+
+-------------------------- params --------------------------
+local function build_menu()
+  for i = 1, NUM_VOICES do
+    for _, v in ipairs(prms.hide) do
+      params:hide("drmfm_"..v.."_"..i)
+    end
+    if vox.selected == i then
+      if vox[i].model == "UW" then
+        for _, v in ipairs(prms.uw) do
+          params:show("drmfm_"..v.."_"..i)
+        end
+      elseif vox[i].model == "MIDI" then
+        for _, v in ipairs(prms.midi) do
+          params:show("drmfm_"..v.."_"..i)
+        end
+      else
+        for _, v in ipairs(prms.vox) do
+          params:show("drmfm_"..v.."_"..i)
+        end
+      end
+    end
+  end
+  _menu.rebuild_params()
+end
+
+local function update_modparams(i)
+  local t = prms.specs[vox[i].model]
+  for n = 1, 8 do
+    local p = params:lookup_param("drmfm_mod"..n.."_"..i)
+    p.name = t.names[n]
+    p.formatter = t.formatters[n]
+    p:bang()
+    local m = params:lookup_param("drmfm_mod"..n.."_pmc_"..i)
+    m.name = t.names[n]
+    m:bang()
+  end
+  build_menu()
+end
+
+local function set_model(i, idx)
+  vox[i].model = vox.models[idx]
+  update_modparams(i)
+  engine.drmfm_set_def(i - 1, vox[i].model)
+end
+
+local function set_default(i)
+  local t = prms.specs[vox[i].model]
+  if next(t.default) then
+    for k, v in pairs(t.default) do
+      params:set("drmfm_"..k.."_"..i, v)
+    end
+  end
+end
+
+local function set_param(i, key, val)
+  engine.drmfm_set_param(i - 1, key, val)
+  ui.draw_view(ui.PKIT)
+end
+
+local function set_perf_macros(val)
+  engine.drmfm_kit_mod(val)
+  for i = 1, NUM_VOICES do
+    if vox[i].model == "MIDI" then
+      if vox[i].midi_ccA_mod ~= 0 and vox[i].midi_ccA_num > 0 then
+        local cc_val = math.floor(vox[i].midi_ccA_mod * val)
+        vox[i].midi_dev:cc(vox[i].midi_ccA_num, cc_val)
+      end
+      if vox[i].midi_ccB_mod ~= 0 and vox[i].midi_ccB_num > 0 then
+        local cc_val = math.floor(vox[i].midi_ccB_mod * val)
+        vox[i].midi_dev:cc(vox[i].midi_ccB_num, cc_val)
+      end
+    end
+  end
 end
 
 local function add_params()
-  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 49) + 14))
+  params:add_group("drmfm_params", "drmFM [kit]", ((NUM_VOICES * 49) + 15))
 
   params:add_separator("drmfm_kits", "drmFM kit")
 
@@ -477,6 +481,9 @@ local function add_params()
 
   params:add_trigger("drmfm_save_kit", "<< save")
   params:set_action("drmfm_save_kit", function() tx.enter(save_drmfm_kit, kit.loaded) end)
+
+  params:add_trigger("drmfm_set_default", "<< set default")
+  params:set_action("drmfm_set_default", function() save_default_kit() end)
    
   params:add_separator("drmfm_settings", "drmFM settings")
 
@@ -618,13 +625,22 @@ end
 
 
 -------------------------- drmfm --------------------------
-
 local drmfm = {}
 drmfm.kit_morph = false
 drmfm.copy_data = false
 drmfm.viz = {}
 for i = 1, NUM_VOICES do
   drmfm.viz[i] = false
+end
+
+local function viz_pulse(i)
+  drmfm.viz[i] = true
+  dirtygrid = true
+  clock.run(function()
+    clock.sleep(1/30)
+    drmfm.viz[i] = false
+    dirtygrid = true
+  end)
 end
 
 function drmfm.init()
@@ -656,27 +672,13 @@ function drmfm.get_file_info(i)
   return info
 end
 
-function drmfm.get_copy_state()
-  return drmfm.copy_data
-end
-
-function drmfm.print_params(i) -- 4 debug
-  for _, v in ipairs(prms.kit) do
-    print(v, params:get("drmfm_"..v.."_"..i))
-  end
-end
-
 function drmfm.init_model(i)
   set_default(i)
   ui.show_message("voice  "..i..":  set  to  default")
 end
 
 function drmfm.load_default()
-  if util.file_exists(kit.default) then
-    load_drmfm_kit(kit.default)
-  elseif util.file_exists(kit.failsafe) then
-    load_drmfm_kit(kit.failsafe)
-  end
+  load_drmfm_kit(kit.default)
 end
 
 function drmfm.save_kit()
@@ -752,10 +754,10 @@ end
 
 function drmfm.kit_mod(action)
   if action == "run" then
-    if perf_clk ~= nil then
-      clock.cancel(perf_clk)
+    if kit.modclk ~= nil then
+      clock.cancel(kit.modclk)
     end
-    perf_clk = clock.run(function()
+    kit.modclk = clock.run(function()
       local counter = 0
       local num_beats = params:get("drmfm_perf_time")
       local d = 100 / (num_beats * 4)
@@ -766,9 +768,9 @@ function drmfm.kit_mod(action)
       end 
     end)
   else
-    if perf_clk ~= nil then
-      clock.cancel(perf_clk)
-      perf_clk = nil
+    if kit.modclk ~= nil then
+      clock.cancel(kit.modclk)
+      kit.modclk = nil
     end
     params:set("drmfm_perf_depth", 0)
     for i = 1, NUM_VOICES do
