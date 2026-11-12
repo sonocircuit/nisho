@@ -2598,7 +2598,7 @@ function init()
   params:set_action("strm_drift", function(val) chrd.strm_drift = val / 10000 end)
 
   params:add_separator("drum_keys", "drum keys")
-  params:add_number("drum_root", "drumpad root note", 0, 127, 0, function(param) return mu.note_num_to_name(param:get(), true) end)
+  params:add_number("drum_root", "root note", 0, 127, 0, function(param) return mu.note_num_to_name(param:get(), true) end)
   params:set_action("drum_root", function(val) drm.root = val end)
 
   params:add_number("drum_vel_hi", "hi velocity", 1, 127, 100)
