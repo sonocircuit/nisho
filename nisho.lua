@@ -25,11 +25,11 @@ fx = include 'lib/nsh_fx'
 ui = include 'lib/nsh_ui'
 
 engine.name = "Nisho"
+engine_lite = false
 
 -- user variables
 local load_tempo = true
 local rotate_grid = false
-lite_mode = false
 
 -- scale
 local scale = {}
@@ -229,7 +229,7 @@ trigs.step = 0
 trigs.step_focus = 1
 trigs.lock = false
 trigs.reset_mode = 1
-trigs.ratrnd = {1, 1, 1, 2, 2, 2, 4, 1, 2, 1, 3, 4, 2, 4, 1, 3, 5, 5}
+trigs.ratrnd = {1, 1, 1, 2, 2, 2, 4, 1, 2, 1, 3, 4, 2, 4, 1, 3, 5, 5, 2, 2, 3, 2, 1, 4, 2, 6, 5, 2, 3}
 for i = 1, 8 do
   trigs[i] = {}
   trigs[i].step_max = 16
@@ -725,8 +725,8 @@ end
 
 -- pattern players
 ptn = {}
--- constants
-ptn.ppqn = 64 -- pattern resolution
+-- resolution
+ptn.ppqn = 64
 -- params
 ptn.launch_modes = {"manual", "beat", "bar"}
 ptn.playback_modes = {"oneshot", "loop"}
@@ -1661,11 +1661,12 @@ function clock_stop_callback()
 end
 
 function clock_tempo_callback()
-  fx.update_rates()
+  caw.update_rate()
+  fx.update_rate()
 end
 
 -------- viz --------
-local function vizclock()
+local function run_viz()
   local counter = 0
   while true do
     clock.sync(1/8)
@@ -2465,13 +2466,16 @@ end
 
 --------------------- INIT! INNIT? ---------------------
 function init()
+  -- get norns plattform
+  engine_lite = norns.platform < 4
+
   -- get grid size
   grd.get_size()
 
   -- detect crow
   caw.detect()
 
-  -- midi import
+  -- make directories
   if util.file_exists(ptn.midi_path) == false then
     util.make_dir(ptn.midi_path)
   end
@@ -2683,6 +2687,7 @@ function init()
   params:add_separator("sound_params", "sound & cv")
   -- polyform params
   polyform.init()
+
   -- crow params
   caw.init()
   
@@ -2728,7 +2733,7 @@ function init()
   nb:add_player_params()
   
   -- fx params
-  fx.init(lite_mode)
+  fx.init(engine_lite)
 
   -- callbacks
   grid.add = grd.get_size
@@ -2756,14 +2761,12 @@ function init()
   evt_clk = clock.run(event_q)
   seq_clk = clock.run(run_seq)
   rep_clk = clock.run(run_rep)
-  viz_clk = clock.run(vizclock)
+  viz_clk = clock.run(run_viz)
 
   -- bang params
   params:bang()
   polyform.load_default()
   drmfm.load_default()
-  fx.update_rates()
-  --fx.set_sum_stage(lite_mode)
 end
 
 
