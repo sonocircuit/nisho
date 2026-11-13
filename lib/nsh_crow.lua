@@ -418,16 +418,10 @@ wdel.sync = true
 wdel.rate_names = {"1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4","1/3", "3/8", "1/2", "2/3", "3/4", "1"}
 wdel.rate_values = {1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1}
 
-wdel.set_time = function()
-  if wdel.mode == 1 then
-    local time = clock.get_beat_sec() * wdel.rate
-    params:set("wdel_time", time)
-  end
-end
-
 wdel.set_rate = function()
   if wdel.sync then
-    params:set("wdel_time", wdel.rate * clock.get_beat_sec() * 4)
+    local beat_sec = 60/params:get("clock_tempo")
+    params:set("wdel_time", beat_sec * wdel.rate * 4)
   end
 end
 
@@ -737,6 +731,10 @@ end
 
 function caw.wsyn_pitchbend(val, dir)
   wysn.pitchbend(n, val, dir)
+end
+
+function caw.update_rate()
+  wdel.set_rate()
 end
 
 function caw.ansi_trigger(i)
