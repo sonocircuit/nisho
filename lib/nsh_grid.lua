@@ -1006,8 +1006,10 @@ local function kit_grid(x, y, z, off) -- grid one: off = -7
         end
       elseif off ~= 0 then
         if x == 5 and z == 1 then
-          frz.config = not frz.config
-          if not frz.config then clear_freeze() end
+          if not engine_lite then
+            frz.config = not frz.config
+            if not frz.config then clear_freeze() end
+          end
         elseif x > 5 and x < 12 and frz.config then
           track_num_held("frz", z)
           if z == 1 then frz.focus = x - 5 end
@@ -1158,9 +1160,11 @@ local function seq_settings(x, z)
     ui.set_view(ui.SCLE)
   elseif x == 2 then
     if z == 1 then
-      frz.config = not frz.config
-      hrmy.config, seq.config = false, false
-      clear_freeze()
+      if not engine_lite then
+        frz.config = not frz.config
+        hrmy.config, seq.config = false, false
+        clear_freeze()
+      end
     end
   elseif x == 3 then
     if z == 1 then
