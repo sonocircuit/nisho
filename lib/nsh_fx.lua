@@ -18,7 +18,7 @@ for i = 1, 8 do
   frz[i].rate = 1/4
 end
 
-local beat_sec = clock.get_beat_sec()
+local beat_sec = 60/params:get("clock_tempo")
 
 
 -------------------------- params --------------------------
@@ -83,7 +83,6 @@ local function update_delay_params()
 end
 
 local function set_rates()
-  beat_sec = clock.get_beat_sec()
   if del.sync then
     params:set("ledelay_time_l", del.rate_l * beat_sec * 4)
     params:set("ledelay_time_r", del.rate_r * beat_sec * 4)
@@ -203,14 +202,11 @@ local fx = {}
 
 function fx.init(lite)
   add_params(lite)
+  engine.sum_add_stage(lite and "passThru" or "outputFX")
 end
 
-function fx.set_sum_stage(lite)
-  local def = lite and "routeBus" or "outputFX"
-  --engine.sum_set_stage(def)
-end
-
-function fx.update_rates()
+function fx.update_rate()
+  beat_sec = 60/params:get("clock_tempo")
   set_rates()
 end
 
