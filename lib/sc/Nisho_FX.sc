@@ -65,7 +65,7 @@ Nisho_FX {
 
 			CroneDefs.add(
 				SynthDef(\outputFX, {
-					arg inBus, outBus, compMix = 0, loHz = 20, hiHz = 20000, frzMode = 0, frzGate = 0, frzTime = 0.2;
+					arg outBus, inBus, compMix = 0, loHz = 20000, hiHz = 20, frzMode = 0, frzGate = 0, frzTime = 0.2;
 					var in, snd, cmp, frz, lo, mid, hi, mono;
 					var frzMax = 2, xHz = 80;
 
@@ -101,15 +101,15 @@ Nisho_FX {
 			);
 
 			CroneDefs.add(
-				SynthDef(\routeBus, {
-					arg inBus, outBus;		
+				SynthDef(\passThru, {
+					arg outBus, inBus;		
 					Out.ar(outBus, In.ar(inBus, 2));
 				});
 			);
 
 			CroneDefs.add(
 				SynthDef.new(\leDelay, {
-					arg inBus, outBus, sendBus,
+					arg outBus, inBus, sendBus,
 					amp = 1, send = 0, mod = 0, mode = 0, timeL = 0.4, timeR = 0.4, fb = 0.6, hzLpf = 2400, hzHpf = 80;
 					var modT, modOsc, tL, tR, rtn, rtnL, rtnR, dry, dly, dlyL, dlyR;
 					var modHz = 12, tMax = 2, modF = 0.008;
@@ -143,7 +143,7 @@ Nisho_FX {
 				// modified version of @khoin's implementation of dattorros reverb (thank you!)
 				// https://github.com/khoin/dx463-final/blob/b863d1982d34823f8f39df9b92e3ea948c8243c0/sdefs.sc#L150
 				SynthDef(\leVerb, {
-					arg inBus, outBus,
+					arg outBus, inBus,
 					amp = 1, preDelay = 0.1, preFilter = 0.1, decayRate = 0.8, damping = 0.22, modDepth = 0.2, modRate = 1;
 					
 					// signals
