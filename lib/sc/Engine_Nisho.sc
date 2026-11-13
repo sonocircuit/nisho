@@ -278,16 +278,6 @@ Engine_Nisho : CroneEngine {
 			],
 			context.og, 'addToTail'
 		);
-
-		context.server.sync;
-		
-		sumStage = Synth.new(\outputFX,
-			[
-				\inBus, sumBus,
-				\outBus, context.out_b
-			],
-			context.og, 'addToTail'
-		);
 	
 		context.server.sync;
 
@@ -567,6 +557,20 @@ Engine_Nisho : CroneEngine {
 			var key = msg[1].asSymbol;
 			var val = msg[2].asFloat;
 			if (sumStage.notNil) {sumStage.set(key, val)};
+		});
+
+		this.addCommand(\sum_add_stage, "s", { arg msg;
+			var def = msg[1].asSymbol;
+			if (sumStage.notNil) {
+				sumStage.free;
+				};
+			sumStage = Synth.new(def,
+				[
+					\inBus, sumBus,
+					\outBus, context.out_b
+				],
+				context.og, 'addToTail'
+			);
 		});
 
 	}
