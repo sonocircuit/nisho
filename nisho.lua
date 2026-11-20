@@ -564,6 +564,7 @@ function set_hrmy_slot(i)
   params:set("notes_root_scale", hrmy.slot[hrmy.active].root)
 end
 
+
 --------------------- utilities ---------------------
 function r()
   norns.rerun()
@@ -607,7 +608,6 @@ local function str_format(str, maxLength, separator)
 
   return string.sub(str, 1, midpoint - lstrip) .. separator .. string.sub(str, 1 + midpoint + rstrip)
 end
-
 
 
 --------------------- patterns and events ---------------------
@@ -736,6 +736,7 @@ ptn.meter_ids = {"2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "9/4", "11/4"}
 ptn.meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 -- preset and pattern loading
 ptn.midi_path = norns.state.data.."midi_files/"
+ptn.ptn_path = norns.state.data.."patterns/"
 ptn.data = nil
 ptn.src = 1
 ptn.dst = 1
@@ -1336,45 +1337,47 @@ function paste_seq_pattern(i)
   end
 end
 
-function load_patterns(pset_id)
-  -- load sesh data
-  local number = string.format("%02d", get_pset_num(pset_id))
-  local data = tab.load(norns.state.data.."patterns/"..number.."/"..pset_id.."_pattern.data")
-  for i = 1, 8 do
-    for j = 1, 24 do
-      p[i].loop[j] = data.ptn[i].loop[j]
-      p[i].quantize[j] = data.ptn[i].quantize[j]
-      p[i].count[j] = data.ptn[i].count[j]
-      p[i].event[j] = deep_copy(data.ptn[i].event[j])
-      p[i].endpoint[j] = data.ptn[i].endpoint[j]
-      p[i].endpoint_init[j] = data.ptn[i].endpoint[j]
-      p[i].meter[j] = data.ptn[i].meter[j]
-      p[i].barnum[j] = data.ptn[i].barnum[j]
-      p[i].length[j] = data.ptn[i].length[j]
-      p[i].manual_length[j] = data.ptn[i].manual_length[j]
-      p[i].prc_num[j] = data.ptn[i].prc_num[j]
-      p[i].prc_option[j] = data.ptn[i].prc_option[j]
-    end
-    p[i].load = 1
-    p[i].prc_enabled = data.ptn[i].prc_enabled
-    p[i].prc_ch = data.ptn[i].prc_ch
-    if ptn[i].play == 1 then
-      clock.run(function()
-        clock.sync(quant.bar)
+function load_patterns(name)
+  local data = tab.load(ptn.ptn_path..name..".data")
+  if data then
+    for i = 1, 8 do
+      for j = 1, 24 do
+        p[i].loop[j] = data.ptn[i].loop[j]
+        p[i].quantize[j] = data.ptn[i].quantize[j]
+        p[i].count[j] = data.ptn[i].count[j]
+        p[i].event[j] = deep_copy(data.ptn[i].event[j])
+        p[i].endpoint[j] = data.ptn[i].endpoint[j]
+        p[i].endpoint_init[j] = data.ptn[i].endpoint[j]
+        p[i].meter[j] = data.ptn[i].meter[j]
+        p[i].barnum[j] = data.ptn[i].barnum[j]
+        p[i].length[j] = data.ptn[i].length[j]
+        p[i].manual_length[j] = data.ptn[i].manual_length[j]
+        p[i].prc_num[j] = data.ptn[i].prc_num[j]
+        p[i].prc_option[j] = data.ptn[i].prc_option[j]
+      end
+      p[i].load = 1
+      p[i].prc_enabled = data.ptn[i].prc_enabled
+      p[i].prc_ch = data.ptn[i].prc_ch
+      if ptn[i].play == 1 then
+        clock.run(function()
+          clock.sync(quant.bar)
+          set_pattern_bank(i)
+        end)
+      else
         set_pattern_bank(i)
-      end)
-    else
-      set_pattern_bank(i)
+      end
     end
   end
   ui.draw_view(ui.PPTN)
 end
 
-function load_pattern_data(pset_id)
-  local number = string.format("%02d", get_pset_num(pset_id))
-  local filename = norns.state.data.."patterns/"..number.."/"..pset_id.."_pattern.data"
-  local data = tab.load(filename)
-  ptn.data = data.ptn
+function load_pattern_data(name)
+  local data = tab.load(ptn.ptn_path..name..".data")
+  if data then
+    ptn.data = data.ptn
+  else
+    ui.show_message("no  pattern  data")
+  end
 end
 
 function load_pattern_slot(from, to)
@@ -1390,8 +1393,8 @@ function load_pattern_slot(from, to)
       p[i].meter[to] = ptn.data[i].meter[from]
       p[i].length[to] = ptn.data[i].length[from]
       p[i].manual_length[to] = ptn.data[i].manual_length[from]
-      p[i].launch[to] = pdata.ptn[i].launch[from]
-      p[i].scene[to] = pdata.ptn[i].scene[from]
+      p[i].launch[to] = ptn.data[i].launch[from]
+      p[i].scene[to] = ptn.data[i].scene[from]
       if to == p[i].bank then
         load_pattern_bank(i, to)
       end
@@ -1962,6 +1965,7 @@ function mute_all(z)
   end  
 end
 
+
 --------------------- velocity, pb, modwheeeel and aftertouch ---------------------
 -- velocity
 local function update_velocity(i, option)
@@ -2230,13 +2234,13 @@ function get_pset_num(name)
       if loaded_file then
         io.input(loaded_file)
         local pset_id = string.sub(io.read(), 4, -1)
+        io.close(loaded_file)
         if name == pset_id then
           local filename = norns.state.data..files_data[i]
           local pset_string = string.sub(filename, string.len(filename) - 6, -1)
           local number = pset_string:gsub(".pset", "")
           return util.round(number, 1) -- better to use tonumber?
         end
-        io.close(loaded_file)
       end
     end
   end
@@ -2259,8 +2263,6 @@ local function build_pset_list()
 end
 
 local function pset_write_callback(filename, name, number)
-  -- make directory
-  os.execute("mkdir -p "..norns.state.data.."patterns/"..number.."/")
   -- save pattern data
   for i = 1, 8 do
     save_pattern_bank(i, p[i].bank)
@@ -2337,7 +2339,7 @@ local function pset_write_callback(filename, name, number)
   -- write data
   clock.run(function() 
     clock.sleep(0.5)
-    tab.save(pdata, norns.state.data.."patterns/"..number.."/"..name.."_pattern.data")
+    tab.save(pdata, ptn.ptn_path..name..".data")
     print("finished writing pset: "..name)
   end)
 end
@@ -2347,11 +2349,11 @@ local function pset_read_callback(filename, silent, number)
   if loaded_file then
     clear_all_notes()
     io.input(loaded_file)
-    local pset_id = string.sub(io.read(), 4, -1)
+    local name = string.sub(io.read(), 4, -1)
     io.close(loaded_file)
     -- load sesh data
-    local pdata = tab.load(norns.state.data.."patterns/"..number.."/"..pset_id.."_pattern.data")
-    if pdata.nisho_v2_0 then
+    local pdata = tab.load(ptn.ptn_path..name..".data")
+    if pdata then
       -- load patterns
       for i = 1, 8 do
         ptn[i].glb_transpose = pdata.ptn[i].glb_transpose
@@ -2405,17 +2407,18 @@ local function pset_read_callback(filename, silent, number)
       dirtyscreen = true
       dirtygrid = true
       pm.ps_last = tonumber(number)
-      print("finished reading pset: "..pset_id)
+      print("finished reading pset: "..name)
     end
   end
 end
 
 local function pset_delete_callback(filename, name, number)
-  norns.system_cmd("rm -r "..norns.state.data.."patterns/"..number.."/")
+  norns.system_cmd("rm "..ptn.ptn_path..name..".data")
   build_pset_list()
   ui.reset_pset()
   print("finished deleting pset: "..name)
 end
+
 
 --------------------- norns interface ---------------------
 function key(n, z)
@@ -2479,7 +2482,10 @@ function init()
   if util.file_exists(ptn.midi_path) == false then
     util.make_dir(ptn.midi_path)
   end
-  
+  if util.file_exists(ptn.ptn_path) == false then
+    util.make_dir(ptn.ptn_path)
+  end
+
   -- build stuff
   build_midi_device_list()
   build_voice_params()
@@ -2765,13 +2771,12 @@ function init()
 
   -- bang params
   params:bang()
-  polyform.load_default()
   drmfm.load_default()
+  polyform.load_default()
 end
 
 
 --------------------- cleanup ---------------------
-
 function cleanup()
   clear_all_notes()
   grd.banner()
